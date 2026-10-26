@@ -28,6 +28,8 @@ Need: <nothing, or which role you need>
 
 ## Calling another agent
 
+Pick the model with `.cursor/skills/chair-models/SKILL.md`. Open a new T3 thread for that one problem. From a shell, use `t3 thread start` on project `/var/home/mel/Arch/dc`. Inside a T3 thread, use `delegate_task`. Do not paste the parent chat in.
+
 Post this on the issue, then stop that part of the work:
 
 ```

@@ -13,9 +13,20 @@ Talk to the user in plain language. Say what you are doing, which issue it belon
 - Never merge, and never turn on auto-merge, until the user answers a direct question. See the desk skill for the wording.
 - A pending proposed edit does not change the timeline. Do not overwrite source video or audio. Name the editor's presets. If an adapter cannot do something, use the fallback in its capability manifest.
 
+## Which model
+
+Read `.cursor/skills/chair-models/SKILL.md` before you hand work off.
+
+- Short work goes to Gemini 3.8 Flash high on Antigravity.
+- A named bug or a long change goes to DeepSeek v4.1 on OpenCode. The free pool is small, so do not spend it on pings.
+- Complex work stays with Grok 4.7 on Cursor.
+- If you cannot tell, use Cursor Auto.
+
+A new job is a new T3 thread (`t3 thread start`, or `delegate_task` from inside a thread). The child gets that issue only. Two models run at the same time only when they are fixing different problems and will not edit the same files.
+
 ## Calling another agent
 
-Agents share one board: the GitHub issue. A comment is the message. It is how Cursor, Grok Bot, Freebuff, OpenCode, and Antigravity see each other.
+Agents share one board: the GitHub issue. A comment is the message. It is how Cursor, Grok Bot, OpenCode, and Antigravity see each other.
 
 Roles:
 
@@ -27,6 +38,7 @@ If you need another role, post a handoff comment and stop that part of the work.
 
 Read the matching skill before editing that area:
 
+- `.cursor/skills/chair-models/SKILL.md` for which model to ask, and how to open its thread
 - `.cursor/skills/chair-desk/SKILL.md` for issues, branches, pull requests, and handoffs
 - `.cursor/skills/chair-ir/SKILL.md` for `schemas/`, `packages/timeline-ir`, or `crates/chair-ir`
 - `.cursor/skills/chair-adapter/SKILL.md` for `adapters/`
