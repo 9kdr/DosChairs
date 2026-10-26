@@ -152,10 +152,22 @@ def _file_path(item: Any) -> str | None:
 
 
 def _frame_rate_label(timeline: Any, project: Any) -> str:
+    """Resolve may return timelineFrameRate as a float (24.0) or a string."""
     for owner in (timeline, project):
-        value = _maybe(owner, "GetSetting", "timelineFrameRate")
-        if isinstance(value, str) and value.strip():
-            return value.strip()
+        for key in ("timelineFrameRate", "timelinePlaybackFrameRate"):
+            label = _setting_as_rate_label(_maybe(owner, "GetSetting", key))
+            if label:
+                return label
+    return ""
+
+
+def _setting_as_rate_label(value: Any) -> str:
+    if isinstance(value, bool) or value is None:
+        return ""
+    if isinstance(value, (int, float)):
+        return str(value)
+    if isinstance(value, str):
+        return value.strip()
     return ""
 
 

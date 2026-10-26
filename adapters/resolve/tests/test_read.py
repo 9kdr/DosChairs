@@ -177,6 +177,19 @@ def test_marker_kind_matches_only_an_exact_chair_kind() -> None:
     assert [marker["kind"] for marker in timeline["markers"]] == ["user", "fix"]
 
 
+def test_numeric_frame_rate_from_resolve_setting() -> None:
+    """Live Studio GetSetting('timelineFrameRate') returns a float, not a string."""
+    timeline = timeline_from_resolve(
+        {
+            "name": "Live",
+            "frame_rate": 24.0,
+            "tracks": [],
+            "markers": {},
+        }
+    )
+    assert timeline["rate"] == {"num": 24, "den": 1}
+
+
 def test_fractional_frame_rate_stays_exact() -> None:
     timeline = timeline_from_resolve(
         {
