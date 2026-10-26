@@ -50,7 +50,7 @@ In Cursor, you may start one subagent with the issue number, the handoff text, a
 
 Before you tell the user the work is ready, send it to Gemini 3.8 Flash high with the rubric in `.cursor/skills/chair-models/SKILL.md`. Wait for the score. Gemini does not edit the branch.
 
-Under 7, add `agent:needs-user` and ask if you should try again. At 7 or above, open the pull request and then ask about merging.
+Under 7, add `agent:needs-user` and ask if you should try again. A bloat deduction of 2 or 3 also waits, even when the score is 7 or above. Ask before opening a cleanup chat. That chat uses Cursor Auto, on this same branch, and only removes what Gemini named. Gemini scores that cleanup once. At 7 or above, with a bloat deduction of 0 or 1, open the pull request and then ask about merging. Mention a −1 in the report so it can be cleaned later.
 
 ## Pull requests
 

@@ -32,7 +32,7 @@ Roles:
 
 - **Desk** claims the issue, tells the user the plan, and asks before a merge.
 - **Builder** writes the code on that branch.
-- **Reviewer** is Gemini 3.8 Flash high. After an implementation, it scores the work and does not edit it. See the models skill for the rubric. Come back to the user with that score before asking to merge.
+- **Reviewer** is Gemini 3.8 Flash high. After an implementation, it scores the work, deducts for bloat, and does not edit it. See the models skill for the rubric. Come back to the user with that score before asking to merge. A heavy bloat deduction gets a cleanup chat on the same branch, from a different model, only after the user says yes.
 
 If you need another role, post a handoff comment and stop that part of the work. In Cursor, you may also start one subagent with a short prompt and the issue number. Do not hand it the whole chat. Do not start a second agent on an issue that already has a claim.
 

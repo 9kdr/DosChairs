@@ -9,7 +9,7 @@ Say what you are doing in one or two sentences, then the result. Name the issue 
 
 When you start work, tell them the issue, the branch, and that you will not merge until they say so.
 
-After an implementation, bring back Gemini's score before you ask to merge. Under 7, ask: "Gemini scored this N/10. The misses are: <gates>. Should I try again?" At 7 or above, say the score, then stop and ask:
+After an implementation, bring back Gemini's score before you ask to merge. Under 7, ask: "Gemini scored this N/10. The misses are: <gates>. Should I try again?" If the bloat deduction is 2 or 3, ask: "Gemini scored this N/10 and marked it overbuilt. The extra pieces are: <lines>. Should I open a cleanup chat on this same branch?" At 7 or above, with a smaller deduction, say the score, then stop and ask:
 
 "The pull request is ready: <link>. Checks are <green or not>. I have not merged it. Should I merge it into main?"
 

@@ -42,9 +42,20 @@ Each gate is worth 2 points, or 0. The score is the sum, out of 10.
 4. **The code.** It opens the changed files and names the lines that do the work. A score with no line references is 0.
 5. **The screen.** If `apps/desktop` or `packages/ui` changed, it runs `pnpm --filter @chair/desktop dev`, opens `http://localhost:1420`, and takes a screenshot of the screen a person would use. It says what is on that screen. No screenshot scores 0. If those paths did not change, this gate scores 2 and the report says there was no screen to shoot.
 
-It returns the five gates, then one line: `Score: N/10`.
+Then it deducts for bloat, from 0 to 3. The deduction comes off the gate total. The result cannot go below 0.
 
-Bring that score back to the user before any merge question. Under 7, do not ask to merge. Ask: "Gemini scored this N/10. The misses are: <the gates that scored 0>. Should I try again?" At 7 or above, show the score, then ask the merge question. Do not start a second attempt unless the user says yes.
+- **0.** The change is the smallest one that does the job.
+- **−1.** One extra helper, one restated comment, or one unused prop.
+- **−2.** A new file or layer that nothing else calls, or a second way to do something the repo already does.
+- **−3.** A person would have to learn a structure this issue does not need.
+
+It names the extra pieces and the lines. A deduction with no lines is invalid and counts as 0.
+
+It returns the five gates, the deduction, then one line: `Score: N/10`.
+
+Bring that score back to the user before any merge question. Under 7, do not ask to merge. Ask: "Gemini scored this N/10. The misses are: <the gates that scored 0>. Should I try again?"
+
+A bloat deduction of 2 or 3 holds the pull request even when the score is 7 or above. Ask: "Gemini scored this N/10 and marked it overbuilt. The extra pieces are: <lines>. Should I open a cleanup chat on this same branch?" The cleanup chat is a different model from the one that wrote the code, and it is not Gemini. Use Cursor Auto. It may only delete or shrink what Gemini named. It does not add behavior and it does not open a second branch. After that one cleanup, Gemini scores once more, and you bring that score back. Do not start a second cleanup unless the user asks.
 
 ## Calling each other
 
@@ -69,6 +80,8 @@ Good:
 "Gemini scored this 8/10. The pull request is ready: link. Checks are green. I have not merged it. Should I merge it into main?"
 
 "Gemini scored this 4/10. The misses are: the check failed, and there is no screenshot. Should I try again?"
+
+"Gemini scored this 8/10 and marked it overbuilt. The extra pieces are: a new store in App.tsx that the composer never reads. Should I open a cleanup chat on this same branch?"
 
 Too much:
 
