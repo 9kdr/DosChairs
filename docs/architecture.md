@@ -26,7 +26,7 @@ TypeScript (`packages/timeline-ir`), Rust (`crates/chair-ir`), and Python manife
 
 ## Adapter rule
 
-Each adapter publishes a capability manifest. The agent plans against that manifest. A Fusion comp on Kdenlive becomes a pre-rendered overlay track instead of a failed call. Resolve is the rich path. Kdenlive is the Linux demo path. OTIO is the interchange path.
+Each adapter publishes a capability manifest. The agent plans against that manifest. A Fusion comp on Kdenlive becomes a pre-rendered overlay track instead of a failed call. Resolve is the rich path. Kdenlive is the Linux demo path. OTIO is the interchange path. Live Studio launch and read smoke for agents: [resolve-live.md](adapters/resolve-live.md).
 
 ## Agent roles
 

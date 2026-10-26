@@ -1,13 +1,11 @@
 #!/usr/bin/env python3
 """Live smoke: read the open Resolve timeline into Chair IR.
 
-Agents: Studio must already be running with a project timeline open.
-External scripting must be Local or Network (Preferences > System > General).
+Full agent steps: docs/adapters/resolve-live.md
 
-  /opt/resolve/bin/resolve &
-  # wait until scriptapp connects, open a project + timeline in the UI if needed
+  adapters/resolve/scripts/launch_resolve.sh
+  # External scripting = Local; open a project timeline
   export PYTHONPATH=/opt/resolve/Developer/Scripting/Modules${PYTHONPATH:+:$PYTHONPATH}
-  cd "$(git rev-parse --show-toplevel)"
   eval "$(mise activate bash)"
   uv run --package chair-adapter-resolve python adapters/resolve/scripts/smoke_read.py
 """

@@ -14,19 +14,18 @@ Each folder under `adapters/` says what that editor can round-trip. The manifest
 
 ## Live Resolve smoke (Linux Studio)
 
-CI never launches Resolve. Agents on a machine with Studio can:
+CI never launches Resolve. Full launch + smoke steps for agents: [docs/adapters/resolve-live.md](../../../docs/adapters/resolve-live.md).
 
-1. Start Studio if needed: `/opt/resolve/bin/resolve` (needs `DISPLAY`). Wait until `scriptapp("Resolve")` returns an object.
-2. Open a project that has a current timeline (scripting: `ProjectManager.LoadProject`, `SetCurrentTimeline`).
-3. Preferences > System > General > External scripting: **Local** (or Network).
-4. From the repo root:
+Short path:
 
 ```bash
+adapters/resolve/scripts/launch_resolve.sh   # managed frame under Plasma Wayland
+# Open a project timeline; External scripting = Local
 export PYTHONPATH=/opt/resolve/Developer/Scripting/Modules${PYTHONPATH:+:$PYTHONPATH}
 eval "$(mise activate bash)"
 uv run --package chair-adapter-resolve python adapters/resolve/scripts/smoke_read.py
 ```
 
-Expect `OK`, track list, and `data/proxies/resolve-smoke-timeline.json` (gitignored). Unit tests stay: `uv run pytest adapters/resolve`.
+Expect `OK` and `data/proxies/resolve-smoke-timeline.json`. Unit tests: `uv run pytest adapters/resolve`.
 
 If the shape of the timeline has to change, hand off to the timeline skill with the desk skill. Do not invent a second timeline format inside the adapter.

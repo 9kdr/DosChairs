@@ -101,6 +101,8 @@ mise run test
 
 Fedora packages for the desktop shell: `webkit2gtk4.1-devel`, `openssl-devel`, `curl`, `wget`, `libappindicator-gtk3-devel`, `librsvg2-devel`. The web UI does not need them.
 
+Live **DaVinci Resolve Studio** launch and IR smoke (agents on a Studio machine): [docs/adapters/resolve-live.md](docs/adapters/resolve-live.md). CI does not start Resolve.
+
 Personal overrides go in `mise.local.toml` (gitignored). Do not commit `.env`, footage, or model weights.
 
 ## Contributions
