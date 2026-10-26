@@ -86,6 +86,10 @@
   --glass-shadow: 0 20px 50px -26px rgb(38 35 30 / 0.28);
 }
 
+html {
+  font-size: 20px;
+}
+
 html,
 body,
 #root {

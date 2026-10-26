@@ -161,7 +161,7 @@ export function ChatPanel({
               <div className="mb-6 grid size-14 place-items-center rounded-2xl border border-foreground/[0.08] bg-foreground/[0.035] shadow-[inset_0_1px_0_rgb(255_255_255/0.06),0_18px_40px_-24px_rgb(0_0_0/0.9)]">
                 <ClapperboardIcon className="size-6 text-foreground/75" />
               </div>
-              <h1 className="text-[1.6rem] font-medium tracking-[-0.015em] text-foreground">
+              <h1 className="text-[1.3rem] font-medium tracking-[-0.015em] text-foreground">
                 What should we cut?
               </h1>
               <p className="mt-2.5 max-w-sm text-sm leading-6 text-subtle">
@@ -174,7 +174,7 @@ export function ChatPanel({
                 <button
                   key={suggestion.title}
                   type="button"
-                  className="group flex w-full items-center gap-3 rounded-xl border border-transparent px-3 py-3 text-left transition-colors hover:border-foreground/[0.06] hover:bg-foreground/[0.035]"
+                  className="group flex w-full items-center gap-3 rounded-xl border border-transparent px-3 py-3 text-left transition-colors duration-[160ms] ease-out hover:border-foreground/[0.06] hover:bg-foreground/[0.035]"
                   onClick={() => fillDraft(suggestion.prompt)}
                 >
                   <span className="grid size-9 shrink-0 place-items-center rounded-lg border border-foreground/[0.06] bg-foreground/[0.03] text-muted-foreground transition-colors group-hover:text-foreground">
@@ -202,7 +202,7 @@ export function ChatPanel({
                   pending={pending}
                   dispatch={dispatch}
                 />
-                <p className="mt-3 text-center text-[10px] text-subtle">
+                <p className="mt-3 text-center text-xs text-subtle">
                   Local stand-in · nothing is sent to a model
                 </p>
               </div>
@@ -284,12 +284,12 @@ const ChairComposer = ({
         }}
       >
         <div className="flex items-center gap-1 px-1.5 pt-0.5">
-          <span className="inline-flex h-6 max-w-[70%] items-center gap-1.5 rounded-md px-1.5 text-[11px] text-muted-foreground">
+          <span className="inline-flex h-6 max-w-[70%] items-center gap-1.5 rounded-md px-1.5 text-xs text-muted-foreground">
             <FilmIcon className="size-3.5 shrink-0 opacity-70" />
             <span className="truncate">{cutName}</span>
           </span>
-          <span className="text-[10px] text-subtle/60">/</span>
-          <span className="inline-flex h-6 items-center rounded-md px-1.5 text-[11px] text-subtle">
+          <span className="text-xs text-subtle/60">/</span>
+          <span className="inline-flex h-6 items-center rounded-md px-1.5 text-xs text-subtle">
             local
           </span>
         </div>
@@ -302,7 +302,7 @@ const ChairComposer = ({
                 variant="secondary"
                 size="sm"
                 render={<button type="button" />}
-                className="gap-1.5 rounded-md bg-foreground/[0.05] text-[11px] text-muted-foreground hover:bg-foreground/[0.08]"
+                className="gap-1.5 rounded-md bg-foreground/[0.05] text-xs text-muted-foreground transition-colors duration-[160ms] ease-out hover:bg-foreground/[0.08]"
                 onClick={() => dispatch({ type: "detach", id: file.id })}
               >
                 {file.name}
@@ -317,7 +317,7 @@ const ChairComposer = ({
           aria-label="Message"
           placeholder="Ask Chair for a cut…"
           render={<textarea />}
-          className="min-h-16 px-2.5 py-2.5 text-[0.9375rem] leading-6"
+          className="min-h-20 px-2.5 py-2.5 text-[0.9375rem] leading-6"
         />
 
         <ComposerActions>
@@ -399,7 +399,7 @@ function ModelMenu({ model, onChange }: { model: ModelId; onChange: (model: Mode
             size="xs"
             variant="ghost"
             aria-label="Model"
-            className="h-6 gap-1 rounded-md px-1.5 text-[11px] text-muted-foreground hover:bg-foreground/[0.05] hover:text-foreground"
+            className="h-6 gap-1 rounded-md px-1.5 text-xs text-muted-foreground transition-colors duration-[160ms] ease-out hover:bg-foreground/[0.05] hover:text-foreground"
           />
         }
       >
@@ -412,7 +412,7 @@ function ModelMenu({ model, onChange }: { model: ModelId; onChange: (model: Mode
             <MenuRadioItem key={item.id} value={item.id} className="items-start py-1.5">
               <span className="flex flex-col gap-0.5">
                 <span>{item.label}</span>
-                <span className="text-[11px] text-subtle">{item.hint}</span>
+                <span className="text-xs text-subtle">{item.hint}</span>
               </span>
             </MenuRadioItem>
           ))}
@@ -508,7 +508,7 @@ function TranscriptMessage({
               <span className="grid size-6 shrink-0 place-items-center rounded-md bg-foreground/[0.05] text-muted-foreground">
                 <WrenchIcon className="size-3.5" />
               </span>
-              <span className="min-w-0 flex-1 truncate text-[12px] text-muted-foreground">
+              <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
                 {message.tool.name}
               </span>
               <Badge variant="warning" size="sm">

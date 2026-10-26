@@ -72,7 +72,7 @@ export function ChatSidebar({
     <aside
       aria-label="Threads"
       className={cn(
-        "flex w-[13.5rem] shrink-0 flex-col border-r border-line bg-sidebar/80 backdrop-blur-xl",
+        "flex w-[17rem] shrink-0 flex-col border-r border-line bg-sidebar/80 backdrop-blur-xl",
         className,
       )}
     >
@@ -84,7 +84,7 @@ export function ChatSidebar({
                 type="button"
                 size="sm"
                 variant="ghost"
-                className="min-w-0 flex-1 justify-start gap-1.5 px-1.5 text-[13px] font-medium text-foreground/90"
+                className="min-w-0 flex-1 justify-start gap-1.5 px-1.5 text-sm font-medium text-foreground/90"
               />
             }
           >
@@ -131,7 +131,7 @@ export function ChatSidebar({
             value={chat.query}
             placeholder="Search threads"
             aria-label="Search threads"
-            className="h-8 border-foreground/[0.08] bg-foreground/[0.03] text-[13px]"
+            className="h-8 border-foreground/[0.08] bg-foreground/[0.03] text-sm"
             onChange={(event) => dispatch({ type: "query", query: event.target.value })}
             onKeyDown={(event) => {
               if (event.key === "Escape") closeSearch();
@@ -144,7 +144,7 @@ export function ChatSidebar({
         <Button
           type="button"
           variant="ghost"
-          className="h-8 w-full justify-start gap-2 rounded-lg px-2 text-[13px] text-muted-foreground hover:bg-foreground/[0.05] hover:text-foreground"
+          className="h-10 w-full justify-start gap-2 rounded-lg px-2 text-sm text-muted-foreground transition-colors duration-[160ms] ease-out hover:bg-foreground/[0.05] hover:text-foreground"
           onClick={() => {
             dispatch({ type: "new" });
             onNavigate?.();
@@ -157,7 +157,7 @@ export function ChatSidebar({
 
       <ScrollArea className="mt-4 min-h-0 flex-1">
         <div className="px-2">
-          <p className="px-2 pb-1 text-[11px] font-medium text-subtle">Recents</p>
+          <p className="px-2 pb-1 text-xs font-medium text-subtle">Recents</p>
           <ul className="space-y-px" aria-label="Threads">
             {visible.map((thread) => (
               <li key={thread.id}>
@@ -167,7 +167,7 @@ export function ChatSidebar({
                     autoFocus
                     defaultValue={thread.title}
                     aria-label="Thread title"
-                    className="h-8 text-[13px]"
+                    className="h-10 text-sm"
                     onBlur={(event) => {
                       dispatch({ type: "rename", id: thread.id, title: event.target.value });
                       setRenamingId(null);
@@ -180,14 +180,14 @@ export function ChatSidebar({
                 ) : (
                   <div
                     className={cn(
-                      "group/row flex items-center rounded-lg transition-colors hover:bg-foreground/[0.045]",
+                      "group/row flex items-center rounded-lg transition-colors duration-[160ms] ease-out hover:bg-foreground/[0.045]",
                       thread.id === chat.activeId && "bg-foreground/[0.065]",
                     )}
                   >
                     <button
                       type="button"
                       className={cn(
-                        "flex h-8 min-w-0 flex-1 items-center rounded-lg px-2 text-left text-[13px] text-muted-foreground transition-colors group-hover/row:text-foreground",
+                        "flex h-10 min-w-0 flex-1 items-center rounded-lg px-2 text-left text-sm text-muted-foreground transition-colors duration-[160ms] ease-out group-hover/row:text-foreground",
                         thread.id === chat.activeId && "text-foreground",
                       )}
                       aria-current={thread.id === chat.activeId ? "true" : undefined}
@@ -232,10 +232,10 @@ export function ChatSidebar({
         </div>
 
         <div className="mt-5 px-2 pb-4">
-          <p className="px-2 pb-1 text-[11px] font-medium text-subtle">Projects</p>
+          <p className="px-2 pb-1 text-xs font-medium text-subtle">Projects</p>
           <button
             type="button"
-            className="flex h-8 w-full items-center gap-2 rounded-lg px-2 text-left text-[13px] text-muted-foreground transition-colors hover:bg-foreground/[0.045] hover:text-foreground"
+            className="flex h-10 w-full items-center gap-2 rounded-lg px-2 text-left text-sm text-muted-foreground transition-colors duration-[160ms] ease-out hover:bg-foreground/[0.045] hover:text-foreground"
           >
             <FilmIcon className="size-4 shrink-0 opacity-70" />
             <span className="truncate">{cutName}</span>
@@ -246,7 +246,7 @@ export function ChatSidebar({
       <div className="shrink-0 border-t border-line p-2">
         <button
           type="button"
-          className="hidden h-8 w-full items-center gap-2 rounded-lg px-2 text-[12px] text-muted-foreground transition-colors hover:bg-foreground/[0.045] hover:text-foreground lg:flex"
+          className="hidden h-10 w-full items-center gap-2 rounded-lg px-2 text-sm text-muted-foreground transition-colors duration-[160ms] ease-out hover:bg-foreground/[0.045] hover:text-foreground lg:flex"
           onClick={onToggleCut}
         >
           <span
