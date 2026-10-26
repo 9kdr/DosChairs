@@ -1,90 +1,206 @@
-:root {
-  font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
-  color-scheme: dark;
+@import "tailwindcss";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --animate-skeleton: skeleton 2s -1s infinite linear;
+  --color-warning-foreground: var(--warning-foreground);
+  --color-warning: var(--warning);
+  --color-success-foreground: var(--success-foreground);
+  --color-success: var(--success);
+  --color-info-foreground: var(--info-foreground);
+  --color-info: var(--info);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-ring: var(--ring);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-input: var(--input);
+  --color-foreground: var(--foreground);
+  --color-destructive: var(--destructive);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --color-border: var(--border);
+  --color-background: var(--background);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-sidebar: var(--sidebar);
+  --color-surface-raised: var(--surface-raised);
+  --color-subtle: var(--subtle);
+  --color-line: var(--line);
+  @keyframes skeleton {
+    to {
+      background-position: -200% 0;
+    }
+  }
+  --color-dither-ink: var(--dither-ink);
+  --color-dither-paper: var(--dither-paper);
+  --color-dither-blue: var(--dither-color-blue);
+  --color-dither-purple: var(--dither-color-purple);
+  --color-dither-green: var(--dither-color-green);
+  --color-dither-pink: var(--dither-color-pink);
+  --color-dither-orange: var(--dither-color-orange);
+  --color-dither-red: var(--dither-color-red);
+  --color-dither-grey: var(--dither-color-grey)
 }
 
-* {
-  box-sizing: border-box;
+:root {
+  color-scheme: light;
+  --destructive-foreground: var(--color-red-700);
+  --info: var(--color-blue-500);
+  --info-foreground: var(--color-blue-700);
+  --success: var(--color-emerald-500);
+  --success-foreground: var(--color-emerald-700);
+  --warning: var(--color-amber-500);
+  --warning-foreground: var(--color-amber-700);
+  --accent: --alpha(var(--color-black) / 4%);
+  --accent-foreground: #3d3929;
+  --background: #faf9f5;
+  --border: --alpha(#262624 / 9%);
+  --card: var(--color-white);
+  --card-foreground: #3d3929;
+  --destructive: var(--color-red-500);
+  --foreground: #3d3929;
+  --input: --alpha(#262624 / 12%);
+  --muted: --alpha(#262624 / 4%);
+  --muted-foreground: #6e6a5e;
+  --popover: var(--color-white);
+  --popover-foreground: #3d3929;
+  --primary: #d97757;
+  --primary-foreground: #faf9f5;
+  --ring: #a8a49a;
+  --secondary: --alpha(#262624 / 4%);
+  --secondary-foreground: #3d3929;
+  --sidebar: #f0eee6;
+  --surface-raised: var(--color-white);
+  --subtle: #8c887a;
+  --line: color-mix(in srgb, #262624 8%, transparent);
+  --glass-surface: color-mix(in srgb, var(--color-white) 76%, transparent);
+  --glass-border: color-mix(in srgb, #262624 8%, transparent);
+  --glass-highlight: inset 0 1px 0 rgb(255 255 255 / 0.72);
+  --glass-shadow: 0 20px 50px -26px rgb(38 35 30 / 0.28);
+}
+
+html,
+body,
+#root {
+  height: 100%;
 }
 
 body {
   margin: 0;
+  background: var(--background);
+  color: var(--foreground);
+  font-family: "Inter Variable", "Segoe UI", sans-serif;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  overscroll-behavior: none;
 }
 
-button {
-  background: #e7ff4a;
-  color: #101114;
-  border: 0;
-  border-radius: 999px;
-  padding: 0.35rem 0.8rem;
-  font: inherit;
-  cursor: pointer;
+::selection {
+  background: color-mix(in srgb, var(--primary) 32%, transparent);
 }
 
-.shell {
-  min-height: 100vh;
-  display: flex;
-  flex-direction: column;
+.glass-panel {
+  border: 1px solid var(--glass-border);
+  background-color: var(--glass-surface);
+  box-shadow: var(--glass-highlight), var(--glass-shadow);
+  -webkit-backdrop-filter: blur(22px) saturate(180%);
+  backdrop-filter: blur(22px) saturate(180%);
 }
 
-.top {
-  display: flex;
-  gap: 1rem;
-  align-items: baseline;
-  padding: 0.8rem 1rem;
-  border-bottom: 1px solid #2a2d34;
+.glass-composer {
+  border: 1px solid var(--glass-border);
+  background-color: var(--glass-surface);
+  box-shadow: var(--glass-highlight), var(--glass-shadow);
+  -webkit-backdrop-filter: blur(26px) saturate(180%);
+  backdrop-filter: blur(26px) saturate(180%);
+  transition:
+    border-color 160ms ease,
+    box-shadow 160ms ease;
 }
 
-.grid {
-  flex: 1;
-  display: grid;
-  grid-template-columns: 280px 1fr 320px;
-  min-height: 0;
+.glass-composer:focus-within {
+  border-color: color-mix(in srgb, var(--color-white) 15%, transparent);
+  box-shadow:
+    var(--glass-highlight),
+    0 0 0 1px color-mix(in srgb, var(--color-white) 4%, transparent),
+    var(--glass-shadow);
 }
 
-.panel {
-  padding: 1rem;
-  border-right: 1px solid #2a2d34;
+.glass-row {
+  border: 1px solid color-mix(in srgb, var(--color-white) 6%, transparent);
+  background-color: color-mix(in srgb, var(--color-white) 2.5%, transparent);
 }
 
-.panel h2 {
-  margin: 0 0 0.8rem;
-  font-size: 0.85rem;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: #9a978e;
+.glass-row:hover {
+  background-color: color-mix(in srgb, var(--color-white) 4%, transparent);
 }
 
-.track {
-  display: grid;
-  grid-template-columns: 72px 1fr;
-  gap: 0.5rem;
-  align-items: center;
-  margin-bottom: 0.4rem;
+.dark {
+  color-scheme: dark;
+  --destructive-foreground: var(--color-red-400);
+  --info: var(--color-blue-500);
+  --info-foreground: var(--color-blue-400);
+  --success: var(--color-emerald-500);
+  --success-foreground: var(--color-emerald-400);
+  --warning: var(--color-amber-500);
+  --warning-foreground: var(--color-amber-400);
+  --accent: rgb(245 244 236 / 4.5%);
+  --accent-foreground: #f5f4ec;
+  --background: #262624;
+  --border: rgb(245 244 236 / 6%);
+  --card: #2b2a27;
+  --card-foreground: #f5f4ec;
+  --destructive: color-mix(in srgb, var(--color-red-500) 90%, var(--color-white));
+  --foreground: #f5f4ec;
+  --input: rgb(245 244 236 / 8%);
+  --muted: rgb(245 244 236 / 4%);
+  --muted-foreground: #b8b4a8;
+  --popover: #2e2d29;
+  --popover-foreground: #f5f4ec;
+  --primary: #d97757;
+  --primary-foreground: #faf9f5;
+  --ring: #8f8b80;
+  --secondary: rgb(245 244 236 / 4%);
+  --secondary-foreground: #f5f4ec;
+  --sidebar: #1f1e1c;
+  --surface-raised: #302f2b;
+  --subtle: #8f8b80;
+  --line: rgb(245 244 236 / 7%);
+  --glass-surface: rgb(38 38 36 / 80%);
+  --glass-border: rgb(245 244 236 / 8%);
+  --glass-highlight: inset 0 1px 0 rgb(255 255 255 / 0.05);
+  --glass-shadow: 0 26px 70px -34px rgb(0 0 0 / 0.85);
 }
 
-.lane {
-  height: 28px;
-  border-radius: 6px;
-  background: rgba(231, 255, 74, 0.16);
-}
-
-.meta {
-  color: #9a978e;
-  font-size: 0.85rem;
-}
-
-.row {
-  display: flex;
-  gap: 0.4rem;
-}
-
-ul {
-  list-style: none;
-  padding: 0;
-  margin: 0;
-}
-
-li + li {
-  margin-top: 0.8rem;
-}
+@layer base {
+  :root {
+    --dither-ink: var(--primary);
+    --dither-paper: var(--background);
+    --dither-cell: 3px;
+    --dither-color-blue: oklch(0.56 0.18 248);
+    --dither-color-purple: oklch(0.53 0.22 302);
+    --dither-color-green: oklch(0.58 0.15 152);
+    --dither-color-pink: oklch(0.58 0.21 355);
+    --dither-color-orange: oklch(0.64 0.17 52);
+    --dither-color-red: oklch(0.55 0.21 27);
+    --dither-color-grey: oklch(0.55 0 0);
+    --dither-bloom: 0.6;}
+  .dark {
+    --dither-ink: var(--primary);
+    --dither-paper: var(--background);
+    --dither-cell: 3px;
+    --dither-color-blue: oklch(0.72 0.14 240);
+    --dither-color-purple: oklch(0.7 0.18 304);
+    --dither-color-green: oklch(0.78 0.17 152);
+    --dither-color-pink: oklch(0.74 0.17 354);
+    --dither-color-orange: oklch(0.79 0.15 62);
+    --dither-color-red: oklch(0.68 0.2 25);
+    --dither-color-grey: oklch(0.66 0 0);
+    --dither-bloom: 1;}}

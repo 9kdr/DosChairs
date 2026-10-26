@@ -66,7 +66,7 @@ Checked items exist in this repo. Linked items are not started. Milestone order 
 ## Layout
 
 ```text
-apps/desktop          Tauri shell and the chat / timeline / changeset UI
+apps/desktop          Tauri shell and the chat / timeline / changeset UI (coss, dither, lenis — docs/adr/0002-desktop-ui-kit.md, docs/adr/0003-decoration-and-motion.md)
 packages/             TypeScript IR, tool protocol, shared tokens
 crates/chair-ir       Rust timeline
 crates/chair-core     Revisions and accepted changesets
