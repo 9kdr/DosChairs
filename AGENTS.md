@@ -19,8 +19,8 @@ Read `.cursor/skills/chair-models/SKILL.md` before you hand work off.
 
 - Name the field, then the weight. The models skill has the order.
 - Cheap work and every score go to Gemini 3.8 Flash high on Antigravity.
-- A screen that is the whole task goes to DeepSeek v4.1 on OpenCode. That is the best UI model we can call. Any other screen goes to Grok 4.7 high on Cursor. Gemini 4 Argon is not available.
-- Several packages stay with Grok 4.7 high on Cursor.
+- A screen that is the whole task goes to DeepSeek v4.1 on OpenCode. That is the best UI model we can call. Any other screen goes to Grok 4.7 high on Cursor (not fast, 256k). Gemini 4 Argon is not available.
+- Several packages stay with Grok 4.7 high on Cursor (not fast, 256k).
 - DeepSeek v4.1 on OpenCode is the free pool. Spend it on one named screen or one named long bug, not on a ping.
 - If you cannot tell the field, use Cursor Auto.
 
@@ -34,7 +34,7 @@ Roles:
 
 - **Desk** claims the issue, tells the user the plan, and asks before a merge.
 - **Builder** writes the code on that branch.
-- **Reviewer** is Gemini 3.8 Flash high. After an implementation, it scores the work, deducts for bloat, and does not edit it. See the models skill for the rubric. Come back to the user with that score before asking to merge. A heavy bloat deduction gets a cleanup chat on the same branch, from a different model, only after the user says yes.
+- **Reviewer** is Gemini 3.8 Flash high. After an implementation, it scores the work with the strict rubric in the models skill, deducts for bloat (prefer −1 over −0 when unsure), and does not edit it. Come back to the user with that score before asking to merge. A heavy bloat deduction gets a cleanup chat on the same branch, from a different model, only after the user says yes.
 
 If you need another role, post a handoff comment and stop that part of the work. In Cursor, you may also start one subagent with a short prompt and the issue number. Do not hand it the whole chat. Do not start a second agent on an issue that already has a claim.
 

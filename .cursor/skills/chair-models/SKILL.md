@@ -12,7 +12,7 @@ Spend the scarce models on a named problem. Do not open a second chat to keep th
 | Cheap. One file, one error, a label, the score after implementation | Gemini 3.8 Flash, high, on Antigravity. This is the $20 plan you can spend often. | `--provider antigravity --model gemini-3.8-flash-high` |
 | Heavy, a screen. The window a person will look at is the whole task | DeepSeek v4.1 on OpenCode. Best UI model we can call. The free daily pool is small, so the screen has to be named. | `--provider opencode --model opencode/deepseek-v4.1-flash-free` |
 | A named long bug, when the Cursor pool should be spared | DeepSeek v4.1 on OpenCode, same slug as a screen. One bug per day is the idea. | `--provider opencode --model opencode/deepseek-v4.1-flash-free` |
-| A screen when DeepSeek should be saved, or several packages | Grok 4.7, high, on Cursor. The $20 workhorse. Use medium when the change is wide but not hard. | `--provider cursor --model grok-4.7-high` |
+| A screen when DeepSeek should be saved, or several packages | Grok 4.7, high, on Cursor. The $20 workhorse. Always high effort, never fast, always 256k (not 500k). | `delegate_task` / Cursor: model `grok-4.7` with options `reasoning_effort=high`, `fastMode=false`, `contextWindow=256k` |
 | You cannot tell the field | Cursor Auto | `--provider cursor --model default` |
 
 Claude and Codex lead the public boards and stay switched off. Gemini 4 Argon is not on this account. Do not call any of them. Pick the best model that is actually enabled.
@@ -25,14 +25,15 @@ Name the field before the model. A screen is UI. A score is review. One file is 
 
 For UI, check the WebDev board (https://arena.ai/leaderboard/code/webdev). For a long agent task, check the Artificial Analysis coding-agent index (https://artificialanalysis.ai/agents/coding-agents). Use the ranking only among enabled models. The snapshot below is 23 Oct 2026. If the board has moved, follow the board.
 
-On that WebDev snapshot, the models we can call sit in this order: DeepSeek V4.1 Flash (about 1665), Grok 4.7 (about 1638), Gemini 3.8 Flash high (about 1585). On the coding-agent index, DeepSeek V4.1 Flash and Grok 4.7 are close, and Gemini 3.8 Flash high is well behind.
+On that WebDev snapshot, the models we can call sit in this order: DeepSeek V4.1 Flash (about 1665), Grok 4.7 (about 1638), Gemini 3.8 Flash high (about 1585). On the coding-agent index, DeepSeek V4.1 Flash and Grok 4.7 are close, and Gemini 3.8 Flash high is well behind. When we call Grok, we only use **Grok 4.7 high**, not fast, on **256k**.
 
 Then pick the weight from the plan:
 
 - The Cursor and Antigravity plans are $20. OpenCode is the free daily pool.
 - Cheap weight is Gemini 3.8 Flash high. Use it for a short fix and for every score.
-- Heavy UI weight is DeepSeek v4.1, and only when that screen is the whole task. Otherwise the screen goes to Grok 4.7 high.
-- Heavy repo weight is Grok 4.7 high on Cursor. Spend DeepSeek on a long bug only when the bug is named.
+- Heavy UI weight is DeepSeek v4.1, and only when that screen is the whole task. Otherwise the screen goes to Grok 4.7 high (not fast, 256k).
+- Heavy repo weight is Grok 4.7 high on Cursor (not fast, 256k). Spend DeepSeek on a long bug only when the bug is named.
+- Never set Grok `fastMode` true. Never set `contextWindow` to `500k`. Pass `reasoning_effort=high`, `fastMode=false`, and `contextWindow=256k` in `target.options`.
 - A −1 bloat warning stays on the report. A −2 or −3 cleanup chat stays on Cursor Auto.
 
 ## What to ask
@@ -42,7 +43,7 @@ Give the child one issue and nothing else from the parent chat.
 - Gemini, for a small fix: the error or the file, and the sentence that means done. Ask for the patch, not a redesign.
 - Gemini, after an implementation: the rubric below. It scores and does not edit.
 - DeepSeek, for a screen or a named bug: the issue number, the files it may touch, the check to run, and what it must not change. Do not spend it on a ping or a status reply.
-- Grok 4.7: the goal, the constraints, and what to leave alone. Ask it to decide and then do the work. For a screen, name the window a person will look at.
+- Grok 4.7: the goal, the constraints, and what to leave alone. Ask it to decide and then do the work. For a screen, name the window a person will look at. Pass `reasoning_effort=high`, `fastMode=false`, and `contextWindow=256k` in `target.options`, not only in the prompt.
 - Auto: say you are unsure, give the issue, and ask it to pick the smallest next step.
 
 A mid-task review is one question the builder cannot settle, for example "Does this pending edit change the timeline? Point at the line." The reviewer does not start a second branch.
@@ -51,24 +52,37 @@ A mid-task review is one question the builder cannot settle, for example "Does t
 
 After the code is written, and before you tell the user it is ready, open one review thread on Antigravity with model `gemini-3.8-flash-high`. Role: `review`. Give it the issue number, the branch, and the changed files. It reads the code and does not edit, commit, or open a pull request.
 
+Be strict. A high score must be earned. Praise without line evidence is invalid. Do not default to −0 bloat because the issue works.
+
 Each gate is worth 2 points, or 0. The score is the sum, out of 10.
 
-1. **The issue.** The diff does what the issue asked. Files outside that work are untouched.
-2. **The rules.** A pending edit does not change the timeline. Source video and audio stay untouched. No secrets, footage, or weights.
-3. **The check.** It runs the check for the packages that changed and reports the command and the result. A failure scores 0.
-4. **The code.** It opens the changed files and names the lines that do the work. A score with no line references is 0.
+1. **The issue.** The diff does what the issue asked. Files outside that work are untouched. Partial delivery or drive-by edits score 0.
+2. **The rules.** A pending edit does not change the timeline. Source video and audio stay untouched. No secrets, footage, or weights. Any violation scores 0.
+3. **The check.** It re-runs the check for the packages that changed in this environment and reports the exact command and result. Trusting the builder's claim without re-running scores 0. A failure scores 0.
+4. **The code.** It opens every changed file and names the lines that do the work for each acceptance point. A score with no line references, or only file names, is 0.
 5. **The screen.** If `apps/desktop` or `packages/ui` changed, it runs `pnpm --filter @chair/desktop dev`, opens `http://localhost:1420`, and takes a screenshot of the screen a person would use. It says what is on that screen. No screenshot scores 0. If those paths did not change, this gate scores 2 and the report says there was no screen to shoot.
 
 Then it deducts for bloat, from 0 to 3. The deduction comes off the gate total. The result cannot go below 0.
 
-- **0.** The change is the smallest one that does the job.
-- **−1.** One extra helper, one restated comment, or one unused prop.
-- **−2.** A new file or layer that nothing else calls, or a second way to do something the repo already does.
+Before choosing a deduction, it must hunt for each of these and either cite lines or explicitly say the pattern was not found:
+
+- A duplicated expected blob that restates mapper or fixture output when a few field asserts plus schema validation would do.
+- A hand-rolled helper that reimplements repo tooling (schema validation, IR helpers, formatting) already available elsewhere.
+- An unused export, dead branch, restated comment, or wrapper that only renames a call.
+- A new file or layer the issue did not need.
+
+Deductions:
+
+- **0.** Only after that hunt finds nothing. The report must say so in one sentence. "Looks fine" is not enough.
+- **−1.** One extra helper, one restated comment, one unused prop, a large duplicated expected fixture, or a thin wrapper that adds no behavior.
+- **−2.** A new file or layer that nothing else calls, or a second way to do something the repo already does (including a private schema validator when the repo already validates schemas).
 - **−3.** A person would have to learn a structure this issue does not need.
 
-It names the extra pieces and the lines. A deduction with no lines is invalid and counts as 0.
+Stack the worst matching tier; do not average them away. Prefer −1 over −0 when unsure. A 10/10 with −0 bloat is rare and must survive the hunt above.
 
-It returns the five gates, the deduction, then one line: `Score: N/10`.
+It names the extra pieces and the lines. A deduction with no lines is invalid and counts as 0. A −0 with no hunt sentence is invalid; desk treats it as incomplete and re-asks the review.
+
+It returns the five gates, the deduction (with hunt notes), then one line: `Score: N/10`.
 
 Bring that score back to the user before any merge question. Under 7, do not ask to merge. Ask: "Gemini scored this N/10. The misses are: <the gates that scored 0>. Should I try again?"
 
