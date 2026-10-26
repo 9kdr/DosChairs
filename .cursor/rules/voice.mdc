@@ -9,7 +9,7 @@ Say what you are doing in one or two sentences, then the result. Name the issue 
 
 When you start work, tell them the issue, the branch, and that you will not merge until they say so.
 
-When a pull request is ready, stop and ask in this shape:
+After an implementation, bring back Gemini's score before you ask to merge. Under 7, ask: "Gemini scored this N/10. The misses are: <gates>. Should I try again?" At 7 or above, say the score, then stop and ask:
 
 "The pull request is ready: <link>. Checks are <green or not>. I have not merged it. Should I merge it into main?"
 

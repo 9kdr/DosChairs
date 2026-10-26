@@ -22,12 +22,29 @@ If a slug is rejected, tell the user the exact error and stop. Do not cycle thro
 
 Give the child one issue and nothing else from the parent chat.
 
-- Gemini: the error or the file, and the sentence that means done. Ask for the patch, not a redesign.
+- Gemini, for a small fix: the error or the file, and the sentence that means done. Ask for the patch, not a redesign.
+- Gemini, after an implementation: the rubric below. It scores and does not edit.
 - DeepSeek: the issue number, the files it may touch, the check to run, and what it must not change. Do not spend it on a ping or a status reply.
 - Grok 4.7: the goal, the constraints, and what to leave alone. Ask it to decide and then do the work.
 - Auto: say you are unsure, give the issue, and ask it to pick the smallest next step.
 
-A review call is one question the first model cannot settle, for example "Does this pending edit change the timeline? Point at the line." The reviewer does not start a second branch.
+A mid-task review is one question the builder cannot settle, for example "Does this pending edit change the timeline? Point at the line." The reviewer does not start a second branch.
+
+## Score the implementation
+
+After the code is written, and before you tell the user it is ready, open one review thread on Antigravity with model `gemini-3.8-flash-high`. Role: `review`. Give it the issue number, the branch, and the changed files. It reads the code and does not edit, commit, or open a pull request.
+
+Each gate is worth 2 points, or 0. The score is the sum, out of 10.
+
+1. **The issue.** The diff does what the issue asked. Files outside that work are untouched.
+2. **The rules.** A pending edit does not change the timeline. Source video and audio stay untouched. No secrets, footage, or weights.
+3. **The check.** It runs the check for the packages that changed and reports the command and the result. A failure scores 0.
+4. **The code.** It opens the changed files and names the lines that do the work. A score with no line references is 0.
+5. **The screen.** If `apps/desktop` or `packages/ui` changed, it runs `pnpm --filter @chair/desktop dev`, opens `http://localhost:1420`, and takes a screenshot of the screen a person would use. It says what is on that screen. No screenshot scores 0. If those paths did not change, this gate scores 2 and the report says there was no screen to shoot.
+
+It returns the five gates, then one line: `Score: N/10`.
+
+Bring that score back to the user before any merge question. Under 7, do not ask to merge. Ask: "Gemini scored this N/10. The misses are: <the gates that scored 0>. Should I try again?" At 7 or above, show the score, then ask the merge question. Do not start a second attempt unless the user says yes.
 
 ## Calling each other
 
@@ -49,7 +66,9 @@ Good:
 
 "DeepSeek hit a schema question. I asked Gemini one thing: does this pending edit change the timeline? I'll wait for that before more code."
 
-"The pull request is ready: link. Checks are green. I have not merged it. Should I merge it into main?"
+"Gemini scored this 8/10. The pull request is ready: link. Checks are green. I have not merged it. Should I merge it into main?"
+
+"Gemini scored this 4/10. The misses are: the check failed, and there is no screenshot. Should I try again?"
 
 Too much:
 

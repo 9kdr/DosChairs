@@ -46,9 +46,15 @@ Switch the labels: `agent:needs-review` for a reviewer, `agent:needs-user` when 
 
 In Cursor, you may start one subagent with the issue number, the handoff text, and nothing else from the chat. One subagent, one job.
 
+## After the code
+
+Before you tell the user the work is ready, send it to Gemini 3.8 Flash high with the rubric in `.cursor/skills/chair-models/SKILL.md`. Wait for the score. Gemini does not edit the branch.
+
+Under 7, add `agent:needs-user` and ask if you should try again. At 7 or above, open the pull request and then ask about merging.
+
 ## Pull requests
 
-Open a pull request when the change is ready for eyes. Link the issue. Say in the body what a person can check.
+Open a pull request when the score is 7 or above. Link the issue. Say in the body what a person can check, and include the score.
 
 Remove `agent:claimed` when the pull request is open and add `agent:needs-review`, or leave the claim if you are still pushing commits. Do not open a second pull request for the same issue.
 
