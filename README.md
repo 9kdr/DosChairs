@@ -105,7 +105,7 @@ Personal overrides go in `mise.local.toml` (gitignored). Do not commit `.env`, f
 
 ## Contributions
 
-Branch from `main` as `feat/<area>/<slug>`. Areas: `desktop`, `ir`, `agent`, `sidecar`, `adapters`, `docs`. One issue per branch. See [CONTRIBUTING.md](CONTRIBUTING.md).
+Branch from `main` as `feat/<area>/<slug>`. Areas: `desktop`, `ir`, `agent`, `sidecar`, `adapters`, `docs`. One issue per branch. Agents follow [AGENTS.md](AGENTS.md): they claim an issue before starting, talk to each other on that issue, and ask you before merging. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Docs
 

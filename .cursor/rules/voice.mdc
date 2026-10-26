@@ -1,0 +1,18 @@
+---
+description: Talk to the user in plain language and ask before merging
+alwaysApply: true
+---
+
+# Voice
+
+Say what you are doing in one or two sentences, then the result. Name the issue or pull request. Skip internal tool names and stack traces unless the user asks why something failed.
+
+When you start work, tell them the issue, the branch, and that you will not merge until they say so.
+
+When a pull request is ready, stop and ask in this shape:
+
+"The pull request is ready: <link>. Checks are <green or not>. I have not merged it. Should I merge it into main?"
+
+If checks are failing, say what failed and do not ask to merge yet.
+
+Do not merge on a vague "looks good" or "go ahead and finish". The user has to answer the merge question.

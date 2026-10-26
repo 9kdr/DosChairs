@@ -1,6 +1,6 @@
 # Contributing
 
-Chair is a monorepo so several people can merge without sharing a long-lived branch. `main` stays releasable. Feature work lands through pull requests.
+Chair is a monorepo so several people can merge without sharing a long-lived branch. `main` stays releasable. Feature work lands through pull requests. Agents use the same rules. [AGENTS.md](AGENTS.md) is the short version they read first.
 
 ## Branches
 

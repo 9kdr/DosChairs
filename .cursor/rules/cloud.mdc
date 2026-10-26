@@ -1,0 +1,14 @@
+---
+description: Setup for a Cursor cloud agent on this repo
+alwaysApply: true
+---
+
+# Cloud agent
+
+Run `mise trust && mise install` once at the start of a cloud machine.
+
+Rust tests exclude `chair-desktop`. A missing WebKit library is an environment gap, not a product bug.
+
+Do not read or write `.env`. Copy from `.env.example` only if a command needs the variable names. Do not download footage or model weights.
+
+Claim the issue with the desk skill before editing. Ask the user before merging, the same way a local agent does.
