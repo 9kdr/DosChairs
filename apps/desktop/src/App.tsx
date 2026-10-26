@@ -1,7 +1,12 @@
-import { useMemo, useState } from "react";
+import { useMemo, useReducer, useState } from "react";
 import { emptyTimeline } from "@chair/timeline-ir";
 import type { Changeset, Timeline } from "@chair/timeline-ir";
-import { colors } from "@chair/ui";
+import { TooltipProvider } from "@/components/ui/tooltip";
+import { ChatPanel } from "./chat/ChatPanel";
+import { ChatRail } from "./chat/ChatRail";
+import { ChatSidebar } from "./chat/ChatSidebar";
+import { CutPanel } from "./chat/CutPanel";
+import { createChat, reduceChat } from "./chat/state";
 
 const DEMO_CHANGESET: Changeset = {
   schemaVersion: "0.1.0",
@@ -29,7 +34,9 @@ const DEMO_CHANGESET: Changeset = {
 export function App() {
   const [timeline] = useState<Timeline>(() => emptyTimeline("tl_demo", "Untitled cut"));
   const [changeset, setChangeset] = useState<Changeset>(DEMO_CHANGESET);
-  const [log] = useState(["Ready. Drop footage to start a rough cut."]);
+  const [chat, dispatch] = useReducer(reduceChat, undefined, createChat);
+  const [threadsOpen, setThreadsOpen] = useState(true);
+  const [cutOpen, setCutOpen] = useState(true);
 
   const pending = useMemo(
     () => changeset.items.filter((item) => item.status === "pending").length,
@@ -44,56 +51,43 @@ export function App() {
   }
 
   return (
-    <div className="shell" style={{ background: colors.bg, color: colors.text }}>
-      <header className="top">
-        <strong>Chair</strong>
-        <span>{timeline.name}</span>
-        <span>{pending} pending</span>
-      </header>
-      <main className="grid">
-        <section className="panel" aria-label="Work log">
-          <h2>Chat</h2>
-          <ul>
-            {log.map((line) => (
-              <li key={line}>{line}</li>
-            ))}
-          </ul>
-        </section>
-        <section className="panel" aria-label="Timeline mirror">
-          <h2>Timeline</h2>
-          {timeline.tracks.map((track) => (
-            <div key={track.id} className="track">
-              <span>{track.name}</span>
-              <div className="lane" />
-            </div>
-          ))}
-        </section>
-        <section className="panel" aria-label="Changeset review">
-          <h2>Changes</h2>
-          <ul>
-            {changeset.items.map((item) => (
-              <li key={item.id}>
-                <p>
-                  <code>{item.op}</code> {item.rationale}
-                </p>
-                <p className="meta">
-                  {item.beatId} · {item.status}
-                </p>
-                {item.status === "pending" ? (
-                  <div className="row">
-                    <button type="button" onClick={() => setStatus(item.id, "accepted")}>
-                      Accept
-                    </button>
-                    <button type="button" onClick={() => setStatus(item.id, "rejected")}>
-                      Reject
-                    </button>
-                  </div>
-                ) : null}
-              </li>
-            ))}
-          </ul>
-        </section>
-      </main>
-    </div>
+    <TooltipProvider delay={400}>
+      <div className="flex h-full min-h-0 bg-background text-foreground">
+        <ChatRail
+          threadsOpen={threadsOpen}
+          cutOpen={cutOpen}
+          pending={pending}
+          onToggleThreads={() => setThreadsOpen((open) => !open)}
+          onToggleCut={() => setCutOpen((open) => !open)}
+          onNewChat={() => dispatch({ type: "new" })}
+        />
+        {threadsOpen ? (
+          <ChatSidebar
+            chat={chat}
+            dispatch={dispatch}
+            cutName={timeline.name}
+            cutOpen={cutOpen}
+            pending={pending}
+            onHide={() => setThreadsOpen(false)}
+            onToggleCut={() => setCutOpen((open) => !open)}
+          />
+        ) : null}
+        <ChatPanel
+          chat={chat}
+          dispatch={dispatch}
+          cutName={timeline.name}
+          threadsOpen={threadsOpen}
+          onOpenThreads={() => setThreadsOpen(true)}
+        />
+        {cutOpen ? (
+          <CutPanel
+            timeline={timeline}
+            changeset={changeset}
+            onStatus={setStatus}
+            onClose={() => setCutOpen(false)}
+          />
+        ) : null}
+      </div>
+    </TooltipProvider>
   );
 }
