@@ -2,9 +2,9 @@
 resolver = "2"
 members = [
   "apps/desktop/src-tauri",
-  "crates/cutroom-core",
-  "crates/cutroom-ir",
-  "crates/cutroom-adapters",
+  "crates/chair-core",
+  "crates/chair-ir",
+  "crates/chair-adapters",
 ]
 
 [workspace.package]
@@ -12,7 +12,7 @@ version = "0.1.0"
 edition = "2021"
 license = "Apache-2.0"
 repository = "https://github.com/9kdr/DosChairs"
-authors = ["Cutroom Contributors"]
+authors = ["Chair Contributors"]
 
 [workspace.dependencies]
 serde = { version = "1", features = ["derive"] }

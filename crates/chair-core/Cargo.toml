@@ -1,5 +1,5 @@
 [package]
-name = "cutroom-core"
+name = "chair-core"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -7,7 +7,7 @@ description = "Project store, revisions, and changeset application"
 publish = false
 
 [dependencies]
-cutroom-ir = { path = "../cutroom-ir" }
+chair-ir = { path = "../chair-ir" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }

@@ -1,4 +1,4 @@
-from cutroom_otio.manifest import MANIFEST
+from chair_otio.manifest import MANIFEST
 
 
 def test_otio_is_interchange() -> None:

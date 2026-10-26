@@ -1,5 +1,5 @@
 {
-  "name": "cutroom",
+  "name": "chair",
   "private": true,
   "version": "0.1.0",
   "description": "Agentic, non-destructive video editing that learns your style",
@@ -9,9 +9,9 @@
     "pnpm": ">=9"
   },
   "scripts": {
-    "dev": "pnpm --filter @cutroom/desktop dev",
-    "dev:agent": "uv run --package cutroom-agent python -m cutroom_agent",
-    "dev:sidecar": "uv run --package cutroom-sidecar python -m cutroom_sidecar",
+    "dev": "pnpm --filter @chair/desktop dev",
+    "dev:agent": "uv run --package chair-agent python -m chair_agent",
+    "dev:sidecar": "uv run --package chair-sidecar python -m chair_sidecar",
     "lint:py": "uv run ruff check services adapters",
     "test:py": "uv run pytest",
     "build": "turbo run build",

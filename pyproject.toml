@@ -1,7 +1,7 @@
 [project]
-name = "cutroom-workspace"
+name = "chair-workspace"
 version = "0.1.0"
-description = "Cutroom Python workspace (agent, sidecar, editor adapters)"
+description = "Chair Python workspace (agent, sidecar, editor adapters)"
 requires-python = ">=3.12"
 dependencies = []
 

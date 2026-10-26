@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://cutroom.dev/schemas/changeset.schema.json",
-  "title": "CutroomChangeset",
+  "$id": "https://github.com/9kdr/DosChairs/schemas/changeset.schema.json",
+  "title": "ChairChangeset",
   "description": "A proposed diff against the timeline IR. Nothing is applied until the editor accepts items.",
   "type": "object",
   "additionalProperties": false,

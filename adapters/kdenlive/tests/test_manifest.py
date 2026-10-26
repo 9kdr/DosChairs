@@ -1,4 +1,4 @@
-from cutroom_kdenlive.manifest import MANIFEST
+from chair_kdenlive.manifest import MANIFEST
 
 
 def test_kdenlive_degrades_fusion() -> None:

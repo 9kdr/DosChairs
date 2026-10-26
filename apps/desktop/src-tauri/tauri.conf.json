@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Cutroom",
+  "productName": "Chair",
   "version": "0.1.0",
-  "identifier": "dev.cutroom.desktop",
+  "identifier": "dev.chair.desktop",
   "build": {
     "frontendDist": "../dist",
     "devUrl": "http://localhost:1420",
@@ -13,7 +13,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "Cutroom",
+        "title": "Chair",
         "width": 1440,
         "height": 900,
         "resizable": true

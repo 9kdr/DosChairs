@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://cutroom.dev/schemas/story-plan.schema.json",
+  "$id": "https://github.com/9kdr/DosChairs/schemas/story-plan.schema.json",
   "title": "StoryPlan",
   "description": "Beat sheet sitting above the timeline. Edits cite the beat they serve.",
   "type": "object",

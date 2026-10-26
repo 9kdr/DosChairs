@@ -1,4 +1,4 @@
-from cutroom_agent.models import TOOLS
+from chair_agent.models import TOOLS
 
 
 def test_tools_are_non_destructive() -> None:

@@ -1,13 +1,12 @@
 [package]
-name = "cutroom-adapters"
+name = "chair-ir"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "Host-side adapter traits. Editor IO lives in the Python adapters."
+description = "Editor-neutral timeline IR"
 publish = false
 
 [dependencies]
-cutroom-ir = { path = "../cutroom-ir" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }

@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
-import { emptyTimeline } from "@cutroom/timeline-ir";
-import type { Changeset, Timeline } from "@cutroom/timeline-ir";
-import { colors } from "@cutroom/ui";
+import { emptyTimeline } from "@chair/timeline-ir";
+import type { Changeset, Timeline } from "@chair/timeline-ir";
+import { colors } from "@chair/ui";
 
 const DEMO_CHANGESET: Changeset = {
   schemaVersion: "0.1.0",
@@ -46,7 +46,7 @@ export function App() {
   return (
     <div className="shell" style={{ background: colors.bg, color: colors.text }}>
       <header className="top">
-        <strong>Cutroom</strong>
+        <strong>Chair</strong>
         <span>{timeline.name}</span>
         <span>{pending} pending</span>
       </header>

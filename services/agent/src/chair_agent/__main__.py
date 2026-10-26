@@ -2,7 +2,7 @@ import json
 import os
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from cutroom_sidecar.jobs import JobKind
+from chair_agent.models import TOOLS
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -12,10 +12,9 @@ class Handler(BaseHTTPRequestHandler):
             return
         body = json.dumps(
             {
-                "service": "sidecar",
+                "service": "agent",
                 "ok": True,
-                "device": os.environ.get("CUTROOM_SIDECAR_DEVICE", "cpu"),
-                "jobs": [kind.value for kind in JobKind],
+                "tools": [tool.model_dump() for tool in TOOLS],
             }
         ).encode()
         self.send_response(200)
@@ -29,10 +28,10 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def main() -> None:
-    host = os.environ.get("CUTROOM_SIDECAR_HOST", "127.0.0.1")
-    port = int(os.environ.get("CUTROOM_SIDECAR_PORT", "8788"))
+    host = os.environ.get("CHAIR_AGENT_HOST", "127.0.0.1")
+    port = int(os.environ.get("CHAIR_AGENT_PORT", "8787"))
     server = ThreadingHTTPServer((host, port), Handler)
-    print(f"cutroom-sidecar listening on http://{host}:{port}")
+    print(f"chair-agent listening on http://{host}:{port}")
     server.serve_forever()
 
 

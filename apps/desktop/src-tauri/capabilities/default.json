@@ -1,6 +1,6 @@
 {
   "identifier": "default",
-  "description": "Default Cutroom window permissions",
+  "description": "Default Chair window permissions",
   "windows": ["main"],
   "permissions": ["core:default"]
 }

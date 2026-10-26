@@ -1,4 +1,4 @@
-# Cutroom local toolchain — https://mise.jdx.dev
+# Chair local toolchain — https://mise.jdx.dev
 # Install mise, then from repo root: `mise install && mise run bootstrap`
 
 min_version = "2024.11.0"
@@ -17,7 +17,7 @@ _.file = [".env"]
 # Keep Python packages project-scoped when using uv
 UV_PROJECT_ENVIRONMENT = "{{config_root}}/.venv"
 UV_LINK_MODE = "copy"
-CUTROOM_ROOT = "{{config_root}}"
+CHAIR_ROOT = "{{config_root}}"
 TURBO_TELEMETRY_DISABLED = "1"
 
 [settings]
@@ -28,7 +28,7 @@ experimental = true
 [tasks.bootstrap]
 description = "Install JS + Python workspace deps"
 depends = ["install-js", "install-py"]
-run = "echo 'Cutroom toolchain ready. Try: mise run dev'"
+run = "echo 'Chair toolchain ready. Try: mise run dev'"
 
 [tasks.install-js]
 description = "pnpm install at workspace root"
@@ -40,19 +40,19 @@ run = "uv sync --all-packages --group dev"
 
 [tasks.dev]
 description = "Start the web UI (Vite). Use dev:desktop for the Tauri shell."
-run = "pnpm --filter @cutroom/desktop dev"
+run = "pnpm --filter @chair/desktop dev"
 
 [tasks."dev:desktop"]
 description = "Start the Tauri shell. Needs WebKitGTK on Linux."
-run = "pnpm --filter @cutroom/desktop dev:desktop"
+run = "pnpm --filter @chair/desktop dev:desktop"
 
 [tasks."dev:agent"]
 description = "Start agent runtime"
-run = "uv run --package cutroom-agent python -m cutroom_agent"
+run = "uv run --package chair-agent python -m chair_agent"
 
 [tasks."dev:sidecar"]
 description = "Start model sidecar"
-run = "uv run --package cutroom-sidecar python -m cutroom_sidecar"
+run = "uv run --package chair-sidecar python -m chair_sidecar"
 
 [tasks."dev:stack"]
 description = "Print the two commands for agent and sidecar"
@@ -71,7 +71,7 @@ description = "JS, Python, and Rust tests (desktop crate excluded)"
 run = """
 pnpm test
 uv run pytest
-cargo test --workspace --exclude cutroom-desktop
+cargo test --workspace --exclude chair-desktop
 """
 
 [tasks.fmt]

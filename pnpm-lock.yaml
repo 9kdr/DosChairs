@@ -38,13 +38,13 @@ importers:
 
   apps/desktop:
     dependencies:
-      '@cutroom/shared':
+      '@chair/shared':
         specifier: workspace:*
         version: link:../../packages/shared
-      '@cutroom/timeline-ir':
+      '@chair/timeline-ir':
         specifier: workspace:*
         version: link:../../packages/timeline-ir
-      '@cutroom/ui':
+      '@chair/ui':
         specifier: workspace:*
         version: link:../../packages/ui
       react:
@@ -78,7 +78,7 @@ importers:
 
   packages/agent-protocol:
     dependencies:
-      '@cutroom/timeline-ir':
+      '@chair/timeline-ir':
         specifier: workspace:*
         version: link:../timeline-ir
     devDependencies:

@@ -1,5 +1,5 @@
 {
-  "name": "@cutroom/desktop",
+  "name": "@chair/desktop",
   "private": true,
   "version": "0.1.0",
   "type": "module",
@@ -13,9 +13,9 @@
     "tauri": "tauri"
   },
   "dependencies": {
-    "@cutroom/shared": "workspace:*",
-    "@cutroom/timeline-ir": "workspace:*",
-    "@cutroom/ui": "workspace:*",
+    "@chair/shared": "workspace:*",
+    "@chair/timeline-ir": "workspace:*",
+    "@chair/ui": "workspace:*",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   },

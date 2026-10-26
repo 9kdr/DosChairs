@@ -8,5 +8,5 @@ pub fn run() {
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![health])
         .run(tauri::generate_context!())
-        .expect("error while running Cutroom");
+        .expect("error while running Chair");
 }

@@ -1,4 +1,4 @@
-import type { Changeset, Timeline } from "@cutroom/timeline-ir";
+import type { Changeset, Timeline } from "@chair/timeline-ir";
 
 /** Roles. Wonder plans. Spark executes and verifies. */
 export type AgentRole = "planner" | "executor" | "verifier";

@@ -22,7 +22,7 @@ JSON Schemas in `schemas/` are the source of truth:
 - `style-profile.schema.json` — stats and named presets
 - `story-plan.schema.json` — beats the edits must cite
 
-TypeScript (`packages/timeline-ir`), Rust (`crates/cutroom-ir`), and Python manifests should follow those files. `pnpm codegen` refreshes the schema id list in `packages/shared`.
+TypeScript (`packages/timeline-ir`), Rust (`crates/chair-ir`), and Python manifests should follow those files. `pnpm codegen` refreshes the schema id list in `packages/shared`.
 
 ## Adapter rule
 

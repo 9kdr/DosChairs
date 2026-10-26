@@ -1,5 +1,5 @@
 {
-  "name": "@cutroom/agent-protocol",
+  "name": "@chair/agent-protocol",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -13,7 +13,7 @@
     "test": "vitest run --config ../../vitest.config.ts"
   },
   "dependencies": {
-    "@cutroom/timeline-ir": "workspace:*"
+    "@chair/timeline-ir": "workspace:*"
   },
   "devDependencies": {
     "typescript": "^5.7.2",

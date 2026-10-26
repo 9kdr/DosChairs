@@ -1,6 +1,6 @@
 # Contributing
 
-Cutroom is a monorepo so several people can merge without sharing a long-lived branch. `main` stays releasable. Feature work lands through pull requests.
+Chair is a monorepo so several people can merge without sharing a long-lived branch. `main` stays releasable. Feature work lands through pull requests.
 
 ## Branches
 
@@ -46,6 +46,6 @@ Do not commit API keys, Resolve scripts that embed tokens, footage, proxies, or 
 
 ## Adding a package
 
-- TypeScript: new folder under `packages/` or `apps/`, with a `package.json` named `@cutroom/...`, and a `typecheck` script. pnpm workspace globs already include those trees.
+- TypeScript: new folder under `packages/` or `apps/`, with a `package.json` named `@chair/...`, and a `typecheck` script. pnpm workspace globs already include those trees.
 - Python: new folder under `services/` or `adapters/`, listed in the root `[tool.uv.workspace]`, with a hatchling `pyproject.toml`.
 - Rust: new crate under `crates/`, added to the workspace `members` in the root `Cargo.toml`.

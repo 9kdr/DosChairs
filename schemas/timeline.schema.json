@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://cutroom.dev/schemas/timeline.schema.json",
-  "title": "CutroomTimeline",
-  "description": "Editor-neutral timeline. Adapters translate this to and from an NLE. Based on OTIO ideas plus Cutroom extensions.",
+  "$id": "https://github.com/9kdr/DosChairs/schemas/timeline.schema.json",
+  "title": "ChairTimeline",
+  "description": "Editor-neutral timeline. Adapters translate this to and from an NLE. Based on OTIO ideas plus Chair extensions.",
   "type": "object",
   "additionalProperties": false,
   "required": ["schemaVersion", "id", "name", "rate", "tracks", "markers"],

@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://cutroom.dev/schemas/capability-manifest.schema.json",
+  "$id": "https://github.com/9kdr/DosChairs/schemas/capability-manifest.schema.json",
   "title": "AdapterCapabilityManifest",
   "description": "What an editor adapter can round-trip. The agent plans against this and degrades unsupported features.",
   "type": "object",

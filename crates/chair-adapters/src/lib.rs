@@ -1,4 +1,4 @@
-use cutroom_ir::Timeline;
+use chair_ir::Timeline;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]

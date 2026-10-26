@@ -1,13 +1,13 @@
 [package]
-name = "cutroom-desktop"
+name = "chair-desktop"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "Cutroom desktop shell"
+description = "Chair desktop shell"
 publish = false
 
 [lib]
-name = "cutroom_desktop_lib"
+name = "chair_desktop_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
@@ -17,5 +17,5 @@ tauri-build = { version = "2", features = [] }
 tauri = { version = "2", features = [] }
 serde = { workspace = true }
 serde_json = { workspace = true }
-cutroom-core = { path = "../../../crates/cutroom-core" }
-cutroom-ir = { path = "../../../crates/cutroom-ir" }
+chair-core = { path = "../../../crates/chair-core" }
+chair-ir = { path = "../../../crates/chair-ir" }

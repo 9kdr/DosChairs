@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://cutroom.dev/schemas/style-profile.schema.json",
+  "$id": "https://github.com/9kdr/DosChairs/schemas/style-profile.schema.json",
   "title": "StyleProfile",
   "description": "Structured taste extracted from the editor's presets and past projects. No fine-tuning.",
   "type": "object",
