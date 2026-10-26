@@ -9,14 +9,31 @@ Spend the scarce models on a named problem. Do not open a second chat to keep th
 
 | When | Who | How to start it |
 | --- | --- | --- |
-| A short task: one file, one error, a label, a command check | Gemini 3.8 Flash, high, on Antigravity | `t3 thread start --project /var/home/mel/Arch/dc --provider antigravity --model gemini-3.8-flash-high` |
-| A real bug or a long change, and you can name the files and the check | DeepSeek v4.1 on OpenCode. This is the free daily pool. Use it on purpose. | `--provider opencode --model opencode/deepseek-v4.1-flash-free` |
-| Complex work: several packages, a design choice, or keeping the whole cut consistent | Grok 4.7 on Cursor. This is the workhorse. | `--provider cursor --model grok-4.7-medium` |
-| You cannot tell which of the above fits | Cursor Auto | `--provider cursor --model default` |
+| Cheap. One file, one error, a label, the score after implementation | Gemini 3.8 Flash, high, on Antigravity. This is the $20 plan you can spend often. | `--provider antigravity --model gemini-3.8-flash-high` |
+| Heavy, a screen. Layout or a window a person will look at | Gemini 4 Argon, high, on Cursor. Best enabled model on the WebDev board. | `--provider cursor --model gemini-4-argon-high` |
+| Heavy, the repo. Several packages, a design choice, the cut staying consistent | Grok 4.7, high, on Cursor. The $20 workhorse. Use medium when the change is wide but not hard. | `--provider cursor --model grok-4.7-high` |
+| One named screen or one named long bug, when the Cursor pool should be spared | DeepSeek v4.1 on OpenCode. Free, and the daily pool is small. | `--provider opencode --model opencode/deepseek-v4.1-flash-free` |
+| You cannot tell the field | Cursor Auto | `--provider cursor --model default` |
 
-Claude and Codex are switched off. Do not try to call them.
+Claude and Codex lead the public boards and stay switched off. Do not try to call them. Pick the best model that is actually enabled.
 
 If a slug is rejected, tell the user the exact error and stop. Do not cycle through other models.
+
+## Field, then weight
+
+Name the field before the model. A screen is UI. A score is review. One file is a short fix. Several packages is repo work.
+
+For UI, check the WebDev board (https://arena.ai/leaderboard/code/webdev). For a long agent task, check the Artificial Analysis coding-agent index (https://artificialanalysis.ai/agents/coding-agents). Use the ranking only among enabled models. The snapshot below is 23 Oct 2026. If the board has moved, follow the board.
+
+On that WebDev snapshot, enabled models sit in this order: Gemini 4 Argon high (about 1674), DeepSeek V4.1 Flash (about 1665), Grok 4.7 (about 1638), Gemini 3.8 Flash high (about 1585). On the coding-agent index, DeepSeek V4.1 Flash and Grok 4.7 are close, and Gemini 3.8 Flash high is well behind.
+
+Then pick the weight from the plan:
+
+- The Cursor and Antigravity plans are $20. OpenCode is the free daily pool.
+- Cheap weight is Gemini 3.8 Flash high. Use it for a short fix and for every score.
+- Heavy UI weight is Gemini 4 Argon high on Cursor. Spend DeepSeek on a screen only when that screen is named and the Cursor pool should be spared.
+- Heavy repo weight is Grok 4.7 high on Cursor. Spend DeepSeek on a long bug only when the bug is named.
+- A −1 bloat warning stays on the report. A −2 or −3 cleanup chat stays on Cursor Auto.
 
 ## What to ask
 
@@ -25,6 +42,7 @@ Give the child one issue and nothing else from the parent chat.
 - Gemini, for a small fix: the error or the file, and the sentence that means done. Ask for the patch, not a redesign.
 - Gemini, after an implementation: the rubric below. It scores and does not edit.
 - DeepSeek: the issue number, the files it may touch, the check to run, and what it must not change. Do not spend it on a ping or a status reply.
+- Gemini 4 Argon, for a screen: the screen a person will look at, the files it may touch, and what to leave alone.
 - Grok 4.7: the goal, the constraints, and what to leave alone. Ask it to decide and then do the work.
 - Auto: say you are unsure, give the issue, and ask it to pick the smallest next step.
 

@@ -17,10 +17,12 @@ Talk to the user in plain language. Say what you are doing, which issue it belon
 
 Read `.cursor/skills/chair-models/SKILL.md` before you hand work off.
 
-- Short work goes to Gemini 3.8 Flash high on Antigravity.
-- A named bug or a long change goes to DeepSeek v4.1 on OpenCode. The free pool is small, so do not spend it on pings.
-- Complex work stays with Grok 4.7 on Cursor.
-- If you cannot tell, use Cursor Auto.
+- Name the field, then the weight. The models skill has the order.
+- Cheap work and every score go to Gemini 3.8 Flash high on Antigravity.
+- A screen goes to Gemini 4 Argon high on Cursor. That is the best enabled model on the WebDev board.
+- Several packages stay with Grok 4.7 high on Cursor.
+- DeepSeek v4.1 on OpenCode is the free pool. Spend it on one named screen or one named long bug, not on a ping.
+- If you cannot tell the field, use Cursor Auto.
 
 A new job is a new T3 thread (`t3 thread start`, or `delegate_task` from inside a thread). The child gets that issue only. Two models run at the same time only when they are fixing different problems and will not edit the same files.
 
