@@ -1,0 +1,24 @@
+name: Bug
+description: Something in the pipeline produced the wrong edit or failed
+title: "[bug] "
+labels: ["type:bug"]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What should have happened
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: How to reproduce
+      description: Footage can stay local. Describe duration, brief, adapter, and the changeset item.
+    validations:
+      required: true

@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cutroom.dev/schemas/capability-manifest.schema.json",
+  "title": "AdapterCapabilityManifest",
+  "description": "What an editor adapter can round-trip. The agent plans against this and degrades unsupported features.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["adapter", "version", "capabilities"],
+  "properties": {
+    "adapter": { "enum": ["resolve", "kdenlive", "otio", "premiere"] },
+    "version": { "type": "string" },
+    "capabilities": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "keyframes",
+        "fusionComps",
+        "adjustmentLayers",
+        "markers",
+        "subtitles",
+        "nestedSequences",
+        "speedChanges"
+      ],
+      "properties": {
+        "keyframes": { "type": "boolean" },
+        "fusionComps": { "type": "boolean" },
+        "adjustmentLayers": { "type": "boolean" },
+        "markers": { "type": "boolean" },
+        "subtitles": { "type": "boolean" },
+        "nestedSequences": { "type": "boolean" },
+        "speedChanges": { "type": "boolean" }
+      }
+    },
+    "fallbacks": {
+      "type": "object",
+      "additionalProperties": { "type": "string" },
+      "description": "Feature name to degradation strategy, e.g. fusionComps -> prerendered overlay track."
+    }
+  }
+}

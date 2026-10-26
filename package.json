@@ -1,0 +1,43 @@
+{
+  "name": "cutroom",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Agentic, non-destructive video editing that learns your style",
+  "packageManager": "pnpm@9.15.0",
+  "engines": {
+    "node": ">=20",
+    "pnpm": ">=9"
+  },
+  "scripts": {
+    "dev": "pnpm --filter @cutroom/desktop dev",
+    "dev:agent": "uv run --package cutroom-agent python -m cutroom_agent",
+    "dev:sidecar": "uv run --package cutroom-sidecar python -m cutroom_sidecar",
+    "lint:py": "uv run ruff check services adapters",
+    "test:py": "uv run pytest",
+    "build": "turbo run build",
+    "typecheck": "turbo run typecheck",
+    "lint": "turbo run lint",
+    "test": "turbo run test",
+    "test:schemas": "node scripts/validate-schemas.mjs",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "codegen": "node tools/codegen/generate-from-schemas.mjs",
+    "prepare": "husky || true"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "ajv": "^8.17.1",
+    "ajv-formats": "^3.0.1",
+    "husky": "^9.1.7",
+    "lint-staged": "^15.2.10",
+    "prettier": "^3.4.2",
+    "turbo": "^2.3.3",
+    "typescript": "^5.7.2",
+    "vitest": "^3.0.0"
+  },
+  "lint-staged": {
+    "*.{ts,tsx,js,mjs,cjs,json,md,yml,yaml,css}": [
+      "prettier --write"
+    ]
+  }
+}

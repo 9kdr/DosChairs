@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cutroom.dev/schemas/story-plan.schema.json",
+  "title": "StoryPlan",
+  "description": "Beat sheet sitting above the timeline. Edits cite the beat they serve.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "id", "brief", "beats", "status"],
+  "properties": {
+    "schemaVersion": { "const": "0.1.0" },
+    "id": { "type": "string" },
+    "brief": { "type": "string" },
+    "targetDurationSec": { "type": "number" },
+    "status": { "enum": ["draft", "approved"] },
+    "beats": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "role", "intent", "candidateClipIds"],
+        "properties": {
+          "id": { "type": "string" },
+          "role": { "enum": ["hook", "setup", "turn", "payoff", "outro"] },
+          "intent": { "type": "string" },
+          "pacing": { "enum": ["slow", "medium", "fast"] },
+          "tone": { "type": "string" },
+          "candidateClipIds": {
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        }
+      }
+    }
+  }
+}

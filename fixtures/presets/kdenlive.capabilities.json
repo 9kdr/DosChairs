@@ -1,0 +1,16 @@
+{
+  "adapter": "kdenlive",
+  "version": "0.1.0",
+  "capabilities": {
+    "keyframes": true,
+    "fusionComps": false,
+    "adjustmentLayers": false,
+    "markers": true,
+    "subtitles": true,
+    "nestedSequences": true,
+    "speedChanges": true
+  },
+  "fallbacks": {
+    "fusionComps": "prerendered overlay track"
+  }
+}

@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cutroom.dev/schemas/style-profile.schema.json",
+  "title": "StyleProfile",
+  "description": "Structured taste extracted from the editor's presets and past projects. No fine-tuning.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "id", "name", "stats", "presets", "exemplars"],
+  "properties": {
+    "schemaVersion": { "const": "0.1.0" },
+    "id": { "type": "string" },
+    "name": { "type": "string" },
+    "stats": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "avgShotLengthSec": { "type": "number" },
+        "jlCutFrequency": { "type": "number" },
+        "punchInFrequency": { "type": "number" },
+        "targetLoudnessLufs": { "type": "number" },
+        "duckAmountDb": { "type": "number" },
+        "transitionVocabulary": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "presets": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "kind"],
+        "properties": {
+          "name": { "type": "string" },
+          "kind": { "enum": ["grade", "title", "transition", "caption", "motion"] },
+          "sourcePath": { "type": "string" }
+        }
+      }
+    },
+    "exemplars": {
+      "type": "array",
+      "maxItems": 5,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "summary"],
+        "properties": {
+          "id": { "type": "string" },
+          "summary": { "type": "string" },
+          "snippetRef": { "type": "string" }
+        }
+      }
+    }
+  }
+}

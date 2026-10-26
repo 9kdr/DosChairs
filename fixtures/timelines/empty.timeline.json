@@ -1,0 +1,12 @@
+{
+  "schemaVersion": "0.1.0",
+  "id": "tl_empty",
+  "name": "Empty timeline",
+  "rate": { "num": 24, "den": 1 },
+  "tracks": [
+    { "id": "v1", "kind": "video", "name": "V1", "clips": [] },
+    { "id": "a1", "kind": "audio", "name": "A1", "clips": [] },
+    { "id": "s1", "kind": "subtitle", "name": "Captions", "clips": [] }
+  ],
+  "markers": []
+}

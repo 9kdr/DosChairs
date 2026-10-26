@@ -1,0 +1,14 @@
+# Default owner until area owners are added.
+# Add a GitHub user or team per path. Last matching line wins.
+
+* @9kdr
+
+/apps/desktop/ @9kdr
+/packages/ @9kdr
+/crates/ @9kdr
+/services/agent/ @9kdr
+/services/sidecar/ @9kdr
+/adapters/ @9kdr
+/schemas/ @9kdr
+/docs/ @9kdr
+/.github/ @9kdr

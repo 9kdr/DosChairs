@@ -1,0 +1,115 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cutroom.dev/schemas/timeline.schema.json",
+  "title": "CutroomTimeline",
+  "description": "Editor-neutral timeline. Adapters translate this to and from an NLE. Based on OTIO ideas plus Cutroom extensions.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "id", "name", "rate", "tracks", "markers"],
+  "properties": {
+    "schemaVersion": { "const": "0.1.0" },
+    "id": { "type": "string", "minLength": 1 },
+    "name": { "type": "string" },
+    "rate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["num", "den"],
+      "properties": {
+        "num": { "type": "integer", "minimum": 1 },
+        "den": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "globalStart": { "$ref": "#/$defs/rationalTime" },
+    "tracks": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/track" }
+    },
+    "markers": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/marker" }
+    },
+    "storyPlanId": { "type": "string" },
+    "styleProfileId": { "type": "string" }
+  },
+  "$defs": {
+    "rationalTime": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["value", "rate"],
+      "properties": {
+        "value": { "type": "number" },
+        "rate": { "type": "number", "exclusiveMinimum": 0 }
+      }
+    },
+    "timeRange": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["start", "duration"],
+      "properties": {
+        "start": { "$ref": "#/$defs/rationalTime" },
+        "duration": { "$ref": "#/$defs/rationalTime" }
+      }
+    },
+    "track": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "name", "clips"],
+      "properties": {
+        "id": { "type": "string" },
+        "kind": { "enum": ["video", "audio", "subtitle", "effect"] },
+        "name": { "type": "string" },
+        "clips": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/clip" }
+        }
+      }
+    },
+    "clip": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "sourceRange", "timelineRange"],
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "mediaRef": { "type": "string" },
+        "sourceRange": { "$ref": "#/$defs/timeRange" },
+        "timelineRange": { "$ref": "#/$defs/timeRange" },
+        "effects": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/effect" }
+        },
+        "metadata": { "type": "object" }
+      }
+    },
+    "effect": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "presetName", "params"],
+      "properties": {
+        "id": { "type": "string" },
+        "presetName": {
+          "type": "string",
+          "description": "Editor preset name. The agent must reference presets by name rather than inventing grades."
+        },
+        "params": { "type": "object" },
+        "enabled": { "type": "boolean" }
+      }
+    },
+    "marker": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "time", "kind"],
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "time": { "$ref": "#/$defs/rationalTime" },
+        "duration": { "$ref": "#/$defs/rationalTime" },
+        "kind": {
+          "enum": ["beat", "hook", "fix", "broll", "user", "range"]
+        },
+        "beatId": { "type": "string" },
+        "comment": { "type": "string" }
+      }
+    }
+  }
+}

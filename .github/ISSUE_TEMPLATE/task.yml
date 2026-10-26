@@ -1,0 +1,42 @@
+name: Task
+description: A slice of the MVP that can land on its own branch
+title: "[area] "
+labels: ["type:task"]
+body:
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - desktop
+        - ir
+        - agent
+        - sidecar
+        - adapters
+        - docs
+    validations:
+      required: true
+  - type: dropdown
+    id: milestone
+    attributes:
+      label: When
+      options:
+        - M0 Foundation
+        - M1 Agent loop
+        - M2 Story and style
+        - M3 Demo polish
+        - Stretch
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Done when
+      description: Observable result, not a list of files.
+    validations:
+      required: true
+  - type: textarea
+    id: notes
+    attributes:
+      label: Notes
+      description: Constraints, fallbacks, and what to leave for a later issue.

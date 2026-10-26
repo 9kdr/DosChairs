@@ -1,0 +1,12 @@
+[package]
+name = "cutroom-ir"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Editor-neutral timeline IR"
+publish = false
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }

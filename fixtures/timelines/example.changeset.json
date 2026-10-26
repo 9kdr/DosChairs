@@ -1,0 +1,17 @@
+{
+  "schemaVersion": "0.1.0",
+  "id": "cs_example",
+  "baseRevision": "rev_0",
+  "summary": "Tighten the hook",
+  "items": [
+    {
+      "id": "item_1",
+      "op": "trim",
+      "targetId": "clip_1",
+      "beatId": "beat_hook",
+      "rationale": "Remove the pre-roll before the first sentence.",
+      "patch": { "trimStartFrames": 18 },
+      "status": "pending"
+    }
+  ]
+}

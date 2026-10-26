@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cutroom.dev/schemas/changeset.schema.json",
+  "title": "CutroomChangeset",
+  "description": "A proposed diff against the timeline IR. Nothing is applied until the editor accepts items.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "id", "baseRevision", "items"],
+  "properties": {
+    "schemaVersion": { "const": "0.1.0" },
+    "id": { "type": "string" },
+    "baseRevision": { "type": "string" },
+    "summary": { "type": "string" },
+    "items": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/item" }
+    }
+  },
+  "$defs": {
+    "item": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "op", "rationale", "status"],
+      "properties": {
+        "id": { "type": "string" },
+        "op": {
+          "enum": [
+            "add_clip",
+            "remove_clip",
+            "trim",
+            "ripple",
+            "move",
+            "set_speed",
+            "add_transition",
+            "add_marker",
+            "add_effect",
+            "add_track",
+            "set_gain",
+            "mute_clip"
+          ]
+        },
+        "targetId": { "type": "string" },
+        "beatId": { "type": "string" },
+        "rationale": { "type": "string" },
+        "patch": { "type": "object" },
+        "status": { "enum": ["pending", "accepted", "rejected"] }
+      }
+    }
+  }
+}

@@ -1,0 +1,21 @@
+[project]
+name = "cutroom-sidecar"
+version = "0.1.0"
+description = "GPU sidecar for SAM 3, SAM 3D, SAM Audio, and ffmpeg proxies"
+requires-python = ">=3.12"
+dependencies = [
+  "pydantic>=2.10",
+]
+
+[project.scripts]
+cutroom-sidecar = "cutroom_sidecar.__main__:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/cutroom_sidecar"]
+
+[tool.hatch.build.targets.wheel.sources]
+"src" = ""

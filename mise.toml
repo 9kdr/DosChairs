@@ -1,0 +1,88 @@
+# Cutroom local toolchain — https://mise.jdx.dev
+# Install mise, then from repo root: `mise install && mise run bootstrap`
+
+min_version = "2024.11.0"
+
+[tools]
+node = "22"
+python = "3.12"
+pnpm = "9.15.0"
+# Rust via rustup backend (needed for Tauri / crates)
+rust = "1.91"
+# Fast Python deps for agent + sidecar
+uv = "0.5.14"
+
+[env]
+_.file = [".env"]
+# Keep Python packages project-scoped when using uv
+UV_PROJECT_ENVIRONMENT = "{{config_root}}/.venv"
+UV_LINK_MODE = "copy"
+CUTROOM_ROOT = "{{config_root}}"
+TURBO_TELEMETRY_DISABLED = "1"
+
+[settings]
+experimental = true
+
+# ── Tasks ──────────────────────────────────────────────────────────────────
+
+[tasks.bootstrap]
+description = "Install JS + Python workspace deps"
+depends = ["install-js", "install-py"]
+run = "echo 'Cutroom toolchain ready. Try: mise run dev'"
+
+[tasks.install-js]
+description = "pnpm install at workspace root"
+run = "pnpm install"
+
+[tasks.install-py]
+description = "Sync the uv workspace"
+run = "uv sync --all-packages --group dev"
+
+[tasks.dev]
+description = "Start the web UI (Vite). Use dev:desktop for the Tauri shell."
+run = "pnpm --filter @cutroom/desktop dev"
+
+[tasks."dev:desktop"]
+description = "Start the Tauri shell. Needs WebKitGTK on Linux."
+run = "pnpm --filter @cutroom/desktop dev:desktop"
+
+[tasks."dev:agent"]
+description = "Start agent runtime"
+run = "uv run --package cutroom-agent python -m cutroom_agent"
+
+[tasks."dev:sidecar"]
+description = "Start model sidecar"
+run = "uv run --package cutroom-sidecar python -m cutroom_sidecar"
+
+[tasks."dev:stack"]
+description = "Print the two commands for agent and sidecar"
+run = "echo 'Run in two shells: mise run dev:agent  and  mise run dev:sidecar'"
+
+[tasks.check]
+description = "Typecheck, schema check, Python lint"
+run = """
+pnpm typecheck
+pnpm test:schemas
+uv run ruff check services adapters
+"""
+
+[tasks.test]
+description = "JS, Python, and Rust tests (desktop crate excluded)"
+run = """
+pnpm test
+uv run pytest
+cargo test --workspace --exclude cutroom-desktop
+"""
+
+[tasks.fmt]
+description = "Format JS/TS/JSON/MD"
+run = "pnpm format"
+
+[tasks.ci]
+description = "Local CI mirror"
+depends = ["check", "test"]
+run = "echo 'ci ok'"
+
+[tasks.codegen]
+description = "Regenerate types from JSON schemas"
+run = "pnpm codegen"

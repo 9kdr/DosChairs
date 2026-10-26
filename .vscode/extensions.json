@@ -1,0 +1,10 @@
+{
+  "recommendations": [
+    "jdx.mise",
+    "rust-lang.rust-analyzer",
+    "charliermarsh.ruff",
+    "dbaeumer.vscode-eslint",
+    "esbenp.prettier-vscode",
+    "tamasfe.even-better-toml"
+  ]
+}

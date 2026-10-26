@@ -1,0 +1,86 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+.python-version
+*.egg-info/
+.ruff_cache/
+.mypy_cache/
+.pytest_cache/
+
+# mise local overrides (keep mise.toml committed)
+mise.local.toml
+.mise.local.toml
+
+# Build
+dist/
+build/
+out/
+target/
+*.tsbuildinfo
+.turbo/
+.next/
+.svelte-kit/
+
+# Tauri / native
+apps/desktop/src-tauri/target/
+*.dmg
+*.AppImage
+*.deb
+*.rpm
+*.msi
+*.exe
+
+# Env & secrets
+.env
+.env.*
+!.env.example
+!.env.*.example
+*.pem
+*.key
+credentials.json
+secrets/
+
+# IDE / OS
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+.DS_Store
+Thumbs.db
+*.swp
+*~
+
+# Media & large artifacts (keep fixtures metadata only)
+*.mp4
+*.mov
+*.mkv
+*.avi
+*.wav
+*.aiff
+*.flac
+*.proxy
+/cache/
+/tmp/
+/data/raw/
+/data/proxies/
+/data/renders/
+
+# Generated
+packages/*/dist/
+services/*/dist/
+coverage/
+*.log
+.nx/
+
+# Model weights (never commit)
+**/weights/
+**/*.safetensors
+**/*.pt
+**/*.onnx
+**/*.bin
+!schemas/**

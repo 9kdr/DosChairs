@@ -1,0 +1,12 @@
+{
+  "name": "@cutroom/codegen",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "build": "node generate-from-schemas.mjs",
+    "typecheck": "node --check generate-from-schemas.mjs",
+    "lint": "node --check generate-from-schemas.mjs",
+    "test": "node --test"
+  }
+}

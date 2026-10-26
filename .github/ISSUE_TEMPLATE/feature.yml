@@ -1,0 +1,41 @@
+name: Feature
+description: Product work toward the rough-cut MVP
+title: "feat: "
+labels: ["type:feature"]
+body:
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - desktop
+        - ir
+        - agent
+        - adapters
+        - sidecar
+        - ui
+        - docs
+    validations:
+      required: true
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Priority
+      options:
+        - p0-mvp
+        - p1-should
+        - p2-stretch
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Outcome
+      description: What a reviewer can see when this is done.
+    validations:
+      required: true
+  - type: textarea
+    id: notes
+    attributes:
+      label: Notes
+      description: Contracts, adapters, or models this depends on.
