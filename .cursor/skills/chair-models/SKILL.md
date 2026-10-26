@@ -10,12 +10,12 @@ Spend the scarce models on a named problem. Do not open a second chat to keep th
 | When | Who | How to start it |
 | --- | --- | --- |
 | Cheap. One file, one error, a label, the score after implementation | Gemini 3.8 Flash, high, on Antigravity. This is the $20 plan you can spend often. | `--provider antigravity --model gemini-3.8-flash-high` |
-| Heavy, a screen. Layout or a window a person will look at | Gemini 4 Argon, high, on Cursor. Best enabled model on the WebDev board. | `--provider cursor --model gemini-4-argon-high` |
-| Heavy, the repo. Several packages, a design choice, the cut staying consistent | Grok 4.7, high, on Cursor. The $20 workhorse. Use medium when the change is wide but not hard. | `--provider cursor --model grok-4.7-high` |
-| One named screen or one named long bug, when the Cursor pool should be spared | DeepSeek v4.1 on OpenCode. Free, and the daily pool is small. | `--provider opencode --model opencode/deepseek-v4.1-flash-free` |
+| Heavy, a screen. The window a person will look at is the whole task | DeepSeek v4.1 on OpenCode. Best UI model we can call. The free daily pool is small, so the screen has to be named. | `--provider opencode --model opencode/deepseek-v4.1-flash-free` |
+| A named long bug, when the Cursor pool should be spared | DeepSeek v4.1 on OpenCode, same slug as a screen. One bug per day is the idea. | `--provider opencode --model opencode/deepseek-v4.1-flash-free` |
+| A screen when DeepSeek should be saved, or several packages | Grok 4.7, high, on Cursor. The $20 workhorse. Use medium when the change is wide but not hard. | `--provider cursor --model grok-4.7-high` |
 | You cannot tell the field | Cursor Auto | `--provider cursor --model default` |
 
-Claude and Codex lead the public boards and stay switched off. Do not try to call them. Pick the best model that is actually enabled.
+Claude and Codex lead the public boards and stay switched off. Gemini 4 Argon is not on this account. Do not call any of them. Pick the best model that is actually enabled.
 
 If a slug is rejected, tell the user the exact error and stop. Do not cycle through other models.
 
@@ -25,13 +25,13 @@ Name the field before the model. A screen is UI. A score is review. One file is 
 
 For UI, check the WebDev board (https://arena.ai/leaderboard/code/webdev). For a long agent task, check the Artificial Analysis coding-agent index (https://artificialanalysis.ai/agents/coding-agents). Use the ranking only among enabled models. The snapshot below is 23 Oct 2026. If the board has moved, follow the board.
 
-On that WebDev snapshot, enabled models sit in this order: Gemini 4 Argon high (about 1674), DeepSeek V4.1 Flash (about 1665), Grok 4.7 (about 1638), Gemini 3.8 Flash high (about 1585). On the coding-agent index, DeepSeek V4.1 Flash and Grok 4.7 are close, and Gemini 3.8 Flash high is well behind.
+On that WebDev snapshot, the models we can call sit in this order: DeepSeek V4.1 Flash (about 1665), Grok 4.7 (about 1638), Gemini 3.8 Flash high (about 1585). On the coding-agent index, DeepSeek V4.1 Flash and Grok 4.7 are close, and Gemini 3.8 Flash high is well behind.
 
 Then pick the weight from the plan:
 
 - The Cursor and Antigravity plans are $20. OpenCode is the free daily pool.
 - Cheap weight is Gemini 3.8 Flash high. Use it for a short fix and for every score.
-- Heavy UI weight is Gemini 4 Argon high on Cursor. Spend DeepSeek on a screen only when that screen is named and the Cursor pool should be spared.
+- Heavy UI weight is DeepSeek v4.1, and only when that screen is the whole task. Otherwise the screen goes to Grok 4.7 high.
 - Heavy repo weight is Grok 4.7 high on Cursor. Spend DeepSeek on a long bug only when the bug is named.
 - A −1 bloat warning stays on the report. A −2 or −3 cleanup chat stays on Cursor Auto.
 
@@ -41,9 +41,8 @@ Give the child one issue and nothing else from the parent chat.
 
 - Gemini, for a small fix: the error or the file, and the sentence that means done. Ask for the patch, not a redesign.
 - Gemini, after an implementation: the rubric below. It scores and does not edit.
-- DeepSeek: the issue number, the files it may touch, the check to run, and what it must not change. Do not spend it on a ping or a status reply.
-- Gemini 4 Argon, for a screen: the screen a person will look at, the files it may touch, and what to leave alone.
-- Grok 4.7: the goal, the constraints, and what to leave alone. Ask it to decide and then do the work.
+- DeepSeek, for a screen or a named bug: the issue number, the files it may touch, the check to run, and what it must not change. Do not spend it on a ping or a status reply.
+- Grok 4.7: the goal, the constraints, and what to leave alone. Ask it to decide and then do the work. For a screen, name the window a person will look at.
 - Auto: say you are unsure, give the issue, and ask it to pick the smallest next step.
 
 A mid-task review is one question the builder cannot settle, for example "Does this pending edit change the timeline? Point at the line." The reviewer does not start a second branch.

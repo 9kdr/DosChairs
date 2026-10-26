@@ -19,7 +19,7 @@ Read `.cursor/skills/chair-models/SKILL.md` before you hand work off.
 
 - Name the field, then the weight. The models skill has the order.
 - Cheap work and every score go to Gemini 3.8 Flash high on Antigravity.
-- A screen goes to Gemini 4 Argon high on Cursor. That is the best enabled model on the WebDev board.
+- A screen that is the whole task goes to DeepSeek v4.1 on OpenCode. That is the best UI model we can call. Any other screen goes to Grok 4.7 high on Cursor. Gemini 4 Argon is not available.
 - Several packages stay with Grok 4.7 high on Cursor.
 - DeepSeek v4.1 on OpenCode is the free pool. Spend it on one named screen or one named long bug, not on a ping.
 - If you cannot tell the field, use Cursor Auto.
