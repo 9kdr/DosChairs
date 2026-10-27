@@ -5,7 +5,6 @@ import {
   CaptionsIcon,
   ChevronDownIcon,
   ClapperboardIcon,
-  FilmIcon,
   PanelLeftIcon,
   PlusIcon,
   ScissorsIcon,
@@ -63,7 +62,6 @@ import {
 type ChatPanelProps = {
   chat: ChatState;
   dispatch: (action: ChatAction) => void;
-  cutName: string;
   threadsOpen: boolean;
   onOpenThreads: () => void;
 };
@@ -101,7 +99,6 @@ function draftValue(text: string): ComposerValue {
 export function ChatPanel({
   chat,
   dispatch,
-  cutName,
   threadsOpen,
   onOpenThreads,
 }: ChatPanelProps) {
@@ -198,7 +195,6 @@ export function ChatPanel({
                 <ChairComposer
                   ref={composerRef}
                   thread={thread}
-                  cutName={cutName}
                   pending={pending}
                   dispatch={dispatch}
                 />
@@ -241,7 +237,6 @@ export function ChatPanel({
                 <ChairComposer
                   ref={composerRef}
                   thread={thread}
-                  cutName={cutName}
                   pending={pending}
                   dispatch={dispatch}
                 />
@@ -257,13 +252,11 @@ export function ChatPanel({
 const ChairComposer = ({
   ref,
   thread,
-  cutName,
   pending,
   dispatch,
 }: {
   ref: React.RefObject<HTMLFormElement | null>;
   thread: Thread;
-  cutName: string;
   pending: boolean;
   dispatch: (action: ChatAction) => void;
 }) => {
@@ -284,11 +277,6 @@ const ChairComposer = ({
         }}
       >
         <div className="flex items-center gap-1 px-1.5 pt-0.5">
-          <span className="inline-flex h-6 max-w-[70%] items-center gap-1.5 rounded-md px-1.5 text-xs text-muted-foreground">
-            <FilmIcon className="size-3.5 shrink-0 opacity-70" />
-            <span className="truncate">{cutName}</span>
-          </span>
-          <span className="text-xs text-subtle/60">/</span>
           <span className="inline-flex h-6 items-center rounded-md px-1.5 text-xs text-subtle">
             local
           </span>

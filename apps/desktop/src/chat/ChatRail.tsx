@@ -1,7 +1,6 @@
 import {
   ClapperboardIcon,
   MessageSquareIcon,
-  PanelRightIcon,
   SettingsIcon,
 } from "lucide-react";
 import type { ReactNode } from "react";
@@ -22,19 +21,13 @@ import { cn } from "@/lib/utils";
 
 type ChatRailProps = {
   threadsOpen: boolean;
-  cutOpen: boolean;
-  pending: number;
   onToggleThreads: () => void;
-  onToggleCut: () => void;
   onNewChat: () => void;
 };
 
 export function ChatRail({
   threadsOpen,
-  cutOpen,
-  pending,
   onToggleThreads,
-  onToggleCut,
   onNewChat,
 }: ChatRailProps) {
   return (
@@ -68,16 +61,6 @@ export function ChatRail({
         <MessageSquareIcon />
       </RailButton>
 
-      <RailButton
-        label={cutOpen ? "Hide cut" : "Show cut"}
-        active={cutOpen}
-        onClick={onToggleCut}
-        badge={pending}
-        className="hidden lg:flex"
-      >
-        <PanelRightIcon />
-      </RailButton>
-
       <div className="mt-auto" />
 
       <Menu>
@@ -99,9 +82,6 @@ export function ChatRail({
           <MenuItem onClick={onToggleThreads}>
             {threadsOpen ? "Hide threads" : "Show threads"}
           </MenuItem>
-          <MenuItem onClick={onToggleCut}>
-            {cutOpen ? "Hide cut" : "Show cut"}
-          </MenuItem>
           <MenuSeparator />
           <MenuItem disabled>Settings</MenuItem>
         </MenuPopup>
@@ -113,14 +93,12 @@ export function ChatRail({
 function RailButton({
   label,
   active,
-  badge,
   className,
   children,
   onClick,
 }: {
   label: string;
   active: boolean;
-  badge?: number;
   className?: string;
   children: ReactNode;
   onClick: () => void;
@@ -145,12 +123,6 @@ function RailButton({
         }
       >
         {children}
-        {badge && badge > 0 ? (
-          <span
-            aria-hidden="true"
-            className="pointer-events-none absolute right-1.5 bottom-1.5 size-1.5 rounded-full bg-warning"
-          />
-        ) : null}
       </TooltipTrigger>
       <TooltipPopup side="right">{label}</TooltipPopup>
     </Tooltip>

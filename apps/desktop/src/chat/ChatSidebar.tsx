@@ -2,9 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import {
   ChevronsUpDownIcon,
   EllipsisIcon,
-  FilmIcon,
   PanelLeftIcon,
-  PanelRightIcon,
   SearchIcon,
   SquarePenIcon,
   XIcon,
@@ -15,7 +13,6 @@ import {
   Menu,
   MenuItem,
   MenuPopup,
-  MenuSeparator,
   MenuTrigger,
 } from "@/components/ui/menu";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -25,11 +22,7 @@ import type { ChatAction, ChatState } from "./state";
 type ChatSidebarProps = {
   chat: ChatState;
   dispatch: (action: ChatAction) => void;
-  cutName: string;
-  cutOpen: boolean;
-  pending: number;
   onHide: () => void;
-  onToggleCut: () => void;
   onNavigate?: () => void;
   className?: string;
 };
@@ -37,11 +30,7 @@ type ChatSidebarProps = {
 export function ChatSidebar({
   chat,
   dispatch,
-  cutName,
-  cutOpen,
-  pending,
   onHide,
-  onToggleCut,
   onNavigate,
   className,
 }: ChatSidebarProps) {
@@ -94,10 +83,6 @@ export function ChatSidebar({
           <MenuPopup align="start" className="w-52">
             <MenuItem onClick={() => dispatch({ type: "new" })}>New chat</MenuItem>
             <MenuItem onClick={onHide}>Hide threads</MenuItem>
-            <MenuSeparator />
-            <MenuItem onClick={onToggleCut}>
-              {cutOpen ? "Hide cut" : "Show cut"}
-            </MenuItem>
           </MenuPopup>
         </Menu>
         <Button
@@ -156,7 +141,7 @@ export function ChatSidebar({
       </div>
 
       <ScrollArea className="mt-4 min-h-0 flex-1">
-        <div className="px-2">
+        <div className="px-2 pb-4">
           <p className="px-2 pb-1 text-xs font-medium text-subtle">Recents</p>
           <ul className="space-y-px" aria-label="Threads">
             {visible.map((thread) => (
@@ -230,38 +215,7 @@ export function ChatSidebar({
             </p>
           ) : null}
         </div>
-
-        <div className="mt-5 px-2 pb-4">
-          <p className="px-2 pb-1 text-xs font-medium text-subtle">Projects</p>
-          <button
-            type="button"
-            className="flex h-10 w-full items-center gap-2 rounded-lg px-2 text-left text-sm text-muted-foreground transition-colors duration-[160ms] ease-out hover:bg-foreground/[0.045] hover:text-foreground"
-          >
-            <FilmIcon className="size-4 shrink-0 opacity-70" />
-            <span className="truncate">{cutName}</span>
-          </button>
-        </div>
       </ScrollArea>
-
-      <div className="shrink-0 border-t border-line p-2">
-        <button
-          type="button"
-          className="hidden h-10 w-full items-center gap-2 rounded-lg px-2 text-sm text-muted-foreground transition-colors duration-[160ms] ease-out hover:bg-foreground/[0.045] hover:text-foreground lg:flex"
-          onClick={onToggleCut}
-        >
-          <span
-            aria-hidden="true"
-            className={cn(
-              "size-1.5 shrink-0 rounded-full",
-              pending > 0 ? "bg-warning" : "bg-success",
-            )}
-          />
-          <span className="flex-1 text-left">
-            {pending > 0 ? `${pending} pending` : "No pending changes"}
-          </span>
-          <PanelRightIcon className="size-3.5 opacity-60" />
-        </button>
-      </div>
     </aside>
   );
 }
