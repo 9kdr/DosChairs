@@ -1,5 +1,6 @@
 import {
   ClapperboardIcon,
+  HomeIcon,
   MessageSquareIcon,
   SettingsIcon,
 } from "lucide-react";
@@ -21,20 +22,44 @@ import { cn } from "@/lib/utils";
 
 type ChatRailProps = {
   threadsOpen: boolean;
+  projectName?: string;
   onToggleThreads: () => void;
   onNewChat: () => void;
+  onHome: () => void;
 };
 
 export function ChatRail({
   threadsOpen,
+  projectName,
   onToggleThreads,
   onNewChat,
+  onHome,
 }: ChatRailProps) {
   return (
     <nav
       aria-label="Workspace"
       className="hidden w-12 shrink-0 flex-col items-center gap-1 border-r border-edge bg-sidebar py-2 md:flex"
     >
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <Button
+              type="button"
+              size="icon-sm"
+              variant="ghost"
+              aria-label="Home"
+              onClick={onHome}
+              className="mb-1 rounded-lg text-muted-foreground hover:text-foreground"
+            />
+          }
+        >
+          <HomeIcon />
+        </TooltipTrigger>
+        <TooltipPopup side="right">
+          {projectName ? `Home · ${projectName}` : "Home"}
+        </TooltipPopup>
+      </Tooltip>
+
       <Tooltip>
         <TooltipTrigger
           render={
@@ -78,6 +103,7 @@ export function ChatRail({
           <SettingsIcon />
         </MenuTrigger>
         <MenuPopup side="right" align="end" className="w-48">
+          <MenuItem onClick={onHome}>Home</MenuItem>
           <MenuItem onClick={onNewChat}>New chat</MenuItem>
           <MenuItem onClick={onToggleThreads}>
             {threadsOpen ? "Hide threads" : "Show threads"}

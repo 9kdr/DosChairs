@@ -98,6 +98,16 @@ html {
   font-size: 20px;
 }
 
+@layer base {
+  *,
+  ::after,
+  ::before,
+  ::backdrop,
+  ::file-selector-button {
+    border-color: var(--color-border, var(--border));
+  }
+}
+
 html,
 body,
 #root {

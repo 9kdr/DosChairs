@@ -8,14 +8,17 @@ import "lenis/dist/lenis.css";
 
 /**
  * Lenis smooth scrolling for one scroll container, the way dithercn.dev does
- * it: `lerp: 0.1`, automatic frames, nested scroll areas allowed, skipped
- * under reduced motion, destroyed on unmount. The `target` is a scroll
- * viewport, e.g. the chat conversation's.
+ * it: automatic frames, nested scroll areas allowed, skipped under reduced
+ * motion, destroyed on unmount. Default `lerp` is 0.1 (chat); lower values
+ * glide longer. The `target` is a scroll viewport.
  */
 export function SmoothScrollTarget({
   target,
+  lerp = 0.1,
 }: {
   target: RefObject<HTMLElement | null>;
+  /** 0–1 catch-up per frame. Lower = more glide. */
+  lerp?: number;
 }) {
   useEffect(() => {
     const wrapper = target.current;
@@ -28,10 +31,10 @@ export function SmoothScrollTarget({
       content: wrapper.firstElementChild ?? undefined,
       allowNestedScroll: true,
       autoRaf: true,
-      lerp: 0.1,
+      lerp,
     });
     return () => lenis.destroy();
-  }, [target]);
+  }, [lerp, target]);
 
   return null;
 }
