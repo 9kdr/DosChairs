@@ -40,7 +40,7 @@ export function ProjectCard({ project, emphasized = false }: ProjectCardProps) {
           className={cn(
             "absolute inset-x-0 bottom-0 flex flex-col gap-0.5 px-3 py-2.5",
             "bg-gradient-to-t from-black/70 to-transparent",
-            "opacity-0 transition-opacity duration-200",
+            "opacity-0 transition-opacity duration-[650ms] ease-[cubic-bezier(0.22,1,0.36,1)]",
             emphasized && "opacity-100",
           )}
         >
@@ -62,7 +62,7 @@ export function ProjectCard({ project, emphasized = false }: ProjectCardProps) {
         </p>
         <p
           className={cn(
-            "flex items-center gap-1.5 text-xs text-neutral-500 transition-opacity duration-200",
+            "flex items-center gap-1.5 text-xs text-neutral-500 transition-opacity duration-[650ms] ease-[cubic-bezier(0.22,1,0.36,1)]",
             emphasized && "opacity-0",
           )}
         >

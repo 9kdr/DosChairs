@@ -180,10 +180,11 @@ function ProjectsPane({
       : { duration: 0 };
 
   const [hoveredId, setHoveredId] = useState<string | null>(null);
+  // Long ease-out so emphasis and neighbor dim settle as one glide.
   const hoverEase = {
     type: "tween" as const,
-    duration: 0.4,
-    ease: [0.33, 1, 0.32, 1] as const,
+    duration: 0.65,
+    ease: [0.22, 1, 0.36, 1] as const,
   };
 
   return (
@@ -218,7 +219,7 @@ function ProjectsPane({
           {PROJECTS.map((project) => {
             const emphasized = hoveredId === project.id;
             const diminished = hoveredId != null && hoveredId !== project.id;
-            const hoverScale = emphasized ? 1.015 : diminished ? 0.99 : 1;
+            const hoverScale = emphasized ? 1.012 : diminished ? 0.992 : 1;
 
             return (
               <motion.li
