@@ -18,9 +18,18 @@ async function appWindow() {
   return getCurrentWindow();
 }
 
+function setMaximizedAttr(maximized: boolean) {
+  if (maximized) {
+    document.documentElement.setAttribute("data-window-maximized", "");
+  } else {
+    document.documentElement.removeAttribute("data-window-maximized");
+  }
+}
+
 /**
- * Overlay chrome for undecorated windows: a transparent top drag strip, and
- * min/max/close aligned with the home editors pill (`top-6` / `h-9`).
+ * Overlay chrome for undecorated windows: transparent drag strip, and
+ * min/max/close tucked into the top-right corner. Also toggles
+ * `data-window-maximized` so `.chair-shell` can drop its border-radius.
  */
 export function WindowChrome() {
   const [maximized, setMaximized] = useState(false);
@@ -31,12 +40,19 @@ export function WindowChrome() {
     let unlisten: (() => void) | undefined;
     void (async () => {
       const win = await appWindow();
-      setMaximized(await win.isMaximized());
+      const next = await win.isMaximized();
+      setMaximized(next);
+      setMaximizedAttr(next);
       unlisten = await win.onResized(async () => {
-        setMaximized(await win.isMaximized());
+        const resized = await win.isMaximized();
+        setMaximized(resized);
+        setMaximizedAttr(resized);
       });
     })();
-    return () => unlisten?.();
+    return () => {
+      unlisten?.();
+      setMaximizedAttr(false);
+    };
   }, [tauri]);
 
   const minimize = useCallback(async () => {
@@ -47,7 +63,9 @@ export function WindowChrome() {
   const toggleMaximize = useCallback(async () => {
     if (!tauri) return;
     await (await appWindow()).toggleMaximize();
-    setMaximized(await (await appWindow()).isMaximized());
+    const next = await (await appWindow()).isMaximized();
+    setMaximized(next);
+    setMaximizedAttr(next);
   }, [tauri]);
 
   const close = useCallback(async () => {
@@ -58,20 +76,17 @@ export function WindowChrome() {
   return (
     <div
       aria-hidden={!tauri}
-      className="pointer-events-none fixed inset-x-0 top-0 z-50 h-16 select-none"
+      className="pointer-events-none fixed inset-x-0 top-0 z-50 h-12 select-none"
     >
-      {/* Thin transparent drag band — no filled bar. */}
       <div
         data-tauri-drag-region
-        className="pointer-events-auto absolute inset-x-0 top-0 h-5"
+        className="pointer-events-auto absolute inset-x-0 top-0 h-4"
         onDoubleClick={() => void toggleMaximize()}
       />
 
-      {/* Same vertical band as the editors status pill (pt-6 + h-9). */}
       <div
         className={cn(
-          "pointer-events-auto absolute top-6 right-4 flex h-9 items-center",
-          "rounded-full",
+          "pointer-events-auto absolute top-1 right-1 flex items-center",
         )}
       >
         <ChromeButton label="Minimize" onClick={() => void minimize()}>
@@ -108,7 +123,7 @@ function ChromeButton({
       aria-label={label}
       onClick={onClick}
       className={cn(
-        "flex size-9 items-center justify-center rounded-full text-muted-foreground outline-none",
+        "flex size-8 items-center justify-center rounded-full text-muted-foreground outline-none",
         "transition-colors hover:bg-foreground/[0.06] hover:text-foreground",
         "focus-visible:bg-foreground/[0.08] focus-visible:text-foreground",
         danger &&

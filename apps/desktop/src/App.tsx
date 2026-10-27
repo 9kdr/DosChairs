@@ -20,7 +20,7 @@ export function App() {
 
   return (
     <TooltipProvider delay={400}>
-      <div className="relative h-full min-h-0 bg-background text-foreground">
+      <div className="chair-shell relative text-foreground">
         <WindowChrome />
         {screen === "home" ? (
           <HomeScreen

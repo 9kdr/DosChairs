@@ -112,16 +112,31 @@ html,
 body,
 #root {
   height: 100%;
+  background: transparent;
 }
 
 body {
   margin: 0;
-  background: var(--background);
   color: var(--foreground);
   font-family: "Inter Variable", "Segoe UI", sans-serif;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
   overscroll-behavior: none;
+}
+
+/*
+ * Frameless window shell: CSS radius clips the UI. Needs `transparent: true`
+ * in tauri.conf. Drop the radius while maximized so edges meet the screen.
+ */
+.chair-shell {
+  height: 100%;
+  overflow: hidden;
+  background: var(--background);
+  border-radius: 12px;
+}
+
+html[data-window-maximized] .chair-shell {
+  border-radius: 0;
 }
 
 ::selection {
