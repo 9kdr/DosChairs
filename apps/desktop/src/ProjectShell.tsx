@@ -1,11 +1,12 @@
 import {
   HomeIcon,
+  PaintbrushIcon,
   PaletteIcon,
   ScissorsIcon,
-  SparklesIcon,
   WaypointsIcon,
 } from "lucide-react";
 import { useState, type ReactNode } from "react";
+import { ChatPrompt } from "@/components/chat-prompt";
 import { Button } from "@/components/ui/button";
 import {
   Tooltip,
@@ -29,7 +30,7 @@ type ProjectShellProps = {
 const SECTIONS = [
   { id: "orchestrator", label: "Orchestrator", icon: WaypointsIcon },
   { id: "edit", label: "Edit", icon: ScissorsIcon },
-  { id: "effects", label: "Effects", icon: SparklesIcon },
+  { id: "effects", label: "Effects", icon: PaintbrushIcon },
   { id: "colour", label: "Colour", icon: PaletteIcon },
 ] as const;
 
@@ -39,7 +40,7 @@ const dockTooltip = TooltipCreateHandle<DockTipPayload>();
 
 type SectionId = (typeof SECTIONS)[number]["id"];
 
-/** Blank project view: a way home, section nav, and the Chair mark. */
+/** Blank project view: a way home, a prompt, section nav, and the Chair mark. */
 export function ProjectShell({ projectName, onHome }: ProjectShellProps) {
   const [section, setSection] = useState<SectionId>("orchestrator");
 
@@ -72,6 +73,9 @@ export function ProjectShell({ projectName, onHome }: ProjectShellProps) {
         </h1>
       </header>
       <main className="min-h-0 flex-1" />
+      <div className="pointer-events-auto absolute inset-x-0 bottom-[calc(1.25rem+3rem+0.75rem)] z-10 flex justify-center px-4">
+        <ChatPrompt />
+      </div>
       <TooltipProvider delay={220} closeDelay={120} timeout={500}>
         <nav
           aria-label="Project sections"
