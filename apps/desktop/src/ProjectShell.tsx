@@ -1,9 +1,17 @@
-import { HomeIcon } from "lucide-react";
-import { useState } from "react";
+import {
+  HomeIcon,
+  PaletteIcon,
+  ScissorsIcon,
+  SparklesIcon,
+  WaypointsIcon,
+} from "lucide-react";
+import { useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Tooltip,
+  TooltipCreateHandle,
   TooltipPopup,
+  TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
@@ -17,13 +25,17 @@ type ProjectShellProps = {
   onHome: () => void;
 };
 
-/** Worker lanes under the orchestrator. Views only — the center stays empty. */
+/** Same dock as home. Icons are the project lenses. */
 const SECTIONS = [
-  { id: "orchestrator", label: "Orchestrator" },
-  { id: "edit", label: "Edit" },
-  { id: "effects", label: "Effects" },
-  { id: "colour", label: "Colour" },
+  { id: "orchestrator", label: "Orchestrator", icon: WaypointsIcon },
+  { id: "edit", label: "Edit", icon: ScissorsIcon },
+  { id: "effects", label: "Effects", icon: SparklesIcon },
+  { id: "colour", label: "Colour", icon: PaletteIcon },
 ] as const;
+
+type DockTipPayload = { label: string };
+
+const dockTooltip = TooltipCreateHandle<DockTipPayload>();
 
 type SectionId = (typeof SECTIONS)[number]["id"];
 
@@ -60,38 +72,41 @@ export function ProjectShell({ projectName, onHome }: ProjectShellProps) {
         </h1>
       </header>
       <main className="min-h-0 flex-1" />
-      <nav
-        aria-label="Project sections"
-        className="pointer-events-auto absolute inset-x-0 bottom-5 z-20 flex justify-center px-4"
-      >
-        <div
-          className={cn(
-            "flex h-12 max-w-full items-center gap-0.5 rounded-full px-1.5",
-            "bg-[#1a1a1a]/95 shadow-raised ring-1 ring-white/[0.08] backdrop-blur-md",
-            "supports-[backdrop-filter]:bg-[#1a1a1a]/88",
-          )}
+      <TooltipProvider delay={220} closeDelay={120} timeout={500}>
+        <nav
+          aria-label="Project sections"
+          className="pointer-events-auto absolute inset-x-0 bottom-5 z-20 flex justify-center px-4"
         >
-          {SECTIONS.map((item) => {
-            const active = section === item.id;
-            return (
-              <Button
-                key={item.id}
-                type="button"
-                variant="ghost"
-                size="sm"
-                aria-pressed={active}
-                onClick={() => setSection(item.id)}
-                className={cn(
-                  "h-9 rounded-full px-3.5 text-sm font-medium text-neutral-400 hover:bg-white/[0.06] hover:text-neutral-100",
-                  active && "bg-white/[0.1] text-neutral-100",
-                )}
-              >
-                {item.label}
-              </Button>
-            );
-          })}
-        </div>
-      </nav>
+          <div
+            className={cn(
+              "flex h-12 max-w-full items-center gap-1 rounded-full px-2",
+              "bg-[#1a1a1a]/95 shadow-raised ring-1 ring-white/[0.08] backdrop-blur-md",
+              "supports-[backdrop-filter]:bg-[#1a1a1a]/88",
+            )}
+          >
+            {SECTIONS.map((item) => {
+              const Icon = item.icon;
+              return (
+                <DockButton
+                  key={item.id}
+                  label={item.label}
+                  active={section === item.id}
+                  onClick={() => setSection(item.id)}
+                >
+                  <Icon />
+                </DockButton>
+              );
+            })}
+          </div>
+          <Tooltip handle={dockTooltip}>
+            {({ payload }) => (
+              <TooltipPopup side="top" sideOffset={10}>
+                {payload?.label}
+              </TooltipPopup>
+            )}
+          </Tooltip>
+        </nav>
+      </TooltipProvider>
       <div className="pointer-events-none absolute bottom-5 left-5 z-20 flex items-center gap-2.5 text-neutral-400">
         <ChairMark className="h-8 w-auto text-neutral-200" />
         <span className="text-base font-medium tracking-wide text-neutral-200">
@@ -99,5 +114,42 @@ export function ProjectShell({ projectName, onHome }: ProjectShellProps) {
         </span>
       </div>
     </section>
+  );
+}
+
+function DockButton({
+  label,
+  active,
+  children,
+  onClick,
+}: {
+  label: string;
+  active?: boolean;
+  children: ReactNode;
+  onClick: () => void;
+}) {
+  return (
+    <TooltipTrigger
+      handle={dockTooltip}
+      payload={{ label }}
+      delay={220}
+      closeDelay={120}
+      render={
+        <Button
+          type="button"
+          size="icon-sm"
+          variant="ghost"
+          aria-label={label}
+          aria-pressed={active}
+          onClick={onClick}
+          className={cn(
+            "relative size-9 rounded-full text-muted-foreground hover:bg-foreground/[0.06] hover:text-foreground",
+            active && "bg-foreground/[0.1] text-foreground",
+          )}
+        />
+      }
+    >
+      {children}
+    </TooltipTrigger>
   );
 }
