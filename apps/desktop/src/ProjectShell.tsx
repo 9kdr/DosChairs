@@ -19,6 +19,7 @@ import { cn } from "@/lib/utils";
 import { ChairMark } from "./home/ChairMark";
 import type { EditorId } from "./home/data";
 import { EditorLogo } from "./home/EditorLogo";
+import { OrchestratorBoard } from "./orchestrator/OrchestratorBoard";
 
 /** Same field as the home gallery (`HomeScreen`). */
 const SHELL_BG = "#111111";
@@ -76,7 +77,9 @@ export function ProjectShell({ projectName, editorId, onHome }: ProjectShellProp
         </h1>
         {editorId ? <EditorLogo id={editorId} className="size-4" /> : null}
       </header>
-      <main className="min-h-0 flex-1" />
+      <main className="min-h-0 flex-1 pb-36">
+        {section === "orchestrator" ? <OrchestratorBoard /> : null}
+      </main>
       <div className="pointer-events-auto absolute inset-x-0 bottom-[calc(1.25rem+3rem+0.75rem)] z-10 flex justify-center px-4">
         <ChatPrompt />
       </div>
