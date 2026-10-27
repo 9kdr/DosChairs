@@ -12,8 +12,9 @@ export default defineConfig({
   },
   clearScreen: false,
   server: {
-    // Tauri opens localhost, which is 127.0.0.1. Vite's default can bind ::1 only.
-    host: "127.0.0.1",
+    // localhost resolves to ::1 first on this machine, then 127.0.0.1.
+    // Bind both so a Tauri reload of http://localhost:1420 connects.
+    host: "::",
     port: 1420,
     strictPort: true,
   },
