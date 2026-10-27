@@ -31,47 +31,18 @@ export function ProjectCard({ project, emphasized = false }: ProjectCardProps) {
           aria-hidden="true"
           className="absolute inset-0 opacity-50"
           style={{
-            backgroundImage:
-              "linear-gradient(to bottom, transparent 55%, rgb(0 0 0 / 0.55))",
+            backgroundImage: "linear-gradient(to bottom, transparent 55%, rgb(0 0 0 / 0.55))",
           }}
         />
-
-        <div
-          className={cn(
-            "absolute inset-x-0 bottom-0 flex flex-col gap-0.5 px-3 py-2.5",
-            "bg-gradient-to-t from-black/70 to-transparent",
-            "opacity-0 transition-opacity duration-[650ms] ease-[cubic-bezier(0.22,1,0.36,1)]",
-            emphasized && "opacity-100",
-          )}
-        >
-          <p className="truncate text-[11px] text-white/80">{project.preview}</p>
-          <p className="flex items-center gap-1.5 truncate text-[11px] text-white/55">
-            <EditorLogo id={editor.id} className="size-3" />
-            <span className="sr-only">{editor.short}</span>
-            <span aria-hidden="true">·</span>
-            <time dateTime={project.editedAt}>
-              {formatEditedAt(project.editedAt)}
-            </time>
-          </p>
-        </div>
       </div>
 
       <div className="min-w-0 px-0.5">
-        <p className="truncate text-sm font-medium text-neutral-100">
-          {project.name}
-        </p>
-        <p
-          className={cn(
-            "flex items-center gap-1.5 text-xs text-neutral-500 transition-opacity duration-[650ms] ease-[cubic-bezier(0.22,1,0.36,1)]",
-            emphasized && "opacity-0",
-          )}
-        >
+        <p className="truncate text-sm font-medium text-neutral-100">{project.name}</p>
+        <p className="flex items-center gap-1.5 text-xs text-neutral-500">
           <EditorLogo id={editor.id} className="size-3.5" />
           <span className="sr-only">{editor.short}</span>
           <span aria-hidden="true">·</span>
-          <time dateTime={project.editedAt}>
-            {formatEditedAt(project.editedAt)}
-          </time>
+          <time dateTime={project.editedAt}>{formatEditedAt(project.editedAt)}</time>
         </p>
       </div>
     </div>
