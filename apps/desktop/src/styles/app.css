@@ -133,10 +133,17 @@ body {
   overflow: hidden;
   background: var(--background);
   border-radius: 12px;
+  user-select: none;
 }
 
 html[data-window-maximized] .chair-shell {
   border-radius: 0;
+}
+
+input,
+textarea,
+[contenteditable] {
+  user-select: text;
 }
 
 ::selection {
