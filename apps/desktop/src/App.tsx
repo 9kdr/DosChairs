@@ -21,6 +21,7 @@ export function App() {
         {projectOpen ? (
           <ProjectShell
             projectName={project.name}
+            editorId={project.editorId}
             onHome={() => setScreen("home")}
           />
         ) : (

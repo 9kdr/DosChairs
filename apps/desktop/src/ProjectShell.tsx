@@ -17,12 +17,15 @@ import {
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { ChairMark } from "./home/ChairMark";
+import type { EditorId } from "./home/data";
+import { EditorLogo } from "./home/EditorLogo";
 
 /** Same field as the home gallery (`HomeScreen`). */
 const SHELL_BG = "#111111";
 
 type ProjectShellProps = {
   projectName: string;
+  editorId?: EditorId;
   onHome: () => void;
 };
 
@@ -41,7 +44,7 @@ const dockTooltip = TooltipCreateHandle<DockTipPayload>();
 type SectionId = (typeof SECTIONS)[number]["id"];
 
 /** Blank project view: a way home, a prompt, section nav, and the Chair mark. */
-export function ProjectShell({ projectName, onHome }: ProjectShellProps) {
+export function ProjectShell({ projectName, editorId, onHome }: ProjectShellProps) {
   const [section, setSection] = useState<SectionId>("orchestrator");
 
   return (
@@ -71,6 +74,7 @@ export function ProjectShell({ projectName, onHome }: ProjectShellProps) {
         <h1 className="min-w-0 truncate text-sm font-medium text-neutral-200">
           {projectName}
         </h1>
+        {editorId ? <EditorLogo id={editorId} className="size-4" /> : null}
       </header>
       <main className="min-h-0 flex-1" />
       <div className="pointer-events-auto absolute inset-x-0 bottom-[calc(1.25rem+3rem+0.75rem)] z-10 flex justify-center px-4">
