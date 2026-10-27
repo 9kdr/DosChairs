@@ -27,7 +27,7 @@ Read `.cursor/skills/chair-models/SKILL.md` before you hand work off. The same t
 
 When you delegate implementation, end the task with this paragraph. A child does not inherit the parent chat, and an Antigravity thread does not load this file:
 
-"Before you commit a change that is moderately worth a review, delegate the check and the score to Gemini 3.8 Flash high on Antigravity (model `gemini-3.8-flash-high`). Read `.agents/skills/chair-models/SKILL.md` and follow Score the implementation. Gemini runs `mise run check` on what changed, scores, and does not edit. Commit only after the check passes. Quick work uses that same Gemini. OpenCode only if the user named the screen or the long bug."
+"Before you commit a change that is moderately worth a review, delegate the check and the score to Gemini 3.8 Flash high on Antigravity (model `gemini-3.8-flash-high`). Read `.agents/skills/chair-models/SKILL.md` and follow Score the implementation. Also read `.agents/skills/ponytail-review/SKILL.md` and the ladder in `.agents/skills/ponytail/SKILL.md` at level full. The bloat deduction follows that lean pass. Gemini runs `mise run check` on what changed, scores, and does not edit. Commit only after the check passes. Quick work uses that same Gemini. OpenCode only if the user named the screen or the long bug."
 
 A new job is a new T3 thread (`t3 thread start`, or `delegate_task` from inside a thread). The child gets that issue and the paragraph above. Two models run at the same time only when they are fixing different problems and will not edit the same files.
 
@@ -39,7 +39,7 @@ Roles:
 
 - **Desk** claims the issue, tells the user the plan, and asks before a merge.
 - **Builder** writes the code on that branch.
-- **Reviewer** is Gemini 3.8 Flash high. Before a moderate change is committed, it runs `mise run check` on what changed, then scores with the rubric in the models skill, deducts for bloat (prefer −1 over −0 when unsure), and does not edit. Come back to the user with that score before asking to merge. A heavy bloat deduction gets a cleanup chat on the same branch, from a different model, only after the user says yes.
+- **Reviewer** is Gemini 3.8 Flash high. Before a moderate change is committed, it runs `mise run check` on what changed, then scores with the rubric in the models skill. The bloat deduction follows `.agents/skills/ponytail-review/SKILL.md` and the ladder in `.agents/skills/ponytail/SKILL.md` at level full (prefer −1 over −0 when unsure). It does not edit. Come back to the user with that score before asking to merge. A heavy bloat deduction gets a cleanup chat on the same branch, from a different model, only after the user says yes.
 
 If you need another role, post a handoff comment and stop that part of the work. In Cursor, you may also start one subagent with a short prompt and the issue number. Do not hand it the whole chat. Do not start a second agent on an issue that already has a claim.
 
@@ -47,6 +47,7 @@ Read the matching skill before editing that area:
 
 - `.cursor/skills/chair-models/SKILL.md` for which model to ask, and how to open its thread. Same file: `.agents/skills/chair-models/SKILL.md`
 - `.agents/skills/chair-review/SKILL.md` before you commit a change that is moderately worth a review
+- `.agents/skills/ponytail-review/SKILL.md` and `.agents/skills/ponytail/SKILL.md` when scoring. The ladder is level full. Do not replace those files with a summary.
 - `.cursor/skills/chair-desk/SKILL.md` for issues, branches, pull requests, and handoffs. Same file: `.agents/skills/chair-desk/SKILL.md`
 - `.cursor/skills/chair-ir/SKILL.md` for `schemas/`, `packages/timeline-ir`, or `crates/chair-ir`
 - `.cursor/skills/chair-adapter/SKILL.md` for `adapters/`

@@ -47,7 +47,7 @@ Give it the issue, the branch, and the changed files. Ask it to read this skill 
 
 Every implementation task you delegate ends with this paragraph. A child does not inherit your chat, and an Antigravity thread does not load `AGENTS.md`:
 
-"Before you commit a change that is moderately worth a review, delegate the check and the score to Gemini 3.8 Flash high on Antigravity (model `gemini-3.8-flash-high`). Read `.agents/skills/chair-models/SKILL.md` and follow Score the implementation. Gemini runs `mise run check` on what changed, scores, and does not edit. Commit only after the check passes. Quick work uses that same Gemini. OpenCode only if the user named the screen or the long bug."
+"Before you commit a change that is moderately worth a review, delegate the check and the score to Gemini 3.8 Flash high on Antigravity (model `gemini-3.8-flash-high`). Read `.agents/skills/chair-models/SKILL.md` and follow Score the implementation. Also read `.agents/skills/ponytail-review/SKILL.md` and the ladder in `.agents/skills/ponytail/SKILL.md` at level full. The bloat deduction follows that lean pass. Gemini runs `mise run check` on what changed, scores, and does not edit. Commit only after the check passes. Quick work uses that same Gemini. OpenCode only if the user named the screen or the long bug."
 
 ## What to ask
 
@@ -63,7 +63,7 @@ A mid-task review is one question the builder cannot settle, for example "Does t
 
 ## Score the implementation
 
-Before you commit a change that is moderately worth a review, open one review on Antigravity with model `gemini-3.8-flash-high`. Role: `review`. Give it the issue number, the branch, and the changed files, and tell it to read `.agents/skills/chair-models/SKILL.md`. It runs `mise run check`, then scores. It does not edit, commit, or open a pull request. Commit only after the check passes. Bring the score back before you tell the user the work is ready.
+Before you commit a change that is moderately worth a review, open one review on Antigravity with model `gemini-3.8-flash-high`. Role: `review`. Give it the issue number, the branch, and the changed files. Tell it to read `.agents/skills/chair-models/SKILL.md`, then `.agents/skills/ponytail-review/SKILL.md`, then the ladder in `.agents/skills/ponytail/SKILL.md` at level full. Those two ponytail files are the cleanliness standard. It runs `mise run check`, then scores. It does not edit, commit, or open a pull request. Commit only after the check passes. Bring the score back before you tell the user the work is ready.
 
 Be strict. A high score must be earned. Praise without line evidence is invalid. Do not default to −0 bloat because the issue works.
 
@@ -77,7 +77,9 @@ Each gate is worth 2 points, or 0. The score is the sum, out of 10.
 
 Then it deducts for bloat, from 0 to 3. The deduction comes off the gate total. The result cannot go below 0.
 
-Before choosing a deduction, it must hunt for each of these and either cite lines or explicitly say the pattern was not found:
+The deduction follows the ponytail skills, not a private checklist. Read `.agents/skills/ponytail-review/SKILL.md` and do that review, especially Lean. Read the ladder in `.agents/skills/ponytail/SKILL.md` and apply level full. Walk every rung: does it need to exist, is it already in this repo, does the standard library or the platform do it, does an installed dependency do it, can it be one line, otherwise is this the minimum. A rung that would have made a smaller complete diff is a lean finding. Cite the lines.
+
+Also hunt for each of these and either cite lines or say the pattern was not found:
 
 - A duplicated expected blob that restates mapper or fixture output when a few field asserts plus schema validation would do.
 - A hand-rolled helper that reimplements repo tooling (schema validation, IR helpers, formatting) already available elsewhere.
@@ -86,14 +88,14 @@ Before choosing a deduction, it must hunt for each of these and either cite line
 
 Deductions:
 
-- **0.** Only after that hunt finds nothing. The report must say so in one sentence. "Looks fine" is not enough.
-- **−1.** One extra helper, one restated comment, one unused prop, a large duplicated expected fixture, or a thin wrapper that adds no behavior.
-- **−2.** A new file or layer that nothing else calls, or a second way to do something the repo already does (including a private schema validator when the repo already validates schemas).
-- **−3.** A person would have to learn a structure this issue does not need.
+- **0.** Only when the ladder finds no smaller complete diff and the report says `Lean: -0 lines possible`. The report names each rung it checked. "Looks fine" is not enough.
+- **−1.** One lean item: an extra helper, a near-copy, a few lines the standard library or an existing helper already covers, a restated comment, an unused prop, or an abstraction with one implementation.
+- **−2.** A new file or a second way to do something the repo, the standard library, or an installed dependency already does.
+- **−3.** A structure this issue does not need.
 
-Stack the worst matching tier; do not average them away. Prefer −1 over −0 when unsure. A 10/10 with −0 bloat is rare and must survive the hunt above.
+Stack the worst matching tier; do not average them away. Prefer −1 over −0 when unsure. A 10/10 with −0 bloat is rare and must survive the ponytail ladder.
 
-It names the extra pieces and the lines. A deduction with no lines is invalid and counts as 0. A −0 with no hunt sentence is invalid; desk treats it as incomplete and re-asks the review.
+It names the extra pieces and the lines. A deduction with no lines is invalid and counts as 0. A −0 without `Lean: -0 lines possible` is incomplete; desk re-asks the review. The report also includes `What this change does:` from ponytail-review.
 
 It returns the five gates, the deduction (with hunt notes), then one line: `Score: N/10`.
 
