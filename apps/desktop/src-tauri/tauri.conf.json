@@ -16,7 +16,10 @@
         "title": "Chair",
         "width": 1440,
         "height": 900,
-        "resizable": true
+        "resizable": true,
+        "decorations": false,
+        "transparent": true,
+        "shadow": true
       }
     ],
     "security": {

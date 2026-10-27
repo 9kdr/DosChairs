@@ -1,6 +1,6 @@
 # 0002 — The desktop UI is built on coss
 
-The chat, timeline, and changeset screens in `apps/desktop` are built from [coss](https://coss.com/ui), a shadcn-compatible component registry (`@coss` in `apps/desktop/components.json`) that renders on Base UI primitives with Tailwind CSS 4. Components are copied into `src/components/ui` rather than imported from a package, so the app owns every line it ships.
+The desktop window in `apps/desktop` is built from [coss](https://coss.com/ui), a shadcn-compatible component registry (`@coss` in `apps/desktop/components.json`) that renders on Base UI primitives with Tailwind CSS 4. Components are copied into `src/components/ui` rather than imported from a package, so the app owns every line it ships.
 
 Consequences:
 

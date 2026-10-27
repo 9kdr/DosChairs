@@ -12,6 +12,9 @@ export default defineConfig({
   },
   clearScreen: false,
   server: {
+    // localhost resolves to ::1 first on this machine, then 127.0.0.1.
+    // Bind both so a Tauri reload of http://localhost:1420 connects.
+    host: "::",
     port: 1420,
     strictPort: true,
   },
