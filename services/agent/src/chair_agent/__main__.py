@@ -2,6 +2,7 @@ import json
 import os
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+from chair_agent.client import configured_models
 from chair_agent.models import TOOLS
 
 
@@ -15,6 +16,7 @@ class Handler(BaseHTTPRequestHandler):
                 "service": "agent",
                 "ok": True,
                 "tools": [tool.model_dump() for tool in TOOLS],
+                "models": configured_models(),
             }
         ).encode()
         self.send_response(200)

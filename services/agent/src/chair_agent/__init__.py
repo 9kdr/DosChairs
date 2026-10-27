@@ -1,7 +1,6 @@
 """Chair agent runtime.
 
-Planner (Wonder), executor (Spark), and verifier (Spark, multimodal) will live here.
-This process only exposes health and a typed tool list until those loops land.
+Planner, executor, and verifier call ModelClient. Image generation goes through ImageAdapter.
 """
 
 from chair_agent.models import TOOLS
