@@ -61,7 +61,7 @@ export function ChatSidebar({
     <aside
       aria-label="Threads"
       className={cn(
-        "flex w-[17rem] shrink-0 flex-col border-r border-line bg-sidebar/80 backdrop-blur-xl",
+        "flex w-[17rem] shrink-0 flex-col border-r border-line bg-sidebar",
         className,
       )}
     >
@@ -116,7 +116,6 @@ export function ChatSidebar({
             value={chat.query}
             placeholder="Search threads"
             aria-label="Search threads"
-            className="h-8 border-foreground/[0.08] bg-foreground/[0.03] text-sm"
             onChange={(event) => dispatch({ type: "query", query: event.target.value })}
             onKeyDown={(event) => {
               if (event.key === "Escape") closeSearch();

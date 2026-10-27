@@ -155,10 +155,10 @@ export function ChatPanel({
         <div className="flex min-h-0 flex-1 flex-col items-center justify-center overflow-y-auto px-6 py-10">
           <div className="w-full max-w-[36rem]">
             <div className="flex flex-col items-center text-center">
-              <div className="mb-6 grid size-14 place-items-center rounded-2xl border border-foreground/[0.08] bg-foreground/[0.035] shadow-[inset_0_1px_0_rgb(255_255_255/0.06),0_18px_40px_-24px_rgb(0_0_0/0.9)]">
-                <ClapperboardIcon className="size-6 text-foreground/75" />
+              <div className="relative mb-6 grid size-12 place-items-center rounded-xl border border-input bg-card not-dark:bg-clip-padding shadow-xs/5 before:pointer-events-none before:absolute before:inset-0 before:rounded-[calc(var(--radius-xl)-1px)] before:shadow-[0_1px_--theme(--color-black/4%)] dark:before:shadow-[0_-1px_--theme(--color-white/6%)]">
+                <ClapperboardIcon className="size-5 text-foreground/75" />
               </div>
-              <h1 className="text-[1.3rem] font-medium tracking-[-0.015em] text-foreground">
+              <h1 className="text-xl font-medium tracking-[-0.015em] text-foreground">
                 What should we cut?
               </h1>
               <p className="mt-2.5 max-w-sm text-sm leading-6 text-subtle">
@@ -262,118 +262,112 @@ const ChairComposer = ({
 }) => {
   const fileRef = useRef<HTMLInputElement>(null);
   return (
-    <div className="glass-composer rounded-2xl">
-      <Composer
-        ref={ref}
-        layout="stacked"
-        value={draftValue(thread.draft)}
-        submitDisabled={pending}
-        allowEmpty={thread.attachments.length > 0}
-        className="rounded-2xl border-0 bg-transparent shadow-none [--composer-radius:1rem] dark:bg-transparent has-[[data-slot=composer-input]:focus-visible]:border-transparent has-[[data-slot=composer-input]:focus-visible]:ring-0"
-        onValueChange={(value) => dispatch({ type: "draft", draft: getComposerText(value) })}
-        onSubmit={(value) => {
-          dispatch({ type: "draft", draft: getComposerText(value).trim() });
-          dispatch({ type: "send" });
-        }}
-      >
-        <div className="flex items-center gap-1 px-1.5 pt-0.5">
-          <span className="inline-flex h-6 items-center rounded-md px-1.5 text-xs text-subtle">
-            local
-          </span>
+    <Composer
+      ref={ref}
+      layout="stacked"
+      value={draftValue(thread.draft)}
+      submitDisabled={pending}
+      allowEmpty={thread.attachments.length > 0}
+      className="rounded-2xl [--composer-radius:1rem]"
+      onValueChange={(value) => dispatch({ type: "draft", draft: getComposerText(value) })}
+      onSubmit={(value) => {
+        dispatch({ type: "draft", draft: getComposerText(value).trim() });
+        dispatch({ type: "send" });
+      }}
+    >
+      <p className="px-2.5 pt-2 text-xs text-subtle">local</p>
+
+      {thread.attachments.length > 0 ? (
+        <div className="flex flex-wrap gap-1 px-2.5 pt-2" aria-label="Attachments">
+          {thread.attachments.map((file) => (
+            <Badge
+              key={file.id}
+              variant="secondary"
+              size="sm"
+              render={<button type="button" />}
+              className="gap-1.5 rounded-md bg-foreground/[0.05] text-xs text-muted-foreground transition-colors duration-[160ms] ease-out hover:bg-foreground/[0.08]"
+              onClick={() => dispatch({ type: "detach", id: file.id })}
+            >
+              {file.name}
+              <span className="text-subtle">{formatSize(file.size)}</span>
+              <XIcon className="size-3 opacity-60" />
+            </Badge>
+          ))}
         </div>
+      ) : null}
 
-        {thread.attachments.length > 0 ? (
-          <div className="flex flex-wrap gap-1 px-1.5 pt-2" aria-label="Attachments">
-            {thread.attachments.map((file) => (
-              <Badge
-                key={file.id}
-                variant="secondary"
-                size="sm"
-                render={<button type="button" />}
-                className="gap-1.5 rounded-md bg-foreground/[0.05] text-xs text-muted-foreground transition-colors duration-[160ms] ease-out hover:bg-foreground/[0.08]"
-                onClick={() => dispatch({ type: "detach", id: file.id })}
-              >
-                {file.name}
-                <span className="text-subtle">{formatSize(file.size)}</span>
-                <XIcon className="size-3 opacity-60" />
-              </Badge>
-            ))}
-          </div>
-        ) : null}
+      <ComposerInput
+        aria-label="Message"
+        placeholder="Ask Chair for a cut…"
+        render={<textarea />}
+        className="min-h-20 px-2.5 py-2.5 leading-6"
+      />
 
-        <ComposerInput
-          aria-label="Message"
-          placeholder="Ask Chair for a cut…"
-          render={<textarea />}
-          className="min-h-20 px-2.5 py-2.5 text-[0.9375rem] leading-6"
-        />
-
-        <ComposerActions>
-          <ComposerActionGroup>
-            <input
-              ref={fileRef}
-              type="file"
-              multiple
-              className="sr-only"
-              aria-label="Attach files"
-              onChange={(event) => {
-                const files = event.target.files;
-                if (files) {
-                  for (const file of files) {
-                    dispatch({ type: "attach", name: file.name, size: file.size });
-                  }
+      <ComposerActions>
+        <ComposerActionGroup>
+          <input
+            ref={fileRef}
+            type="file"
+            multiple
+            className="sr-only"
+            aria-label="Attach files"
+            onChange={(event) => {
+              const files = event.target.files;
+              if (files) {
+                for (const file of files) {
+                  dispatch({ type: "attach", name: file.name, size: file.size });
                 }
-                event.target.value = "";
-              }}
+              }
+              event.target.value = "";
+            }}
+          />
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button
+                  type="button"
+                  size="icon-sm"
+                  variant="ghost"
+                  disabled={pending}
+                  aria-label="Attach files"
+                  className="rounded-full text-muted-foreground hover:text-foreground"
+                  onClick={() => fileRef.current?.click()}
+                />
+              }
+            >
+              <PlusIcon />
+            </TooltipTrigger>
+            <TooltipPopup>Attach files</TooltipPopup>
+          </Tooltip>
+        </ComposerActionGroup>
+        <ComposerActionGroup align="end">
+          <ModelMenu
+            model={thread.model}
+            onChange={(model) => dispatch({ type: "model", model })}
+          />
+          {pending ? (
+            <Button
+              type="button"
+              size="icon-sm"
+              variant="outline"
+              aria-label="Stop generating"
+              className="rounded-full"
+              onClick={() => dispatch({ type: "stop" })}
+            >
+              <SquareIcon />
+            </Button>
+          ) : (
+            <ComposerSubmit
+              render={
+                <Button aria-label="Send message" size="icon-sm" className="rounded-full">
+                  <ArrowUpIcon />
+                </Button>
+              }
             />
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <Button
-                    type="button"
-                    size="icon-sm"
-                    variant="ghost"
-                    disabled={pending}
-                    aria-label="Attach files"
-                    className="rounded-full text-muted-foreground hover:text-foreground"
-                    onClick={() => fileRef.current?.click()}
-                  />
-                }
-              >
-                <PlusIcon />
-              </TooltipTrigger>
-              <TooltipPopup>Attach files</TooltipPopup>
-            </Tooltip>
-          </ComposerActionGroup>
-          <ComposerActionGroup align="end">
-            <ModelMenu
-              model={thread.model}
-              onChange={(model) => dispatch({ type: "model", model })}
-            />
-            {pending ? (
-              <Button
-                type="button"
-                size="icon-sm"
-                variant="outline"
-                aria-label="Stop generating"
-                className="rounded-full"
-                onClick={() => dispatch({ type: "stop" })}
-              >
-                <SquareIcon />
-              </Button>
-            ) : (
-              <ComposerSubmit
-                render={
-                  <Button aria-label="Send message" size="icon-sm" className="rounded-full">
-                    <ArrowUpIcon />
-                  </Button>
-                }
-              />
-            )}
-          </ComposerActionGroup>
-        </ComposerActions>
-      </Composer>
-    </div>
+          )}
+        </ComposerActionGroup>
+      </ComposerActions>
+    </Composer>
   );
 };
 
@@ -384,15 +378,15 @@ function ModelMenu({ model, onChange }: { model: ModelId; onChange: (model: Mode
         render={
           <Button
             type="button"
-            size="xs"
+            size="sm"
             variant="ghost"
             aria-label="Model"
-            className="h-6 gap-1 rounded-md px-1.5 text-xs text-muted-foreground transition-colors duration-[160ms] ease-out hover:bg-foreground/[0.05] hover:text-foreground"
+            className="gap-1 rounded-lg px-2 text-sm text-muted-foreground transition-colors duration-[160ms] ease-out hover:bg-foreground/[0.05] hover:text-foreground"
           />
         }
       >
         {modelLabel(model)}
-        <ChevronDownIcon className="size-3 opacity-60" />
+        <ChevronDownIcon className="size-3.5 opacity-60" />
       </MenuTrigger>
       <MenuPopup align="end" side="top" className="w-56">
         <MenuRadioGroup value={model} onValueChange={(value) => onChange(value as ModelId)}>
@@ -461,7 +455,7 @@ function TranscriptMessage({
           />
         }
       >
-        <ChatMessageText text={message.text} className="text-[0.9375rem] leading-6" />
+        <ChatMessageText text={message.text} className="text-sm leading-6" />
       </ChatMessage>
     );
   }
@@ -512,7 +506,7 @@ function TranscriptMessage({
           </Collapsible>
         ) : null}
 
-        <div className="flex min-w-0 flex-col gap-2.5 text-[0.9375rem] leading-7 text-foreground/90">
+        <div className="flex min-w-0 flex-col gap-2.5 text-sm leading-7 text-foreground/90">
           {splitBlocks(message.text).map((block, index) =>
             block.kind === "code" ? (
               <pre
@@ -562,7 +556,7 @@ function TranscriptMessage({
 
 function AssistantMark() {
   return (
-    <span className="grid size-6 place-items-center rounded-md border border-foreground/[0.07] bg-foreground/[0.035] shadow-[inset_0_1px_0_rgb(255_255_255/0.04)]">
+    <span className="relative grid size-6 place-items-center rounded-md border border-input bg-card not-dark:bg-clip-padding shadow-xs/5 before:pointer-events-none before:absolute before:inset-0 before:rounded-[calc(var(--radius-md)-1px)] before:shadow-[0_1px_--theme(--color-black/4%)] dark:before:shadow-[0_-1px_--theme(--color-white/6%)]">
       <ClapperboardIcon className="size-3.5 text-foreground/65" />
     </span>
   );

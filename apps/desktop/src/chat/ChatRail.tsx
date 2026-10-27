@@ -40,11 +40,11 @@ export function ChatRail({
           render={
             <Button
               type="button"
-              size="icon-sm"
-              variant="ghost"
+              size="icon"
+              variant="outline"
               aria-label="New chat"
               onClick={onNewChat}
-              className="mb-2 size-8 rounded-[.625rem] border border-foreground/[0.07] bg-foreground/[0.035] shadow-[inset_0_1px_0_rgb(255_255_255/0.05)] hover:bg-foreground/[0.07]"
+              className="mb-2 text-foreground/80"
             />
           }
         >

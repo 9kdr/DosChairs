@@ -80,10 +80,6 @@
   --surface-raised: var(--color-white);
   --subtle: #8c887a;
   --line: color-mix(in srgb, #262624 8%, transparent);
-  --glass-surface: color-mix(in srgb, var(--color-white) 76%, transparent);
-  --glass-border: color-mix(in srgb, #262624 8%, transparent);
-  --glass-highlight: inset 0 1px 0 rgb(255 255 255 / 0.72);
-  --glass-shadow: 0 20px 50px -26px rgb(38 35 30 / 0.28);
 }
 
 html {
@@ -108,42 +104,6 @@ body {
 
 ::selection {
   background: color-mix(in srgb, var(--primary) 32%, transparent);
-}
-
-.glass-panel {
-  border: 1px solid var(--glass-border);
-  background-color: var(--glass-surface);
-  box-shadow: var(--glass-highlight), var(--glass-shadow);
-  -webkit-backdrop-filter: blur(22px) saturate(180%);
-  backdrop-filter: blur(22px) saturate(180%);
-}
-
-.glass-composer {
-  border: 1px solid var(--glass-border);
-  background-color: var(--glass-surface);
-  box-shadow: var(--glass-highlight), var(--glass-shadow);
-  -webkit-backdrop-filter: blur(26px) saturate(180%);
-  backdrop-filter: blur(26px) saturate(180%);
-  transition:
-    border-color 160ms ease,
-    box-shadow 160ms ease;
-}
-
-.glass-composer:focus-within {
-  border-color: color-mix(in srgb, var(--color-white) 15%, transparent);
-  box-shadow:
-    var(--glass-highlight),
-    0 0 0 1px color-mix(in srgb, var(--color-white) 4%, transparent),
-    var(--glass-shadow);
-}
-
-.glass-row {
-  border: 1px solid color-mix(in srgb, var(--color-white) 6%, transparent);
-  background-color: color-mix(in srgb, var(--color-white) 2.5%, transparent);
-}
-
-.glass-row:hover {
-  background-color: color-mix(in srgb, var(--color-white) 4%, transparent);
 }
 
 .dark {
@@ -177,10 +137,6 @@ body {
   --surface-raised: #302f2b;
   --subtle: #8f8b80;
   --line: rgb(245 244 236 / 7%);
-  --glass-surface: rgb(38 38 36 / 80%);
-  --glass-border: rgb(245 244 236 / 8%);
-  --glass-highlight: inset 0 1px 0 rgb(255 255 255 / 0.05);
-  --glass-shadow: 0 26px 70px -34px rgb(0 0 0 / 0.85);
 }
 
 @layer base {
