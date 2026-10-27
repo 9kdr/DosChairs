@@ -40,7 +40,7 @@ export function HomeDock({
   onAccount,
   onSettings,
 }: HomeDockProps) {
-  const running = editors.filter((editor) => editor.status === "running").length;
+  const inProject = editors.filter((editor) => editor.status === "inProject").length;
 
   return (
     <TooltipProvider delay={220} closeDelay={120} timeout={500}>
@@ -78,13 +78,13 @@ export function HomeDock({
           </DockButton>
           <DockButton
             label={
-              running > 0
-                ? `Editors · ${running} running`
-                : "Editors · none running"
+              inProject > 0
+                ? `Editors · ${inProject} in project`
+                : "Editors · none in project"
             }
             active={tab === "editors"}
             onClick={() => onTab("editors")}
-            badge={running > 0}
+            badge={inProject > 0}
           >
             <MonitorPlayIcon />
           </DockButton>

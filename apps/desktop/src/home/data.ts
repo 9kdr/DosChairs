@@ -1,6 +1,6 @@
 export type EditorId = "resolve" | "kdenlive" | "otio";
 
-export type EditorStatus = "running" | "idle" | "stopped";
+export type EditorStatus = "inProject" | "idle" | "stopped";
 
 export type EditorInfo = {
   id: EditorId;
@@ -19,7 +19,7 @@ export type Project = {
 };
 
 export const EDITORS: readonly EditorInfo[] = [
-  { id: "resolve", name: "DaVinci Resolve", short: "Resolve", status: "running" },
+  { id: "resolve", name: "DaVinci Resolve", short: "Resolve", status: "inProject" },
   { id: "kdenlive", name: "Kdenlive", short: "Kdenlive", status: "idle" },
   { id: "otio", name: "OTIO interchange", short: "OTIO", status: "stopped" },
 ];

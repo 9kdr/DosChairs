@@ -35,7 +35,7 @@ type HomeScreenProps = {
 };
 
 const STATUS_LABEL: Record<EditorStatus, string> = {
-  running: "Running",
+  inProject: "In project",
   idle: "Idle",
   stopped: "Stopped",
 };
@@ -44,13 +44,13 @@ const STATUS_VARIANT: Record<
   EditorStatus,
   "success" | "warning" | "secondary"
 > = {
-  running: "success",
+  inProject: "success",
   idle: "warning",
   stopped: "secondary",
 };
 
 const STATUS_DOT: Record<EditorStatus, string> = {
-  running: "bg-success",
+  inProject: "bg-success",
   idle: "bg-warning",
   stopped: "bg-neutral-500",
 };
@@ -353,8 +353,8 @@ function EditorsPane() {
             <div className="min-w-0 flex-1">
               <p className="truncate text-sm font-medium">{editor.name}</p>
               <p className="text-xs text-neutral-500">
-                {editor.status === "running"
-                  ? "Adapter reachable — open a project to chat against this cut."
+                {editor.status === "inProject"
+                  ? "In current project — open to chat against this cut."
                   : editor.status === "idle"
                     ? "Installed, not talking to Chair yet."
                     : "Editor stopped — start it to chat against this cut."}
