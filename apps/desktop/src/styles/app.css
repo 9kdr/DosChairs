@@ -63,31 +63,31 @@
   --success-foreground: var(--color-emerald-700);
   --warning: var(--color-amber-500);
   --warning-foreground: var(--color-amber-700);
-  --accent: --alpha(var(--color-black) / 4%);
-  --accent-foreground: #3d3929;
-  --background: #faf9f5;
-  --border: --alpha(#262624 / 9%);
+  --accent: --alpha(var(--color-neutral-950) / 4%);
+  --accent-foreground: var(--color-neutral-900);
+  --background: var(--color-neutral-50);
+  --border: --alpha(var(--color-neutral-950) / 9%);
   --card: var(--color-white);
-  --card-foreground: #3d3929;
+  --card-foreground: var(--color-neutral-900);
   --destructive: var(--color-red-500);
-  --foreground: #3d3929;
-  --input: --alpha(#262624 / 12%);
-  --muted: --alpha(#262624 / 4%);
-  --muted-foreground: #6e6a5e;
+  --foreground: var(--color-neutral-900);
+  --input: --alpha(var(--color-neutral-950) / 12%);
+  --muted: --alpha(var(--color-neutral-950) / 4%);
+  --muted-foreground: var(--color-neutral-500);
   --popover: var(--color-white);
-  --popover-foreground: #3d3929;
-  --primary: #d97757;
-  --primary-foreground: #faf9f5;
-  --ring: #a8a49a;
-  --secondary: --alpha(#262624 / 4%);
-  --secondary-foreground: #3d3929;
-  --sidebar: #f0eee6;
+  --popover-foreground: var(--color-neutral-900);
+  --primary: var(--color-neutral-900);
+  --primary-foreground: var(--color-neutral-50);
+  --ring: var(--color-neutral-400);
+  --secondary: --alpha(var(--color-neutral-950) / 4%);
+  --secondary-foreground: var(--color-neutral-900);
+  --sidebar: var(--color-neutral-100);
   --surface-raised: var(--color-white);
-  --subtle: #8c887a;
-  --line: color-mix(in srgb, #262624 8%, transparent);
+  --subtle: var(--color-neutral-400);
+  --line: color-mix(in srgb, var(--color-neutral-950) 8%, transparent);
   --surface-fill: var(--color-white);
-  --surface-fill-quiet: color-mix(in srgb, #262624 4%, var(--background));
-  --surface-border: color-mix(in srgb, #262624 12%, transparent);
+  --surface-fill-quiet: color-mix(in srgb, var(--color-neutral-950) 4%, var(--background));
+  --surface-border: color-mix(in srgb, var(--color-neutral-950) 12%, transparent);
   --surface-rim:
     inset 0 1px 0 color-mix(in srgb, white 70%, transparent),
     inset 0 -1px 0 color-mix(in srgb, black 7%, transparent);
@@ -156,31 +156,31 @@ body {
   --success-foreground: var(--color-emerald-400);
   --warning: var(--color-amber-500);
   --warning-foreground: var(--color-amber-400);
-  --accent: rgb(245 244 236 / 4.5%);
-  --accent-foreground: #f5f4ec;
-  --background: #262624;
-  --border: rgb(245 244 236 / 6%);
-  --card: #2b2a27;
-  --card-foreground: #f5f4ec;
+  --accent: rgb(245 245 245 / 4.5%);
+  --accent-foreground: var(--color-neutral-100);
+  --background: #0C0C0C;
+  --border: rgb(245 245 245 / 6%);
+  --card: #141414;
+  --card-foreground: var(--color-neutral-100);
   --destructive: color-mix(in srgb, var(--color-red-500) 90%, var(--color-white));
-  --foreground: #f5f4ec;
-  --input: rgb(245 244 236 / 8%);
-  --muted: rgb(245 244 236 / 4%);
-  --muted-foreground: #b8b4a8;
-  --popover: #2e2d29;
-  --popover-foreground: #f5f4ec;
-  --primary: #d97757;
-  --primary-foreground: #faf9f5;
-  --ring: #8f8b80;
-  --secondary: rgb(245 244 236 / 4%);
-  --secondary-foreground: #f5f4ec;
-  --sidebar: #1f1e1c;
-  --surface-raised: #302f2b;
-  --subtle: #8f8b80;
-  --line: rgb(245 244 236 / 7%);
-  --surface-fill: #2e2d29;
-  --surface-fill-quiet: color-mix(in srgb, #f5f4ec 4%, var(--background));
-  --surface-border: color-mix(in srgb, #f5f4ec 9%, transparent);
+  --foreground: var(--color-neutral-100);
+  --input: rgb(245 245 245 / 8%);
+  --muted: rgb(245 245 245 / 4%);
+  --muted-foreground: var(--color-neutral-400);
+  --popover: #1A1A1A;
+  --popover-foreground: var(--color-neutral-100);
+  --primary: var(--color-neutral-100);
+  --primary-foreground: var(--color-neutral-950);
+  --ring: var(--color-neutral-500);
+  --secondary: rgb(245 245 245 / 4%);
+  --secondary-foreground: var(--color-neutral-100);
+  --sidebar: #141414;
+  --surface-raised: #1F1F1F;
+  --subtle: var(--color-neutral-500);
+  --line: rgb(245 245 245 / 7%);
+  --surface-fill: #1A1A1A;
+  --surface-fill-quiet: color-mix(in srgb, var(--color-neutral-100) 4%, var(--background));
+  --surface-border: color-mix(in srgb, var(--color-neutral-100) 9%, transparent);
   --surface-rim:
     inset 0 1px 0 color-mix(in srgb, white 10%, transparent),
     inset 0 -1px 0 color-mix(in srgb, black 45%, transparent);
@@ -189,7 +189,7 @@ body {
 
 @layer base {
   :root {
-    --dither-ink: var(--primary);
+    --dither-ink: var(--foreground);
     --dither-paper: var(--background);
     --dither-cell: 3px;
     --dither-color-blue: oklch(0.56 0.18 248);
@@ -201,7 +201,7 @@ body {
     --dither-color-grey: oklch(0.55 0 0);
     --dither-bloom: 0.6;}
   .dark {
-    --dither-ink: var(--primary);
+    --dither-ink: var(--foreground);
     --dither-paper: var(--background);
     --dither-cell: 3px;
     --dither-color-blue: oklch(0.72 0.14 240);

@@ -1,6 +1,6 @@
-# 0003 — Decoration, motion, and warmth on the desktop shell
+# 0003 — Decoration, motion, and the desktop shell palette
 
-The chat shell should feel like an app, not a web page. Three decisions did the work: a dithered backdrop instead of gradients, lenis for smooth scrolling, and a warm palette instead of pure neutrals.
+The chat shell should feel like an app, not a web page. Three decisions did the work: a dithered backdrop instead of gradients, lenis for smooth scrolling, and a neutral palette.
 
 ## The dither engine is dithercn, pulled directly
 
@@ -10,15 +10,15 @@ We did not copy a ready-made background from React Bits or dithercn's catalog. F
 
 ## Gradients are gone
 
-The old `.app-atmosphere` radial gradients (indigo/sky in `--atmosphere`) were removed. All depth now comes from the dither, the glass surfaces, and flat warm tones. Any future dither-style decoration should go through the engine (`DitherShader`, `fillStyle`, `FillPattern`), not hand-rolled gradients.
+The old `.app-atmosphere` radial gradients (indigo/sky in `--atmosphere`) were removed. All depth now comes from the dither, the glass surfaces, and flat neutral tones. Any future dither-style decoration should go through the engine (`DitherShader`, `fillStyle`, `FillPattern`), not hand-rolled gradients.
 
 ## Smooth scroll is lenis, scoped like dithercn.dev
 
 dithercn.dev runs lenis with `lerp: 0.1`, `autoRaf`, and `allowNestedScroll`, skips it under reduced motion, and destroys it on unmount. `src/components/chat/smooth-scroll.tsx` does the same, scoped to one scroll viewport instead of the page: `SmoothScrollTarget` wraps the chat conversation's viewport, so the message log glides while the sidebar and cut panel keep native scrolling. The jump-to-latest button keeps its native behavior.
 
-## Warm palette, Claude-inspired
+## Neutral palette, coss-style
 
-Pure neutral greys read flat and cold. The tokens in `app.css` now follow Claude's warmth: cream light mode (`#faf9f5` background, `#3d3929` text), warm charcoal dark mode (`#262624` background, `#1f1e1c` sidebar, `#f5f4ec` text), and a coral primary (`#d97757`) shared by buttons, selection highlight, and the dither's lamp glow. `color-scheme` is set per theme so native scrollbars and form controls match. Component code references tokens, never literal greys, so the warmth stays coherent everywhere.
+Stepped neutrals keep the shell quiet. The tokens in `app.css` are cool neutrals: light mode is near-white (`#fafafa` background, `#171717` text), and dark mode starts at `#0C0C0C` with surfaces lifting through `#141414` (`card`, `sidebar`), `#1A1A1A` (`surface-fill`, `popover`), and `#1F1F1F` (`surface-raised`). The primary is a neutral accent, not a brand color: near-white (`#f5f5f5`) fill on dark, near-black on light, shared by buttons, selection highlight, and the dither's ink, so the night scene reads mono-neutral. `color-scheme` is set per theme so native scrollbars and form controls match. Component code references tokens, never literal greys, so the neutrals stay coherent everywhere.
 
 ## Scale
 
