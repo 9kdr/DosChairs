@@ -1,17 +1,10 @@
-import { useEffect, useRef } from "react";
-import type { RefObject } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ArrowUpIcon,
-  CaptionsIcon,
   ChevronDownIcon,
-  ClapperboardIcon,
   PanelLeftIcon,
   PlusIcon,
-  ScissorsIcon,
-  SparklesIcon,
   SquareIcon,
-  WandSparklesIcon,
-  WrenchIcon,
   XIcon,
 } from "lucide-react";
 import { ChatConversation } from "@/components/chat/chat-conversation";
@@ -19,7 +12,8 @@ import { ChatMessageActionToolbar } from "@/components/chat/chat-message-actions
 import { ChatMessage } from "@/components/chat/chat-message";
 import { ChatMessageText } from "@/components/chat/chat-message-text";
 import { ChatTypingIndicator } from "@/components/chat/chat-typing-indicator";
-import { DitherBackdrop } from "@/components/chat/dither-backdrop";
+import { DitherBackdrop, DitherControlStrip } from "@/components/chat/dither-backdrop";
+import type { DitherLook } from "@/components/chat/dither-backdrop";
 import { useChatScroll } from "@/components/chat/hooks/use-chat-scroll";
 import { SmoothScrollTarget } from "@/components/chat/smooth-scroll";
 import { Badge } from "@/components/ui/badge";
@@ -40,11 +34,7 @@ import {
   MenuRadioItem,
   MenuTrigger,
 } from "@/components/ui/menu";
-import {
-  Tooltip,
-  TooltipPopup,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "@/components/ui/tooltip";
 import { getComposerText, type ComposerValue } from "@/lib/composer-document";
 import { cn } from "@/lib/utils";
 import {
@@ -68,19 +58,16 @@ type ChatPanelProps = {
 
 const SUGGESTIONS = [
   {
-    icon: ScissorsIcon,
     title: "Rough-cut the talking head",
     hint: "Drop the pause before the first line.",
     prompt: "Rough-cut the talking head. Drop the pause before the first line.",
   },
   {
-    icon: CaptionsIcon,
     title: "Add captions",
     hint: "Use the learned caption preset.",
     prompt: "Add captions to the cut using the learned caption preset.",
   },
   {
-    icon: WandSparklesIcon,
     title: "Tighten the intro",
     hint: "Reach the hook sooner.",
     prompt: "Tighten the intro. Reach the hook sooner and keep the first line intact.",
@@ -96,17 +83,17 @@ function draftValue(text: string): ComposerValue {
   return text ? [{ type: "text", text }] : [];
 }
 
-export function ChatPanel({
-  chat,
-  dispatch,
-  threadsOpen,
-  onOpenThreads,
-}: ChatPanelProps) {
+export function ChatPanel({ chat, dispatch, threadsOpen, onOpenThreads }: ChatPanelProps) {
   const thread = activeThread(chat);
   const messages = thread?.messages ?? [];
   const pending = messages.some((message) => message.status === "pending");
   const pendingId = messages.find((message) => message.status === "pending")?.id;
   const composerRef = useRef<HTMLFormElement>(null);
+  const [dither, setDither] = useState<DitherLook>({
+    matrix: "bayer4",
+    cell: 4,
+    scene: "wash",
+  });
   const scroll = useChatScroll({
     itemCount: messages.length,
     ...(thread ? { layoutKey: thread.id } : {}),
@@ -137,7 +124,7 @@ export function ChatPanel({
       aria-label="Chat"
       className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-background text-foreground"
     >
-      <DitherBackdrop />
+      <DitherBackdrop matrix={dither.matrix} cell={dither.cell} scene={dither.scene} speed={0} />
       {!threadsOpen ? (
         <Button
           type="button"
@@ -155,9 +142,6 @@ export function ChatPanel({
         <div className="flex min-h-0 flex-1 flex-col items-center justify-center overflow-y-auto px-6 py-10">
           <div className="w-full max-w-[36rem]">
             <div className="flex flex-col items-center text-center">
-              <div className="mb-6 grid size-12 place-items-center rounded-xl border border-edge bg-surface shadow-raised">
-                <ClapperboardIcon className="size-5 text-foreground/75" />
-              </div>
               <h1 className="text-xl font-medium tracking-[-0.015em] text-foreground">
                 What should we cut?
               </h1>
@@ -171,21 +155,11 @@ export function ChatPanel({
                 <button
                   key={suggestion.title}
                   type="button"
-                  className="group flex w-full items-center gap-3 rounded-xl border border-transparent px-3 py-3 text-left transition-colors duration-[160ms] ease-out hover:border-edge hover:bg-surface-quiet"
+                  className="flex w-full flex-col rounded-lg px-2 py-2 text-left transition-colors duration-[160ms] ease-out hover:bg-surface-quiet"
                   onClick={() => fillDraft(suggestion.prompt)}
                 >
-                  <span className="grid size-9 shrink-0 place-items-center rounded-lg border border-edge bg-surface text-muted-foreground shadow-rim transition-colors group-hover:text-foreground">
-                    <suggestion.icon className="size-4" />
-                  </span>
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-sm text-foreground/90">
-                      {suggestion.title}
-                    </span>
-                    <span className="block truncate text-xs text-subtle">
-                      {suggestion.hint}
-                    </span>
-                  </span>
-                  <ArrowUpIcon className="size-3.5 -rotate-45 text-subtle opacity-0 transition-opacity group-hover:opacity-100" />
+                  <span className="truncate text-sm text-foreground/90">{suggestion.title}</span>
+                  <span className="truncate text-xs text-subtle">{suggestion.hint}</span>
                 </button>
               ))}
             </div>
@@ -197,6 +171,8 @@ export function ChatPanel({
                   thread={thread}
                   pending={pending}
                   dispatch={dispatch}
+                  dither={dither}
+                  onDither={setDither}
                 />
               </div>
             ) : null}
@@ -236,6 +212,8 @@ export function ChatPanel({
                   thread={thread}
                   pending={pending}
                   dispatch={dispatch}
+                  dither={dither}
+                  onDither={setDither}
                 />
               </div>
             </div>
@@ -251,125 +229,141 @@ const ChairComposer = ({
   thread,
   pending,
   dispatch,
+  dither,
+  onDither,
 }: {
   ref: React.RefObject<HTMLFormElement | null>;
   thread: Thread;
   pending: boolean;
   dispatch: (action: ChatAction) => void;
+  dither: DitherLook;
+  onDither: (look: DitherLook) => void;
 }) => {
   const fileRef = useRef<HTMLInputElement>(null);
   return (
-    <Composer
-      ref={ref}
-      layout="stacked"
-      value={draftValue(thread.draft)}
-      submitDisabled={pending}
-      allowEmpty={thread.attachments.length > 0}
-      className="chat-composer"
-      onValueChange={(value) => dispatch({ type: "draft", draft: getComposerText(value) })}
-      onSubmit={(value) => {
-        dispatch({ type: "draft", draft: getComposerText(value).trim() });
-        dispatch({ type: "send" });
-      }}
-    >
-      {thread.attachments.length > 0 ? (
-        <div className="flex flex-wrap gap-1 px-2.5 pt-2" aria-label="Attachments">
-          {thread.attachments.map((file) => (
-            <Badge
-              key={file.id}
-              variant="secondary"
-              size="sm"
-              render={<button type="button" />}
-              className="gap-1.5 rounded-md bg-foreground/[0.05] text-xs text-muted-foreground transition-colors duration-[160ms] ease-out hover:bg-foreground/[0.08]"
-              onClick={() => dispatch({ type: "detach", id: file.id })}
-            >
-              {file.name}
-              <span className="text-subtle">{formatSize(file.size)}</span>
-              <XIcon className="size-3 opacity-60" />
-            </Badge>
-          ))}
-        </div>
-      ) : null}
+    <div>
+      <Composer
+        ref={ref}
+        layout="stacked"
+        value={draftValue(thread.draft)}
+        submitDisabled={pending}
+        allowEmpty={thread.attachments.length > 0}
+        className="chat-composer"
+        onValueChange={(value) => dispatch({ type: "draft", draft: getComposerText(value) })}
+        onSubmit={(value) => {
+          dispatch({ type: "draft", draft: getComposerText(value).trim() });
+          dispatch({ type: "send" });
+        }}
+      >
+        {thread.attachments.length > 0 ? (
+          <div className="flex flex-wrap gap-1 px-2.5 pt-2" aria-label="Attachments">
+            {thread.attachments.map((file) => (
+              <Badge
+                key={file.id}
+                variant="secondary"
+                size="sm"
+                render={<button type="button" />}
+                className="gap-1.5 rounded-md bg-foreground/[0.05] text-xs text-muted-foreground transition-colors duration-[160ms] ease-out hover:bg-foreground/[0.08]"
+                onClick={() => dispatch({ type: "detach", id: file.id })}
+              >
+                {file.name}
+                <span className="text-subtle">{formatSize(file.size)}</span>
+                <XIcon className="size-3 opacity-60" />
+              </Badge>
+            ))}
+          </div>
+        ) : null}
 
-      <ComposerInput
-        aria-label="Message"
-        placeholder="Ask Chair for a cut…"
-        render={<textarea />}
-        className="min-h-20 px-2.5 py-2.5 leading-6"
-      />
+        <ComposerInput
+          aria-label="Message"
+          placeholder="Ask Chair for a cut…"
+          render={<textarea />}
+          className="min-h-20 px-2.5 py-2.5 leading-6"
+        />
 
-      <ComposerActions>
-        <ComposerActionGroup>
-          <input
-            ref={fileRef}
-            type="file"
-            multiple
-            className="sr-only"
-            aria-label="Attach files"
-            onChange={(event) => {
-              const files = event.target.files;
-              if (files) {
-                for (const file of files) {
-                  dispatch({ type: "attach", name: file.name, size: file.size });
+        <ComposerActions>
+          <ComposerActionGroup>
+            <input
+              ref={fileRef}
+              type="file"
+              multiple
+              className="sr-only"
+              aria-label="Attach files"
+              onChange={(event) => {
+                const files = event.target.files;
+                if (files) {
+                  for (const file of files) {
+                    dispatch({ type: "attach", name: file.name, size: file.size });
+                  }
                 }
-              }
-              event.target.value = "";
-            }}
-          />
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <Button
-                  type="button"
-                  size="icon-sm"
-                  variant="ghost"
-                  disabled={pending}
-                  aria-label="Attach files"
-                  className="rounded-full text-muted-foreground hover:text-foreground"
-                  onClick={() => fileRef.current?.click()}
-                />
-              }
-            >
-              <PlusIcon />
-            </TooltipTrigger>
-            <TooltipPopup>Attach files</TooltipPopup>
-          </Tooltip>
-          <span
-            className="inline-flex h-6 items-center gap-1.5 rounded-md bg-foreground/[0.05] px-2 text-xs text-subtle"
-            title="Local stand-in · nothing is sent to a model"
-          >
-            <span aria-hidden="true" className="size-1.5 rounded-full bg-subtle" />
-            Local
-          </span>
-        </ComposerActionGroup>
-        <ComposerActionGroup align="end">
-          <ModelMenu
-            model={thread.model}
-            onChange={(model) => dispatch({ type: "model", model })}
-          />
-          {pending ? (
-            <Button
-              type="button"
-              size="icon-sm"
-              variant="ghost"
-              aria-label="Stop generating"
-              className="rounded-full border-edge bg-surface-quiet text-foreground/80 shadow-rim hover:bg-surface"
-              onClick={() => dispatch({ type: "stop" })}
-            >
-              <SquareIcon />
-            </Button>
-          ) : (
-            <ComposerSubmit
-              render={
-                <Button aria-label="Send message" size="icon-sm" className="rounded-full">
-                  <ArrowUpIcon />
-                </Button>
-              }
+                event.target.value = "";
+              }}
             />
-          )}
-        </ComposerActionGroup>
-      </ComposerActions>
-    </Composer>
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    type="button"
+                    size="icon-sm"
+                    variant="ghost"
+                    disabled={pending}
+                    aria-label="Attach files"
+                    className="rounded-full text-muted-foreground hover:text-foreground"
+                    onClick={() => fileRef.current?.click()}
+                  />
+                }
+              >
+                <PlusIcon />
+              </TooltipTrigger>
+              <TooltipPopup>Attach files</TooltipPopup>
+            </Tooltip>
+            <span
+              className="inline-flex h-6 items-center gap-1.5 rounded-md bg-foreground/[0.05] px-2 text-xs text-subtle"
+              title="Local stand-in · nothing is sent to a model"
+            >
+              <span aria-hidden="true" className="size-1.5 rounded-full bg-subtle" />
+              Local
+            </span>
+          </ComposerActionGroup>
+          <ComposerActionGroup align="end">
+            <ModelMenu
+              model={thread.model}
+              onChange={(model) => dispatch({ type: "model", model })}
+            />
+            {pending ? (
+              <Button
+                type="button"
+                size="icon-sm"
+                variant="ghost"
+                aria-label="Stop generating"
+                className="rounded-full border-edge bg-surface-quiet text-foreground/80 shadow-rim hover:bg-surface"
+                onClick={() => dispatch({ type: "stop" })}
+              >
+                <SquareIcon />
+              </Button>
+            ) : (
+              <ComposerSubmit
+                render={
+                  <Button aria-label="Send message" size="icon-sm" className="rounded-full">
+                    <ArrowUpIcon />
+                  </Button>
+                }
+              />
+            )}
+          </ComposerActionGroup>
+        </ComposerActions>
+      </Composer>
+      <div className="mt-2">
+        <DitherControlStrip
+          matrix={dither.matrix}
+          cell={dither.cell}
+          scene={dither.scene}
+          onMatrix={(matrix) => onDither({ ...dither, matrix })}
+          onCell={(cell) => onDither({ ...dither, cell })}
+          onScene={(scene) => onDither({ ...dither, scene })}
+        />
+      </div>
+    </div>
   );
 };
 
@@ -426,8 +420,7 @@ function TranscriptMessage({
         grouped={grouped}
         className={grouped ? "-mt-4" : undefined}
         bubbleProps={{
-          className:
-            "border border-edge bg-surface-quiet px-3.5 py-2.5 shadow-rim",
+          className: "border border-edge bg-surface-quiet px-3.5 py-2.5 shadow-rim",
         }}
         footer={
           message.attachments && message.attachments.length > 0 ? (
@@ -474,7 +467,6 @@ function TranscriptMessage({
         {message.thinking ? (
           <Collapsible>
             <CollapsibleTrigger className="group/thought inline-flex w-fit items-center gap-1.5 rounded-md text-xs text-subtle transition-colors hover:text-muted-foreground">
-              <SparklesIcon className="size-3.5" />
               <span>Thought</span>
               <ChevronDownIcon className="size-3 transition-transform group-data-[panel-open]/thought:rotate-180" />
             </CollapsibleTrigger>
@@ -488,17 +480,12 @@ function TranscriptMessage({
 
         {message.tool ? (
           <Collapsible>
-            <CollapsibleTrigger className="group/tool flex w-full items-center gap-2.5 rounded-xl border border-edge bg-surface-quiet px-3 py-2 text-left shadow-rim transition-colors hover:bg-surface">
-              <span className="grid size-6 shrink-0 place-items-center rounded-md bg-foreground/[0.05] text-muted-foreground">
-                <WrenchIcon className="size-3.5" />
-              </span>
-              <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
-                {message.tool.name}
-              </span>
+            <CollapsibleTrigger className="group/tool inline-flex w-fit max-w-full items-center gap-1.5 rounded-md text-xs text-subtle transition-colors hover:text-muted-foreground">
+              <span className="truncate">{message.tool.name}</span>
               <Badge variant="warning" size="sm">
                 Pending
               </Badge>
-              <ChevronDownIcon className="size-3.5 text-subtle transition-transform group-data-[panel-open]/tool:rotate-180" />
+              <ChevronDownIcon className="size-3 shrink-0 transition-transform group-data-[panel-open]/tool:rotate-180" />
             </CollapsibleTrigger>
             <CollapsiblePanel>
               <p className="px-1 pt-2 text-xs leading-5 whitespace-pre-wrap text-subtle">
@@ -539,7 +526,9 @@ function TranscriptMessage({
                 {canRetry ? (
                   <MenuItem onClick={() => dispatch({ type: "retry" })}>Regenerate</MenuItem>
                 ) : null}
-                <MenuItem onClick={() => dispatch({ type: "feedback", id: message.id, vote: "up" })}>
+                <MenuItem
+                  onClick={() => dispatch({ type: "feedback", id: message.id, vote: "up" })}
+                >
                   Good response
                 </MenuItem>
                 <MenuItem
@@ -558,8 +547,8 @@ function TranscriptMessage({
 
 function AssistantMark() {
   return (
-    <span className="grid size-6 place-items-center rounded-md border border-edge bg-surface shadow-rim">
-      <ClapperboardIcon className="size-3.5 text-foreground/65" />
+    <span aria-hidden="true" className="text-[11px] font-medium leading-6 text-subtle">
+      C
     </span>
   );
 }

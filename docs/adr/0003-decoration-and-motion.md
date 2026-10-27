@@ -6,7 +6,7 @@ The chat shell should feel like an app, not a web page. Three decisions did the 
 
 Decoration comes from [dithercn](https://dithercn.dev) ([source](https://github.com/opencoredev/dithercn)), a dither engine for shadcn apps. It is installed with the shadcn registry (`npx shadcn@latest add https://dithercn.dev/r/dither-core.json`) and vendored into `apps/desktop/src/lib/dither` — no runtime dependency. Its tokens (`--dither-ink`, `--dither-paper`, `--dither-cell`, `--dither-bloom`, `--dither-color-*`) live in `app.css` and follow our theme variables.
 
-We did not copy a ready-made background from React Bits or dithercn's catalog. Following dithercn's own guidance, the backdrop is a small custom field written on the engine: `src/components/chat/dither-backdrop.tsx` renders `DitherShader` with a GLSL field that draws a quiet night scene — a solid paper sky, one hard-edged moon with a two-cell dithered ring, and stepped Stardew-style water bands along the bottom, in two theme tones (paper → ink) on the `bayer4` matrix at a 4px cell, `speed` of 0.35 with one dither level per matrix rank (`levels` of 17), and a `stillTime` frame for `prefers-reduced-motion`. The water fades to near-paper at the bottom edge so the composer sits on calm ground. The engine handles resize, offscreen pausing, context limits, and reduced motion; we only own the field.
+We did not copy a ready-made background from React Bits or dithercn's catalog. Following dithercn's own guidance, the backdrop is a small custom field written on the engine: `src/components/chat/dither-backdrop.tsx` renders `DitherShader` in two theme tones (paper → ink). The field returns only 0 or 1 — hard shelves, a hard vignette ring, sparse hard noise, or flat paper — so there is no stippled mid-tone. The default is a still wash: three solid ink bands on paper, with paper left under the composer. A control strip under the composer sets the matrix (`bayer2`, `bayer4`, `bayer8`, or `blue-noise`), the cell size (3, 4, or 6), and which field is showing. Motion is off (`speed` 0, `stillTime` 0); reduced motion holds that same still frame. The engine handles resize, offscreen pausing, context limits, and reduced motion; we only own the field and those controls.
 
 ## Gradients are gone
 
@@ -18,11 +18,11 @@ dithercn.dev runs lenis with `lerp: 0.1`, `autoRaf`, and `allowNestedScroll`, sk
 
 ## Neutral palette, coss-style
 
-Stepped neutrals keep the shell quiet. The tokens in `app.css` are cool neutrals: light mode is near-white (`#fafafa` background, `#171717` text), and dark mode starts at `#0C0C0C` with surfaces lifting through `#141414` (`card`, `sidebar`), `#1A1A1A` (`surface-fill`, `popover`), and `#1F1F1F` (`surface-raised`). The primary is a neutral accent, not a brand color: near-white (`#f5f5f5`) fill on dark, near-black on light, shared by buttons, selection highlight, and the dither's ink, so the night scene reads mono-neutral. `color-scheme` is set per theme so native scrollbars and form controls match. Component code references tokens, never literal greys, so the neutrals stay coherent everywhere.
+Stepped neutrals keep the shell quiet. The tokens in `app.css` are cool neutrals: light mode is near-white (`#fafafa` background, `#171717` text), and dark mode starts at `#0C0C0C` with surfaces lifting through `#141414` (`card`, `sidebar`), `#1A1A1A` (`surface-fill`, `popover`), and `#1F1F1F` (`surface-raised`). The primary is a neutral accent, not a brand color: near-white (`#f5f5f5`) fill on dark, near-black on light, shared by buttons, selection highlight, and the dither's ink, so the field reads mono-neutral. `color-scheme` is set per theme so native scrollbars and form controls match. Component code references tokens, never literal greys, so the neutrals stay coherent everywhere.
 
 ## Scale
 
-The empty state was retuned to read as an app surface rather than a small web hero: larger greeting (1.6rem) and clapper mark, taller suggestion rows, and a taller composer (min 4rem).
+The empty state was retuned to read as an app surface rather than a small web hero: a larger greeting, taller suggestion rows, and a taller composer (min 4rem).
 
 ## Vendored-code notes
 
@@ -30,6 +30,6 @@ Two one-line touches keep the engine compiling under our strict tsconfig: `lib` 
 
 Consequences:
 
-- New decoration should be a field on the engine, with theme palette names, slow motion, and a reduced-motion still frame — see dithercn's agent skill for the contract.
+- New decoration should be a field on the engine, with theme palette names, a still or very slow field, and a reduced-motion still frame — see dithercn's agent skill for the contract.
 - Touching scroll feel means `smooth-scroll.tsx`; nested scroll areas are already allowed.
 - New colors go in `app.css` tokens only; the dither palette reads the same variables.

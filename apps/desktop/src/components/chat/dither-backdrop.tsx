@@ -1,111 +1,214 @@
 "use client";
 
-import { DitherShader } from "@/lib/dither";
-import type { DitherShaderProps } from "@/lib/dither";
+import { Button } from "@/components/ui/button";
+import { DitherShader, DITHER_MATRICES } from "@/lib/dither";
+import type { DitherMatrix, DitherShaderProps } from "@/lib/dither";
 import { cn } from "@/lib/utils";
 
 /**
- * The night scene, kept quiet: a solid paper sky, one hard-edged moon with a
- * two-cell dithered ring, and four stepped water bands along the bottom in
- * the Stardew style — blocky terraced edges with broken ink crests, each
- * band a shade quieter toward the viewer. The sky is tone 0, so every cell
- * above the water stays clean paper, and the bottom band fades to
- * near-paper so the composer sits on calm ground.
- *
- * Layout is measured in fractions of the panel: the moon's position and
- * radius, the band tops, and the wave height offsets are all UV, so the
- * composition scales with the window and with the `cell` prop. One dither
- * cell in UV (`1.0 / res.y`) is reserved for strokes that should stay a
- * fixed number of cells thick — the crest lines and the moon ring — and the
- * terrace blocks stay four cells wide, so the staircase grain matches the
- * dither at any size. Two theme tones (`--dither-paper` → `--dither-ink`)
- * on `bayer4` with one level per matrix rank keep the dither regular;
- * `speed` and the per-band terrace and crest rates give the water a slow
- * drift and bob without stealing the chat's calm, and `stillTime` holds one
- * calm frame for reduced motion.
+ * Mono paper → ink, and only those two tones. Every scene returns 0 or 1,
+ * so the matrix never stipples a mid-grey. The default is a still wash:
+ * three solid ink shelves, paper everywhere else, including under the
+ * composer. `speed` 0 and `stillTime` hold one frame; reduced motion uses
+ * that same still frame.
  */
-const NIGHT_FIELD = `
-// A wave surface snapped to three levels, sampled per block of cells, so
-// every edge is a pixel staircase instead of a smooth slope. The drift
-// slides the whole block grid sideways, in blocks per field-second, so the
-// terraces travel and not only bob.
-float terrace(float x, float block, float t, float rate, float drift, float seed) {
-  float bi = floor(x / block + t * drift);
-  float wave = sin(bi * 1.7 + t * rate + seed)
-    + 0.5 * sin(bi * 2.9 - t * rate * 1.7 + seed * 2.0);
-  return floor(wave + 1.5) - 1.0;
-}
-
-// Broken crest dashes: whole blocks of six cells are inked or not, and the
-// pattern slides with time.
-bool crestOn(float x, float cell, float t, float rate, float seed) {
-  float bi = floor(x / (6.0 * cell));
-  return fract(bi * 0.618034 + t * rate + seed) < 0.5;
-}
-
+const WASH_FIELD = `
 float field(vec2 uv, vec2 res, float t) {
-  float aspect = res.x / res.y;
-  vec2 p = vec2(uv.x * aspect, uv.y);
-  // One dither cell in UV — for strokes only, never for layout.
-  float cell = 1.0 / res.y;
-  // Terrace blocks stay a fixed number of dither cells wide.
-  float block = 4.0 * cell;
-
-  float tone = 0.0;
-
-  // The moon: a hard disc at a fixed fraction of the panel, radius in UV so
-  // it scales with the window, plus a two-cell ring, nothing soft.
-  float moonR = 0.048;
-  float d = length(p - vec2(aspect * 0.68, 0.72));
-  tone = max(1.0 - step(moonR, d), (1.0 - step(moonR + 2.0 * cell, d)) * 0.3125);
-
-  // Water: the band tops are fractions of the panel height, waved by a
-  // terraced field whose height offsets are UV fractions too, so the
-  // composition holds its proportions at any size. The first stepped edge
-  // the cell falls under wins, and each band under it is quieter, down to
-  // near-paper at the bottom edge. Each band bobs and drifts at its own
-  // rate for parallax.
-  float top0 = 0.30 + 0.016 * terrace(p.x, block, t, 1.0, 0.45, 1.7);
-  float top1 = 0.22 + 0.012 * terrace(p.x, block, t, 1.2, 0.60, 4.2);
-  float top2 = 0.15 + 0.009 * terrace(p.x, block, t, 1.45, 0.75, 7.9);
-  float top3 = 0.09;
-
-  if (uv.y < top0) {
-    tone = 0.375;
-    if (uv.y > top0 - cell && crestOn(p.x, cell, t, 0.8, 0.0)) tone = 1.0;
-    if (uv.y < top1) {
-      tone = 0.25;
-      if (uv.y > top1 - cell && crestOn(p.x, cell, t, 1.0, 0.5)) tone = 1.0;
-      if (uv.y < top2) {
-        tone = 0.125;
-        if (uv.y > top2 - cell && crestOn(p.x, cell, t, 1.2, 0.25)) tone = 1.0;
-        if (uv.y < top3) {
-          tone = 0.0625;
-        }
-      }
-    }
-  }
-  return tone;
+  float y = uv.y;
+  float top = step(0.86, y);
+  float mid = step(0.50, y) * (1.0 - step(0.58, y));
+  float low = step(0.18, y) * (1.0 - step(0.24, y));
+  return max(top, max(mid, low));
 }
 `;
 
+/** One hard ring and a hard outer frame. The centre stays paper. */
+const VIGNETTE_FIELD = `
+float field(vec2 uv, vec2 res, float t) {
+  vec2 p = uv - vec2(0.5, 0.5);
+  p.x *= res.x / max(res.y, 1.0);
+  float r = length(p);
+  float ring = step(0.64, r) * (1.0 - step(0.70, r));
+  float frame = step(0.82, r);
+  return max(ring, frame);
+}
+`;
+
+/** Sparse ink cells. Each cell is fully paper or fully ink. */
+const NOISE_FIELD = `
+float field(vec2 uv, vec2 res, float t) {
+  vec2 id = floor(uv * max(res, vec2(1.0)));
+  float n = fract(sin(dot(id, vec2(127.1, 311.7))) * 43758.5453);
+  return step(0.92, n);
+}
+`;
+
+const OFF_FIELD = `
+float field(vec2 uv, vec2 res, float t) {
+  return 0.0;
+}
+`;
+
+export const DITHER_SCENES = ["off", "wash", "vignette", "noise"] as const;
+export type DitherScene = (typeof DITHER_SCENES)[number];
+
+export const DITHER_CELLS = [3, 4, 6] as const;
+export type DitherCell = (typeof DITHER_CELLS)[number];
+
+export type DitherLook = {
+  matrix: DitherMatrix;
+  cell: DitherCell;
+  scene: DitherScene;
+};
+
+const SCENE_FIELDS: Record<DitherScene, string> = {
+  off: OFF_FIELD,
+  wash: WASH_FIELD,
+  vignette: VIGNETTE_FIELD,
+  noise: NOISE_FIELD,
+};
+
+const SCENE_LABEL: Record<DitherScene, string> = {
+  off: "Off",
+  wash: "Wash",
+  vignette: "Vignette",
+  noise: "Noise",
+};
+
+const MATRIX_LABEL: Record<DitherMatrix, string> = {
+  bayer2: "2",
+  bayer4: "4",
+  bayer8: "8",
+  "blue-noise": "BN",
+};
+
+const MATRIX_NAME: Record<DitherMatrix, string> = {
+  bayer2: "Bayer 2",
+  bayer4: "Bayer 4",
+  bayer8: "Bayer 8",
+  "blue-noise": "Blue noise",
+};
+
 type DitherBackdropProps = Omit<
   DitherShaderProps,
-  "field" | "colorField" | "uniforms" | "fallback"
->;
+  "field" | "colorField" | "uniforms" | "fallback" | "palette"
+> & {
+  scene?: DitherScene;
+};
 
-export function DitherBackdrop({ className, ...props }: DitherBackdropProps) {
+export function DitherBackdrop({
+  className,
+  scene = "wash",
+  speed = 0,
+  animate,
+  ...props
+}: DitherBackdropProps) {
   return (
     <DitherShader
-      field={NIGHT_FIELD}
       palette={["--dither-paper", "--dither-ink"]}
       matrix="bayer4"
       cell={4}
-      levels={17}
-      speed={0.35}
-      stillTime={6}
-      className={cn("absolute inset-0", className)}
+      stillTime={0}
       {...props}
+      field={SCENE_FIELDS[scene]}
+      speed={speed}
+      animate={animate ?? speed !== 0}
+      className={cn("absolute inset-0", className)}
     />
+  );
+}
+
+function DitherChoice<T extends string | number>({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  label: string;
+  value: T;
+  options: readonly { value: T; label: string; name?: string }[];
+  onChange: (value: T) => void;
+}) {
+  return (
+    <div className="inline-flex items-center gap-1.5">
+      <span className="text-[11px] text-subtle">{label}</span>
+      <div
+        role="group"
+        aria-label={label}
+        className="inline-flex rounded-lg border border-edge bg-surface p-0.5 shadow-rim"
+      >
+        {options.map((option) => {
+          const pressed = option.value === value;
+          return (
+            <Button
+              key={String(option.value)}
+              type="button"
+              size="xs"
+              variant="ghost"
+              aria-pressed={pressed}
+              aria-label={option.name ?? option.label}
+              data-pressed={pressed ? "" : undefined}
+              className={cn(
+                "rounded-md px-1.5 text-subtle",
+                pressed && "bg-foreground/10 text-foreground",
+              )}
+              onClick={() => onChange(option.value)}
+            >
+              {option.label}
+            </Button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+export function DitherControlStrip({
+  matrix,
+  cell,
+  scene,
+  onMatrix,
+  onCell,
+  onScene,
+}: {
+  matrix: DitherMatrix;
+  cell: DitherCell;
+  scene: DitherScene;
+  onMatrix: (matrix: DitherMatrix) => void;
+  onCell: (cell: DitherCell) => void;
+  onScene: (scene: DitherScene) => void;
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+      <DitherChoice
+        label="Matrix"
+        value={matrix}
+        onChange={onMatrix}
+        options={DITHER_MATRICES.map((id) => ({
+          value: id,
+          label: MATRIX_LABEL[id],
+          name: MATRIX_NAME[id],
+        }))}
+      />
+      <DitherChoice
+        label="Cell"
+        value={cell}
+        onChange={onCell}
+        options={DITHER_CELLS.map((size) => ({
+          value: size,
+          label: String(size),
+          name: `${size} pixel cells`,
+        }))}
+      />
+      <DitherChoice
+        label="Field"
+        value={scene}
+        onChange={onScene}
+        options={DITHER_SCENES.map((id) => ({
+          value: id,
+          label: SCENE_LABEL[id],
+        }))}
+      />
+    </div>
   );
 }
