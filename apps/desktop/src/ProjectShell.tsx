@@ -7,6 +7,9 @@ import {
 } from "@/components/ui/tooltip";
 import { ChairMark } from "./home/ChairMark";
 
+/** Same field as the home gallery (`HomeScreen`). */
+const SHELL_BG = "#111111";
+
 type ProjectShellProps = {
   projectName: string;
   onHome: () => void;
@@ -17,9 +20,10 @@ export function ProjectShell({ projectName, onHome }: ProjectShellProps) {
   return (
     <section
       aria-label={projectName}
-      className="flex h-full min-h-0 flex-col bg-background"
+      className="relative flex h-full min-h-0 flex-col overflow-hidden text-neutral-100"
+      style={{ backgroundColor: SHELL_BG }}
     >
-      <header className="flex h-12 shrink-0 items-center gap-2.5 border-b border-edge pr-28 pl-3">
+      <header className="flex h-12 shrink-0 items-center gap-2.5 pr-28 pl-3">
         <Tooltip>
           <TooltipTrigger
             render={
@@ -29,7 +33,7 @@ export function ProjectShell({ projectName, onHome }: ProjectShellProps) {
                 variant="ghost"
                 aria-label="Home"
                 onClick={onHome}
-                className="rounded-lg text-muted-foreground hover:text-foreground"
+                className="rounded-lg text-neutral-400 hover:bg-white/[0.06] hover:text-neutral-100"
               />
             }
           >
@@ -37,12 +41,17 @@ export function ProjectShell({ projectName, onHome }: ProjectShellProps) {
           </TooltipTrigger>
           <TooltipPopup side="bottom">Home</TooltipPopup>
         </Tooltip>
-        <ChairMark className="h-5 w-auto text-foreground/80" />
-        <h1 className="min-w-0 truncate text-sm font-medium text-foreground">
+        <h1 className="min-w-0 truncate text-sm font-medium text-neutral-200">
           {projectName}
         </h1>
       </header>
       <main className="min-h-0 flex-1" />
+      <div className="pointer-events-none absolute bottom-5 right-5 z-20 flex items-center gap-2.5 text-neutral-400">
+        <ChairMark className="h-8 w-auto text-neutral-200" />
+        <span className="text-base font-medium tracking-wide text-neutral-200">
+          Chair
+        </span>
+      </div>
     </section>
   );
 }
