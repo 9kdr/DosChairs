@@ -145,7 +145,7 @@ body {
   height: 100%;
   overflow: hidden;
   background: var(--background);
-  border-radius: 12px;
+  border-radius: 16px;
   /* WebKitGTK needs the prefix; force descendants so home labels stay inert. */
   -webkit-user-select: none;
   user-select: none;

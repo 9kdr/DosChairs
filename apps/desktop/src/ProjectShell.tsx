@@ -5,8 +5,9 @@ import {
   ScissorsIcon,
   WaypointsIcon,
 } from "lucide-react";
-import { useState, type ReactNode } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import { ChatPrompt } from "@/components/chat-prompt";
+import { SmoothScrollTarget } from "@/components/smooth-scroll";
 import { Button } from "@/components/ui/button";
 import {
   Tooltip,
@@ -47,6 +48,7 @@ type SectionId = (typeof SECTIONS)[number]["id"];
 /** Blank project view: a way home, a prompt, section nav, and the Chair mark. */
 export function ProjectShell({ projectName, editorId, onHome }: ProjectShellProps) {
   const [section, setSection] = useState<SectionId>("orchestrator");
+  const scrollRef = useRef<HTMLElement>(null);
 
   return (
     <section
@@ -72,14 +74,18 @@ export function ProjectShell({ projectName, editorId, onHome }: ProjectShellProp
           </TooltipTrigger>
           <TooltipPopup side="bottom">Home</TooltipPopup>
         </Tooltip>
+        {editorId ? <EditorLogo id={editorId} className="size-4" /> : null}
         <h1 className="min-w-0 truncate text-sm font-medium text-neutral-200">
           {projectName}
         </h1>
-        {editorId ? <EditorLogo id={editorId} className="size-4" /> : null}
       </header>
-      <main className="min-h-0 flex-1 pb-36">
+      <main
+        ref={scrollRef}
+        className="relative min-h-0 flex-1 overflow-y-auto overscroll-contain"
+      >
         {section === "orchestrator" ? <OrchestratorBoard /> : null}
       </main>
+      <SmoothScrollTarget target={scrollRef} lerp={0.075} />
       <div
         aria-hidden="true"
         className="pointer-events-none absolute inset-x-0 bottom-0 z-10 h-44"
