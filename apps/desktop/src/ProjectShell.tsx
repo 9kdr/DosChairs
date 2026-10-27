@@ -80,7 +80,14 @@ export function ProjectShell({ projectName, editorId, onHome }: ProjectShellProp
       <main className="min-h-0 flex-1 pb-36">
         {section === "orchestrator" ? <OrchestratorBoard /> : null}
       </main>
-      <div className="pointer-events-auto absolute inset-x-0 bottom-[calc(1.25rem+3rem+0.75rem)] z-10 flex justify-center px-4">
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-x-0 bottom-0 z-10 h-44"
+        style={{
+          background: `linear-gradient(to top, ${SHELL_BG} 0%, color-mix(in srgb, ${SHELL_BG} 85%, transparent) 55%, transparent 100%)`,
+        }}
+      />
+      <div className="pointer-events-auto absolute inset-x-0 bottom-[calc(1.25rem+3rem+0.75rem)] z-20 flex justify-center px-4">
         <ChatPrompt />
       </div>
       <TooltipProvider delay={220} closeDelay={120} timeout={500}>
