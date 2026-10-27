@@ -174,6 +174,7 @@ precision mediump float;
 #endif
 
 uniform vec2 u_resolution;
+uniform vec2 u_cellSize;
 uniform float u_time;
 uniform float u_levels;
 uniform sampler2D u_thresholds;
@@ -187,7 +188,9 @@ ${field}
 ${colorField === undefined ? "" : withoutSharedHelpers(field, colorField)}
 
 void main() {
-  vec2 cell = floor(gl_FragCoord.xy);
+  // One dither cell spans u_cellSize device pixels (the canvas backing
+  // store is full-resolution, so no CSS upscale can blur it).
+  vec2 cell = floor(gl_FragCoord.xy / u_cellSize);
   vec2 uv = (cell + 0.5) / u_resolution;
   float tone = clamp(field(uv, u_resolution, u_time), 0.0, 1.0);
   float steps = u_levels - 1.0;
@@ -207,6 +210,8 @@ ${colorField === undefined ? PALETTE_COLOR : FIELD_COLOR}
 interface DrawInput {
   readonly columns: number;
   readonly rows: number;
+  /** Device pixels per dither cell: the buffer is `columns * deviceCell` wide. */
+  readonly deviceCell: number;
   readonly time: number;
   readonly levels: number;
   readonly uniforms: DitherUniforms;
@@ -300,6 +305,7 @@ const createRenderer = (
 
   const location = (name: string) => gl.getUniformLocation(program, name);
   const uResolution = location("u_resolution");
+  const uCellSize = location("u_cellSize");
   const uTime = location("u_time");
   const uLevels = location("u_levels");
   const uMatrixSize = location("u_matrixSize");
@@ -323,9 +329,10 @@ const createRenderer = (
       gl.deleteBuffer(buffer);
       gl.deleteProgram(program);
     },
-    draw: ({ columns, rows, time, levels, uniforms }) => {
-      gl.viewport(0, 0, columns, rows);
+    draw: ({ columns, rows, deviceCell, time, levels, uniforms }) => {
+      gl.viewport(0, 0, columns * deviceCell, rows * deviceCell);
       gl.uniform2f(uResolution, columns, rows);
+      gl.uniform2f(uCellSize, deviceCell, deviceCell);
       gl.uniform1f(uTime, time);
       gl.uniform1f(uLevels, levels);
       for (const spec of custom) {
@@ -613,7 +620,7 @@ export const DitherShader = ({
     }
   };
   const rendererRef = useRef<Renderer | null>(null);
-  const sizeRef = useRef({ columns: 0, rows: 0 });
+  const sizeRef = useRef({ columns: 0, rows: 0, deviceCell: 1 });
   const timeRef = useRef(stillTime);
   const [hasFrame, setHasFrame] = useState(false);
   const hasFrameRef = useRef(false);
@@ -645,12 +652,13 @@ export const DitherShader = ({
     live.current = { levels: resolvedLevels, map, paletteKey, speed, uniforms };
     drawRef.current = () => {
       const renderer = rendererRef.current;
-      const { columns, rows } = sizeRef.current;
+      const { columns, rows, deviceCell } = sizeRef.current;
       if (!renderer || columns === 0 || rows === 0) {
         return;
       }
       renderer.draw({
         columns,
+        deviceCell,
         levels: live.current.levels,
         rows,
         time: timeRef.current,
@@ -692,6 +700,17 @@ export const DitherShader = ({
     }
     const canvas = document.createElement("canvas");
     canvas.className = CANVAS_CLASS;
+    // Inline hardening for engines that drop Tailwind's arbitrary variant
+    // (and app.css's `canvas[data-dither-canvas]` rule that backs it up):
+    // the last value each engine recognises wins, which is
+    // `-webkit-optimize-contrast` (nearest-neighbour) on WebKitGTK.
+    canvas.setAttribute(
+      "style",
+      "image-rendering: pixelated; image-rendering: crisp-edges; image-rendering: -webkit-optimize-contrast;"
+    );
+    // Marked for app.css, which hardens `image-rendering` with the
+    // `-webkit-` fallback Tailwind's arbitrary variant can't emit.
+    canvas.dataset.ditherCanvas = "true";
     const gl = canvas.getContext("webgl", {
       alpha: true,
       antialias: false,
@@ -733,9 +752,12 @@ export const DitherShader = ({
       const height = Number.parseFloat(style.height) || root.offsetHeight;
       const columns = Math.max(1, Math.ceil(width / snapped));
       const rows = Math.max(1, Math.ceil(height / snapped));
-      sizeRef.current = { columns, rows };
-      canvas.width = columns;
-      canvas.height = rows;
+      sizeRef.current = { columns, rows, deviceCell };
+      // The buffer is full-resolution: one device pixel per buffer pixel, so
+      // the browser never stretches the canvas and its `image-rendering`
+      // quirks (WebKitGTK ignores `pixelated`) can't blur the cells.
+      canvas.width = columns * deviceCell;
+      canvas.height = rows * deviceCell;
       canvas.style.width = `${columns * snapped}px`;
       canvas.style.height = `${rows * snapped}px`;
       drawRef.current?.();
