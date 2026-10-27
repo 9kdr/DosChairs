@@ -133,6 +133,15 @@ body {
   overflow: hidden;
   background: var(--background);
   border-radius: 12px;
+  /* WebKitGTK needs the prefix; force descendants so home labels stay inert. */
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.chair-shell *,
+.chair-shell *::before,
+.chair-shell *::after {
+  -webkit-user-select: none;
   user-select: none;
 }
 
@@ -140,9 +149,11 @@ html[data-window-maximized] .chair-shell {
   border-radius: 0;
 }
 
-input,
-textarea,
-[contenteditable] {
+.chair-shell input,
+.chair-shell textarea,
+.chair-shell [contenteditable],
+.chair-shell [contenteditable="true"] {
+  -webkit-user-select: text;
   user-select: text;
 }
 
