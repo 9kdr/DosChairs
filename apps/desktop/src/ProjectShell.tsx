@@ -34,7 +34,7 @@ export function ProjectShell({ projectName, onHome }: ProjectShellProps) {
   return (
     <section
       aria-label={projectName}
-      className="relative flex h-full min-h-0 flex-col overflow-hidden text-neutral-100"
+      className="absolute inset-0 flex min-h-0 flex-col overflow-hidden text-neutral-100"
       style={{ backgroundColor: SHELL_BG }}
     >
       <header className="flex h-12 shrink-0 items-center gap-2.5 pr-28 pl-3">
