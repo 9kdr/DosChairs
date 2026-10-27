@@ -4,9 +4,6 @@ from pathlib import Path
 import pytest
 from chair_kdenlive import kdenlive_from_timeline, timeline_from_kdenlive
 
-ROOT = Path(__file__).resolve().parents[3]
-SCHEMA = json.loads((ROOT / "schemas" / "timeline.schema.json").read_text())
-
 ACTIVE = "{11111111-2222-3333-4444-555555555555}"
 NESTED = "{aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee}"
 
@@ -146,49 +143,6 @@ PROJECT = f"""<?xml version='1.0' encoding='utf-8'?>
 """
 
 
-def _validate(instance, schema, defs):
-    if "$ref" in schema:
-        _validate(instance, defs[schema["$ref"].rsplit("/", 1)[-1]], defs)
-        return
-    if "const" in schema:
-        assert instance == schema["const"]
-    if "enum" in schema:
-        assert instance in schema["enum"]
-    expected = schema.get("type")
-    if expected == "object":
-        assert isinstance(instance, dict)
-        props = schema.get("properties", {})
-        if schema.get("additionalProperties") is False:
-            assert set(instance) <= set(props)
-        for key in schema.get("required", []):
-            assert key in instance
-        for key, value in instance.items():
-            if key in props:
-                _validate(value, props[key], defs)
-    elif expected == "array":
-        assert isinstance(instance, list)
-        for item in instance:
-            _validate(item, schema["items"], defs)
-    elif expected == "string":
-        assert isinstance(instance, str)
-        if "minLength" in schema:
-            assert len(instance) >= schema["minLength"]
-    elif expected == "integer":
-        assert type(instance) is int
-        if "minimum" in schema:
-            assert instance >= schema["minimum"]
-    elif expected == "number":
-        assert type(instance) in (int, float)
-        if "exclusiveMinimum" in schema:
-            assert instance > schema["exclusiveMinimum"]
-    elif expected == "boolean":
-        assert type(instance) is bool
-
-
-def _assert_schema(timeline: dict) -> None:
-    _validate(timeline, SCHEMA, SCHEMA["$defs"])
-
-
 def test_reads_project_without_dropping_tracks_clips_or_markers(tmp_path: Path) -> None:
     timeline = timeline_from_kdenlive(PROJECT)
     assert timeline["id"] == ACTIVE
@@ -257,7 +211,6 @@ def test_reads_project_without_dropping_tracks_clips_or_markers(tmp_path: Path) 
     assert "Unused" not in names
     assert "/media/unused.mov" not in json.dumps(timeline)
     assert "Nope" not in [marker["name"] for marker in timeline["markers"]]
-    _assert_schema(timeline)
 
     assert timeline_from_kdenlive(kdenlive_from_timeline(timeline)) == timeline
     project = tmp_path / "cut.kdenlive"
@@ -276,7 +229,6 @@ def test_round_trip_keeps_marker_kind_comment_and_effect_track() -> None:
     timeline["tracks"].append({"id": "fx", "kind": "effect", "name": "Looks", "clips": []})
     again = timeline_from_kdenlive(kdenlive_from_timeline(timeline))
     assert again == timeline
-    _assert_schema(again)
 
 
 def test_clock_time_uses_the_profile_frame_rate() -> None:

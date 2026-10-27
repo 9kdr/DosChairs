@@ -609,7 +609,7 @@ def _markers(raw: str, num: int, den: int) -> list[dict[str, Any]]:
         comment = item.get("comment")
         name = comment.strip() if isinstance(comment, str) else ""
         marker: dict[str, Any] = {
-            "id": _unique_id(_marker_id(item, pos), used),
+            "id": _fresh_id(_marker_id(item, pos), used),
             "name": name,
             "time": _time(pos, num, den),
         }
@@ -1015,17 +1015,5 @@ def _fresh_id(base: str, used: set[str]) -> str:
     while f"{base}{number}" in used:
         number += 1
     fresh = f"{base}{number}"
-    used.add(fresh)
-    return fresh
-
-
-def _unique_id(base: str, used: set[str]) -> str:
-    if base not in used:
-        used.add(base)
-        return base
-    number = 2
-    while f"{base}-{number}" in used:
-        number += 1
-    fresh = f"{base}-{number}"
     used.add(fresh)
     return fresh
