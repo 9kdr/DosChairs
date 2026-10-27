@@ -3,7 +3,6 @@
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
-  --animate-skeleton: skeleton 2s -1s infinite linear;
   --color-warning-foreground: var(--warning-foreground);
   --color-warning: var(--warning);
   --color-success-foreground: var(--success-foreground);
@@ -38,20 +37,6 @@
   --color-edge: var(--surface-border);
   --shadow-rim: var(--surface-rim);
   --shadow-raised: var(--surface-rim), var(--surface-lift);
-  @keyframes skeleton {
-    to {
-      background-position: -200% 0;
-    }
-  }
-  --color-dither-ink: var(--dither-ink);
-  --color-dither-paper: var(--dither-paper);
-  --color-dither-blue: var(--dither-color-blue);
-  --color-dither-purple: var(--dither-color-purple);
-  --color-dither-green: var(--dither-color-green);
-  --color-dither-pink: var(--dither-color-pink);
-  --color-dither-orange: var(--dither-color-orange);
-  --color-dither-red: var(--dither-color-red);
-  --color-dither-grey: var(--dither-color-grey)
 }
 
 :root {
@@ -189,35 +174,6 @@ html[data-window-maximized] .chair-shell {
   background: color-mix(in srgb, var(--primary) 32%, transparent);
 }
 
-/*
- * The composer is Chair's raised input card: the same solid fill and dual rim
- * as every other surface, kept opaque so it never dissolves into the dither
- * it sits on. Tokens live in :root/.dark and are reused by bg-surface,
- * border-edge, and shadow-raised elsewhere.
- *
- * This block sits outside @layer on purpose. coss draws its own single
- * before-edge and drops the shadow while the input has focus, and those
- * utilities are more specific than a plain class; the rim here replaces both.
- */
-.chat-composer {
-  --composer-radius: 1rem;
-  border-color: var(--surface-border);
-  background-color: var(--surface-fill);
-  box-shadow: var(--surface-rim), var(--surface-lift);
-}
-
-.chat-composer::before {
-  box-shadow: none;
-}
-
-.chat-composer:has([data-slot="composer-input"]:focus-visible) {
-  border-color: color-mix(in srgb, var(--ring) 45%, var(--surface-border));
-  box-shadow:
-    var(--surface-rim),
-    var(--surface-lift),
-    0 0 0 3px color-mix(in srgb, var(--ring) 16%, transparent);
-}
-
 .dark {
   color-scheme: dark;
   --destructive-foreground: var(--color-red-400);
@@ -257,29 +213,3 @@ html[data-window-maximized] .chair-shell {
     inset 0 -1px 0 color-mix(in srgb, black 45%, transparent);
   --surface-lift: 0 1px 2px rgb(0 0 0 / 0.35);
 }
-
-@layer base {
-  :root {
-    --dither-ink: var(--foreground);
-    --dither-paper: var(--background);
-    --dither-cell: 3px;
-    --dither-color-blue: oklch(0.56 0.18 248);
-    --dither-color-purple: oklch(0.53 0.22 302);
-    --dither-color-green: oklch(0.58 0.15 152);
-    --dither-color-pink: oklch(0.58 0.21 355);
-    --dither-color-orange: oklch(0.64 0.17 52);
-    --dither-color-red: oklch(0.55 0.21 27);
-    --dither-color-grey: oklch(0.55 0 0);
-    --dither-bloom: 0.6;}
-  .dark {
-    --dither-ink: var(--foreground);
-    --dither-paper: var(--background);
-    --dither-cell: 3px;
-    --dither-color-blue: oklch(0.72 0.14 240);
-    --dither-color-purple: oklch(0.7 0.18 304);
-    --dither-color-green: oklch(0.78 0.17 152);
-    --dither-color-pink: oklch(0.74 0.17 354);
-    --dither-color-orange: oklch(0.79 0.15 62);
-    --dither-color-red: oklch(0.68 0.2 25);
-    --dither-color-grey: oklch(0.66 0 0);
-    --dither-bloom: 1;}}

@@ -7,10 +7,9 @@ import type { RefObject } from "react";
 import "lenis/dist/lenis.css";
 
 /**
- * Lenis smooth scrolling for one scroll container, the way dithercn.dev does
- * it: automatic frames, nested scroll areas allowed, skipped under reduced
- * motion, destroyed on unmount. Default `lerp` is 0.1 (chat); lower values
- * glide longer. The `target` is a scroll viewport.
+ * Lenis smooth scrolling for one scroll container. Automatic frames, nested
+ * scroll areas allowed, skipped under reduced motion, destroyed on unmount.
+ * Default `lerp` is 0.1; lower values glide longer. `target` is the viewport.
  */
 export function SmoothScrollTarget({
   target,

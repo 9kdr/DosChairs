@@ -1,35 +1,21 @@
 # 0003 — Decoration, motion, and the desktop shell palette
 
-The chat shell should feel like an app, not a web page. Three decisions did the work: a dithered backdrop instead of gradients, lenis for smooth scrolling, and a neutral palette.
+The window should feel like an app. Neutral surfaces and scoped smooth scroll stayed. Issue #30 removed the stand-in project chat, including its dither field and composer, so an open project is a blank shell.
 
-## The dither engine is dithercn, pulled directly
+## Palette
 
-Decoration comes from [dithercn](https://dithercn.dev) ([source](https://github.com/opencoredev/dithercn)), a dither engine for shadcn apps. It is installed with the shadcn registry (`npx shadcn@latest add https://dithercn.dev/r/dither-core.json`) and vendored into `apps/desktop/src/lib/dither` — no runtime dependency. Its tokens (`--dither-ink`, `--dither-paper`, `--dither-cell`, `--dither-bloom`, `--dither-color-*`) live in `app.css` and follow our theme variables.
+Stepped neutrals keep the shell quiet. The tokens in `app.css` are cool neutrals: light mode is near-white (`#fafafa` background, `#171717` text), and dark mode starts at `#0C0C0C` with surfaces lifting through `#141414` (`card`, `sidebar`), `#1A1A1A` (`surface-fill`, `popover`), and `#1F1F1F` (`surface-raised`). The primary is a neutral accent, not a brand color: near-white (`#f5f5f5`) fill on dark, near-black on light. `color-scheme` is set per theme so native scrollbars and form controls match. Component code references tokens, never literal greys, so the neutrals stay coherent everywhere.
 
-We did not copy a ready-made background from React Bits or dithercn's catalog. Following dithercn's own guidance, the backdrop is a small custom field written on the engine: `src/components/chat/dither-backdrop.tsx` renders `DitherShader` in two theme tones (paper → ink). The field returns only 0 or 1 — hard shelves, a hard vignette ring, sparse hard noise, or flat paper — so there is no stippled mid-tone. The default is a still wash: three solid ink bands on paper, with paper left under the composer. A control strip under the composer sets the matrix (`bayer2`, `bayer4`, `bayer8`, or `blue-noise`), the cell size (3, 4, or 6), and which field is showing. Motion is off (`speed` 0, `stillTime` 0); reduced motion holds that same still frame. The engine handles resize, offscreen pausing, context limits, and reduced motion; we only own the field and those controls.
+## Smooth scroll is lenis, on the home gallery
 
-## Gradients are gone
+Home uses `src/components/smooth-scroll.tsx`: lenis on one scroll viewport, `autoRaf`, `allowNestedScroll`, skipped under reduced motion, destroyed on unmount. The project shell does not scroll.
 
-The old `.app-atmosphere` radial gradients (indigo/sky in `--atmosphere`) were removed. All depth now comes from the dither, the glass surfaces, and flat neutral tones. Any future dither-style decoration should go through the engine (`DitherShader`, `fillStyle`, `FillPattern`), not hand-rolled gradients.
+## The stand-in chat is gone
 
-## Smooth scroll is lenis, scoped like dithercn.dev
-
-dithercn.dev runs lenis with `lerp: 0.1`, `autoRaf`, and `allowNestedScroll`, skips it under reduced motion, and destroys it on unmount. `src/components/chat/smooth-scroll.tsx` does the same, scoped to one scroll viewport instead of the page: `SmoothScrollTarget` wraps the chat conversation's viewport, so the message log glides while the sidebar and cut panel keep native scrolling. The jump-to-latest button keeps its native behavior.
-
-## Neutral palette, coss-style
-
-Stepped neutrals keep the shell quiet. The tokens in `app.css` are cool neutrals: light mode is near-white (`#fafafa` background, `#171717` text), and dark mode starts at `#0C0C0C` with surfaces lifting through `#141414` (`card`, `sidebar`), `#1A1A1A` (`surface-fill`, `popover`), and `#1F1F1F` (`surface-raised`). The primary is a neutral accent, not a brand color: near-white (`#f5f5f5`) fill on dark, near-black on light, shared by buttons, selection highlight, and the dither's ink, so the field reads mono-neutral. `color-scheme` is set per theme so native scrollbars and form controls match. Component code references tokens, never literal greys, so the neutrals stay coherent everywhere.
-
-## Scale
-
-The empty state was retuned to read as an app surface rather than a small web hero: a larger greeting, taller suggestion rows, and a taller composer (min 4rem).
-
-## Vendored-code notes
-
-Two one-line touches keep the engine compiling under our strict tsconfig: `lib` is `ES2023` (the engine uses `Array.prototype.toSorted`, supported in Tauri's WebKitGTK and Chromium), and `diffuse.ts` guards one indexed access for `noUncheckedIndexedAccess`.
+The project view no longer has a thread list, a transcript, a composer, or a dither backdrop. The vendored dither engine (`src/lib/dither`) and the composer document model left with it. Do not put that scaffolding back. An open project is a header — home, the Chair mark, the project name — and an empty center.
 
 Consequences:
 
-- New decoration should be a field on the engine, with theme palette names, a still or very slow field, and a reduced-motion still frame — see dithercn's agent skill for the contract.
-- Touching scroll feel means `smooth-scroll.tsx`; nested scroll areas are already allowed.
-- New colors go in `app.css` tokens only; the dither palette reads the same variables.
+- New colors go in `app.css` tokens only.
+- Home scroll feel means `smooth-scroll.tsx`.
+- Decoration for a future project screen is a new decision, not a restoration of the chat field.

@@ -1,7 +1,7 @@
 import { PlusIcon } from "lucide-react";
 import { motion, useReducedMotion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
-import { SmoothScrollTarget } from "@/components/chat/smooth-scroll";
+import { SmoothScrollTarget } from "@/components/smooth-scroll";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
