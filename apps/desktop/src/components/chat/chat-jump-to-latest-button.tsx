@@ -20,7 +20,7 @@ export function ChatJumpToLatestButton({
   return (
     <div
       data-slot="chat-jump-to-latest"
-      className="rounded-full bg-popover/90 backdrop-blur-xs"
+      className="rounded-full bg-surface shadow-raised"
     >
       <Button
         variant="outline"

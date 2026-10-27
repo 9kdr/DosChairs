@@ -33,7 +33,7 @@ export function ChatRail({
   return (
     <nav
       aria-label="Workspace"
-      className="hidden w-12 shrink-0 flex-col items-center gap-1 border-r border-line bg-background/50 py-2 md:flex"
+      className="hidden w-12 shrink-0 flex-col items-center gap-1 border-r border-edge bg-sidebar py-2 md:flex"
     >
       <Tooltip>
         <TooltipTrigger
@@ -41,10 +41,10 @@ export function ChatRail({
             <Button
               type="button"
               size="icon"
-              variant="outline"
+              variant="ghost"
               aria-label="New chat"
               onClick={onNewChat}
-              className="mb-2 text-foreground/80"
+              className="mb-2 rounded-lg border-edge bg-surface text-foreground/80 shadow-raised hover:bg-surface-quiet"
             />
           }
         >

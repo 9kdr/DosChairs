@@ -144,7 +144,7 @@ export function ChatPanel({
           size="icon-sm"
           variant="ghost"
           aria-label="Show threads"
-          className="absolute top-3 left-3 z-20 rounded-lg border border-line bg-background/60 text-muted-foreground backdrop-blur md:hidden"
+          className="absolute top-3 left-3 z-20 rounded-lg border border-edge bg-surface text-muted-foreground shadow-raised md:hidden"
           onClick={onOpenThreads}
         >
           <PanelLeftIcon />
@@ -155,7 +155,7 @@ export function ChatPanel({
         <div className="flex min-h-0 flex-1 flex-col items-center justify-center overflow-y-auto px-6 py-10">
           <div className="w-full max-w-[36rem]">
             <div className="flex flex-col items-center text-center">
-              <div className="relative mb-6 grid size-12 place-items-center rounded-xl border border-input bg-card not-dark:bg-clip-padding shadow-xs/5 before:pointer-events-none before:absolute before:inset-0 before:rounded-[calc(var(--radius-xl)-1px)] before:shadow-[0_1px_--theme(--color-black/4%)] dark:before:shadow-[0_-1px_--theme(--color-white/6%)]">
+              <div className="mb-6 grid size-12 place-items-center rounded-xl border border-edge bg-surface shadow-raised">
                 <ClapperboardIcon className="size-5 text-foreground/75" />
               </div>
               <h1 className="text-xl font-medium tracking-[-0.015em] text-foreground">
@@ -171,10 +171,10 @@ export function ChatPanel({
                 <button
                   key={suggestion.title}
                   type="button"
-                  className="group flex w-full items-center gap-3 rounded-xl border border-transparent px-3 py-3 text-left transition-colors duration-[160ms] ease-out hover:border-foreground/[0.06] hover:bg-foreground/[0.035]"
+                  className="group flex w-full items-center gap-3 rounded-xl border border-transparent px-3 py-3 text-left transition-colors duration-[160ms] ease-out hover:border-edge hover:bg-surface-quiet"
                   onClick={() => fillDraft(suggestion.prompt)}
                 >
-                  <span className="grid size-9 shrink-0 place-items-center rounded-lg border border-foreground/[0.06] bg-foreground/[0.03] text-muted-foreground transition-colors group-hover:text-foreground">
+                  <span className="grid size-9 shrink-0 place-items-center rounded-lg border border-edge bg-surface text-muted-foreground shadow-rim transition-colors group-hover:text-foreground">
                     <suggestion.icon className="size-4" />
                   </span>
                   <span className="min-w-0 flex-1">
@@ -198,9 +198,6 @@ export function ChatPanel({
                   pending={pending}
                   dispatch={dispatch}
                 />
-                <p className="mt-3 text-center text-xs text-subtle">
-                  Local stand-in · nothing is sent to a model
-                </p>
               </div>
             ) : null}
           </div>
@@ -268,15 +265,13 @@ const ChairComposer = ({
       value={draftValue(thread.draft)}
       submitDisabled={pending}
       allowEmpty={thread.attachments.length > 0}
-      className="rounded-2xl [--composer-radius:1rem]"
+      className="chat-composer"
       onValueChange={(value) => dispatch({ type: "draft", draft: getComposerText(value) })}
       onSubmit={(value) => {
         dispatch({ type: "draft", draft: getComposerText(value).trim() });
         dispatch({ type: "send" });
       }}
     >
-      <p className="px-2.5 pt-2 text-xs text-subtle">local</p>
-
       {thread.attachments.length > 0 ? (
         <div className="flex flex-wrap gap-1 px-2.5 pt-2" aria-label="Attachments">
           {thread.attachments.map((file) => (
@@ -339,6 +334,13 @@ const ChairComposer = ({
             </TooltipTrigger>
             <TooltipPopup>Attach files</TooltipPopup>
           </Tooltip>
+          <span
+            className="inline-flex h-6 items-center gap-1.5 rounded-md bg-foreground/[0.05] px-2 text-xs text-subtle"
+            title="Local stand-in · nothing is sent to a model"
+          >
+            <span aria-hidden="true" className="size-1.5 rounded-full bg-subtle" />
+            Local
+          </span>
         </ComposerActionGroup>
         <ComposerActionGroup align="end">
           <ModelMenu
@@ -349,9 +351,9 @@ const ChairComposer = ({
             <Button
               type="button"
               size="icon-sm"
-              variant="outline"
+              variant="ghost"
               aria-label="Stop generating"
-              className="rounded-full"
+              className="rounded-full border-edge bg-surface-quiet text-foreground/80 shadow-rim hover:bg-surface"
               onClick={() => dispatch({ type: "stop" })}
             >
               <SquareIcon />
@@ -425,7 +427,7 @@ function TranscriptMessage({
         className={grouped ? "-mt-4" : undefined}
         bubbleProps={{
           className:
-            "border border-foreground/[0.05] bg-foreground/[0.06] px-3.5 py-2.5 shadow-none",
+            "border border-edge bg-surface-quiet px-3.5 py-2.5 shadow-rim",
         }}
         footer={
           message.attachments && message.attachments.length > 0 ? (
@@ -486,7 +488,7 @@ function TranscriptMessage({
 
         {message.tool ? (
           <Collapsible>
-            <CollapsibleTrigger className="group/tool flex w-full items-center gap-2.5 rounded-xl border border-foreground/[0.06] bg-foreground/[0.025] px-3 py-2 text-left transition-colors hover:bg-foreground/[0.045]">
+            <CollapsibleTrigger className="group/tool flex w-full items-center gap-2.5 rounded-xl border border-edge bg-surface-quiet px-3 py-2 text-left shadow-rim transition-colors hover:bg-surface">
               <span className="grid size-6 shrink-0 place-items-center rounded-md bg-foreground/[0.05] text-muted-foreground">
                 <WrenchIcon className="size-3.5" />
               </span>
@@ -511,7 +513,7 @@ function TranscriptMessage({
             block.kind === "code" ? (
               <pre
                 key={index}
-                className="overflow-x-auto rounded-xl border border-foreground/[0.06] bg-foreground/[0.035] px-3.5 py-3 font-mono text-xs leading-5 text-foreground/80"
+                className="overflow-x-auto rounded-xl border border-edge bg-surface-quiet px-3.5 py-3 font-mono text-xs leading-5 text-foreground/80 shadow-rim"
               >
                 <code>{block.text}</code>
               </pre>
@@ -556,7 +558,7 @@ function TranscriptMessage({
 
 function AssistantMark() {
   return (
-    <span className="relative grid size-6 place-items-center rounded-md border border-input bg-card not-dark:bg-clip-padding shadow-xs/5 before:pointer-events-none before:absolute before:inset-0 before:rounded-[calc(var(--radius-md)-1px)] before:shadow-[0_1px_--theme(--color-black/4%)] dark:before:shadow-[0_-1px_--theme(--color-white/6%)]">
+    <span className="grid size-6 place-items-center rounded-md border border-edge bg-surface shadow-rim">
       <ClapperboardIcon className="size-3.5 text-foreground/65" />
     </span>
   );

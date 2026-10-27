@@ -33,6 +33,11 @@
   --color-surface-raised: var(--surface-raised);
   --color-subtle: var(--subtle);
   --color-line: var(--line);
+  --color-surface: var(--surface-fill);
+  --color-surface-quiet: var(--surface-fill-quiet);
+  --color-edge: var(--surface-border);
+  --shadow-rim: var(--surface-rim);
+  --shadow-raised: var(--surface-rim), var(--surface-lift);
   @keyframes skeleton {
     to {
       background-position: -200% 0;
@@ -80,6 +85,13 @@
   --surface-raised: var(--color-white);
   --subtle: #8c887a;
   --line: color-mix(in srgb, #262624 8%, transparent);
+  --surface-fill: var(--color-white);
+  --surface-fill-quiet: color-mix(in srgb, #262624 4%, var(--background));
+  --surface-border: color-mix(in srgb, #262624 12%, transparent);
+  --surface-rim:
+    inset 0 1px 0 color-mix(in srgb, white 70%, transparent),
+    inset 0 -1px 0 color-mix(in srgb, black 7%, transparent);
+  --surface-lift: 0 1px 2px color-mix(in srgb, black 6%, transparent);
 }
 
 html {
@@ -104,6 +116,35 @@ body {
 
 ::selection {
   background: color-mix(in srgb, var(--primary) 32%, transparent);
+}
+
+/*
+ * The composer is Chair's raised input card: the same solid fill and dual rim
+ * as every other surface, kept opaque so it never dissolves into the dither
+ * it sits on. Tokens live in :root/.dark and are reused by bg-surface,
+ * border-edge, and shadow-raised elsewhere.
+ *
+ * This block sits outside @layer on purpose. coss draws its own single
+ * before-edge and drops the shadow while the input has focus, and those
+ * utilities are more specific than a plain class; the rim here replaces both.
+ */
+.chat-composer {
+  --composer-radius: 1rem;
+  border-color: var(--surface-border);
+  background-color: var(--surface-fill);
+  box-shadow: var(--surface-rim), var(--surface-lift);
+}
+
+.chat-composer::before {
+  box-shadow: none;
+}
+
+.chat-composer:has([data-slot="composer-input"]:focus-visible) {
+  border-color: color-mix(in srgb, var(--ring) 45%, var(--surface-border));
+  box-shadow:
+    var(--surface-rim),
+    var(--surface-lift),
+    0 0 0 3px color-mix(in srgb, var(--ring) 16%, transparent);
 }
 
 .dark {
@@ -137,6 +178,13 @@ body {
   --surface-raised: #302f2b;
   --subtle: #8f8b80;
   --line: rgb(245 244 236 / 7%);
+  --surface-fill: #2e2d29;
+  --surface-fill-quiet: color-mix(in srgb, #f5f4ec 4%, var(--background));
+  --surface-border: color-mix(in srgb, #f5f4ec 9%, transparent);
+  --surface-rim:
+    inset 0 1px 0 color-mix(in srgb, white 10%, transparent),
+    inset 0 -1px 0 color-mix(in srgb, black 45%, transparent);
+  --surface-lift: 0 1px 2px rgb(0 0 0 / 0.35);
 }
 
 @layer base {

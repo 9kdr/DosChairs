@@ -11,7 +11,7 @@ export function ChatDatePill({
     <div
       data-slot="chat-date-pill"
       className={cn(
-        "pointer-events-none sticky top-4 z-20 mx-auto flex h-6 w-fit items-center justify-center rounded-full border bg-popover/90 px-2 font-medium text-foreground text-xs backdrop-blur-xs",
+        "pointer-events-none sticky top-4 z-20 mx-auto flex h-6 w-fit items-center justify-center rounded-full border border-edge bg-surface px-2 font-medium text-foreground text-xs shadow-raised",
         className,
       )}
       {...props}

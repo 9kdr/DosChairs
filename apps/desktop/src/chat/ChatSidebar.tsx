@@ -61,7 +61,7 @@ export function ChatSidebar({
     <aside
       aria-label="Threads"
       className={cn(
-        "flex w-[17rem] shrink-0 flex-col border-r border-line bg-sidebar",
+        "flex w-[17rem] shrink-0 flex-col border-r border-edge bg-sidebar",
         className,
       )}
     >
