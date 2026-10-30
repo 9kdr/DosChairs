@@ -1,7 +1,6 @@
 import {
   Bold,
   ChevronDown,
-  Eye,
   Italic,
   List,
   ListOrdered,
@@ -108,6 +107,57 @@ type BlockStyleId = (typeof BLOCK_STYLES)[number]["id"];
 
 type FormatId = (typeof FORMAT_ACTIONS)[number]["id"];
 
+type MdBlock = { start: number; end: number };
+
+/**
+ * Line ranges of the document's blocks, in order, blank lines excluded.
+ * The single source of truth for both rendering and keyboard navigation,
+ * so the two can never disagree about where a block starts or ends.
+ */
+function splitMarkdownBlocks(text: string): MdBlock[] {
+  const lines = text.split("\n");
+  const blocks: MdBlock[] = [];
+  const isBlank = (line: string) => line.trim() === "";
+  const isHeading = (line: string) => /^(#{1,3})\s+/.test(line);
+  const isQuote = (line: string) => /^\s*>\s?/.test(line);
+  const isBullet = (line: string) => /^\s*([-*])\s+/.test(line);
+  const isOrdered = (line: string) => /^\s*\d+\.\s+/.test(line);
+  let index = 0;
+  while (index < lines.length) {
+    if (isBlank(lines[index] ?? "")) {
+      index += 1;
+      continue;
+    }
+    const start = index;
+    const line = lines[index] ?? "";
+    if (isHeading(line)) {
+      index += 1;
+    } else if (isQuote(line)) {
+      while (index < lines.length && isQuote(lines[index] ?? "")) index += 1;
+    } else if (isBullet(line)) {
+      while (index < lines.length && isBullet(lines[index] ?? "")) index += 1;
+    } else if (isOrdered(line)) {
+      while (index < lines.length && isOrdered(lines[index] ?? "")) index += 1;
+    } else {
+      while (index < lines.length) {
+        const current = lines[index] ?? "";
+        if (
+          current.trim() === "" ||
+          isHeading(current) ||
+          isQuote(current) ||
+          isBullet(current) ||
+          isOrdered(current)
+        ) {
+          break;
+        }
+        index += 1;
+      }
+    }
+    blocks.push({ start, end: index });
+  }
+  return blocks;
+}
+
 /**
  * Renders exactly the markdown the toolbar can produce: headings, bold,
  * italic, strikethrough, inline code, bullets, numbered lists, quotes, and
@@ -150,6 +200,11 @@ function MarkdownText({
   onCommitBlock,
   onCancelBlock,
   onUndoKey,
+  onInlineFormat,
+  onSplitBlock,
+  onJoinBackward,
+  onJoinForward,
+  onMoveOut,
   editorRef,
 }: {
   text: string;
@@ -160,6 +215,11 @@ function MarkdownText({
   onCommitBlock: () => void;
   onCancelBlock: () => void;
   onUndoKey: (event: React.KeyboardEvent<HTMLTextAreaElement>) => boolean;
+  onInlineFormat: (id: "bold" | "italic") => void;
+  onSplitBlock: () => void;
+  onJoinBackward: () => void;
+  onJoinForward: () => void;
+  onMoveOut: (direction: -1 | 1) => void;
   editorRef: (el: HTMLTextAreaElement | null) => void;
 }) {
   if (!text.trim() && !editing) {
@@ -172,7 +232,6 @@ function MarkdownText({
       </p>
     );
   }
-  const lines = text.split("\n");
   const blocks: ReactNode[] = [];
   const renderEditor = (editorClassName: string) => (
     <textarea
@@ -192,9 +251,22 @@ function MarkdownText({
       onChange={(event) => onDraftChange(event.target.value)}
       onBlur={onCommitBlock}
       onKeyDown={(event) => {
+        if (event.nativeEvent.isComposing) return;
+        const target = event.currentTarget;
+        const mod = event.metaKey || event.ctrlKey;
         if (event.key === "Escape") {
           event.preventDefault();
           onCancelBlock();
+          return;
+        }
+        if (mod && !event.altKey && event.key.toLowerCase() === "b") {
+          event.preventDefault();
+          onInlineFormat("bold");
+          return;
+        }
+        if (mod && !event.altKey && event.key.toLowerCase() === "i") {
+          event.preventDefault();
+          onInlineFormat("italic");
           return;
         }
         if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
@@ -202,9 +274,41 @@ function MarkdownText({
           onCommitBlock();
           return;
         }
-        if (event.key === "Enter" && !draft.includes("\n")) {
+        if (event.key === "Enter") {
           event.preventDefault();
-          onCommitBlock();
+          onSplitBlock();
+          return;
+        }
+        if (
+          event.key === "Backspace" &&
+          target.selectionStart === 0 &&
+          target.selectionEnd === 0
+        ) {
+          event.preventDefault();
+          onJoinBackward();
+          return;
+        }
+        if (
+          event.key === "Delete" &&
+          target.selectionStart === target.value.length &&
+          target.selectionEnd === target.value.length
+        ) {
+          event.preventDefault();
+          onJoinForward();
+          return;
+        }
+        if (event.key === "ArrowUp" && target.selectionStart === 0 && target.selectionEnd === 0) {
+          event.preventDefault();
+          onMoveOut(-1);
+          return;
+        }
+        if (
+          event.key === "ArrowDown" &&
+          target.selectionStart === target.value.length &&
+          target.selectionEnd === target.value.length
+        ) {
+          event.preventDefault();
+          onMoveOut(1);
           return;
         }
         onUndoKey(event);
@@ -220,7 +324,7 @@ function MarkdownText({
     editorClassName = "text-sm leading-6",
   ) => {
     if (editing && editing.start === start && editing.end === end) {
-      blocks.push(<div key={key}>{renderEditor(editorClassName)}</div>);
+      showEditor(key, editorClassName);
       return;
     }
     blocks.push(
@@ -229,28 +333,21 @@ function MarkdownText({
       </div>,
     );
   };
-  let index = 0;
-  const flushParagraph = (paragraph: string[], key: string, start: number, end: number) => {
-    if (paragraph.length === 0) return;
-    wrapBlock(
-      key,
-      start,
-      end,
-      <p className="text-sm leading-6 text-neutral-100">
-        {paragraph.map((line, lineIndex) => (
-          <span key={lineIndex}>
-            {lineIndex > 0 ? <br /> : null}
-            {renderInline(line, `${key}-${lineIndex}`)}
-          </span>
-        ))}
-      </p>,
-    );
+  const lines = text.split("\n");
+  let editorShown = false;
+  const showEditor = (key: string, editorClassName = "text-sm leading-6") => {
+    blocks.push(<div key={key}>{renderEditor(editorClassName)}</div>);
+    editorShown = true;
   };
-  while (index < lines.length) {
-    const line = lines[index] ?? "";
-    const key = `block-${blocks.length}`;
-    const start = index;
-    const heading = line.match(/^(#{1,3})\s+(.*)$/);
+  splitMarkdownBlocks(text).forEach((block, blockIndex) => {
+    const key = `block-${blockIndex}`;
+    if (editing && !editorShown && block.start >= editing.end) {
+      // The open range sits in a gap (or at the end): plant the editor here
+      // rather than dropping it because no parsed block matches exactly.
+      showEditor(`block-editing`);
+    }
+    const first = lines[block.start] ?? "";
+    const heading = first.match(/^(#{1,3})\s+(.*)$/);
     if (heading) {
       const level = heading[1]?.length ?? 1;
       const body = heading[2] ?? "";
@@ -260,26 +357,23 @@ function MarkdownText({
           : level === 2
             ? "text-base font-semibold text-neutral-100"
             : "text-sm font-semibold text-neutral-100";
-      index += 1;
       wrapBlock(
         key,
-        start,
-        index,
+        block.start,
+        block.end,
         <p className={className}>{renderInline(body, key)}</p>,
         className,
       );
-      continue;
+      return;
     }
-    if (/^\s*>\s?/.test(line)) {
-      const quoted: string[] = [];
-      while (index < lines.length && /^\s*>\s?/.test(lines[index] ?? "")) {
-        quoted.push((lines[index] ?? "").replace(/^\s*>\s?/, ""));
-        index += 1;
-      }
+    if (/^\s*>\s?/.test(first)) {
+      const quoted = lines
+        .slice(block.start, block.end)
+        .map((line) => line.replace(/^\s*>\s?/, ""));
       wrapBlock(
         key,
-        start,
-        index,
+        block.start,
+        block.end,
         <blockquote className="border-l-2 border-white/15 pl-3 text-sm leading-6 text-neutral-300">
           {quoted.map((quote, quoteIndex) => (
             <span key={quoteIndex}>
@@ -289,61 +383,57 @@ function MarkdownText({
           ))}
         </blockquote>,
       );
-      continue;
+      return;
     }
-    if (/^\s*([-*])\s+/.test(line)) {
-      const items: string[] = [];
-      while (index < lines.length && /^\s*([-*])\s+/.test(lines[index] ?? "")) {
-        items.push((lines[index] ?? "").replace(/^\s*([-*])\s+/, ""));
-        index += 1;
-      }
+    if (/^\s*([-*])\s+/.test(first)) {
+      const items = lines
+        .slice(block.start, block.end)
+        .map((line) => line.replace(/^\s*([-*])\s+/, ""));
       wrapBlock(
         key,
-        start,
-        index,
+        block.start,
+        block.end,
         <ul className="list-disc space-y-1 pl-5 text-sm leading-6 text-neutral-100 marker:text-neutral-500">
           {items.map((item, itemIndex) => (
             <li key={itemIndex}>{renderInline(item, `${key}-${itemIndex}`)}</li>
           ))}
         </ul>,
       );
-      continue;
+      return;
     }
-    if (/^\s*\d+\.\s+/.test(line)) {
-      const items: string[] = [];
-      while (index < lines.length && /^\s*\d+\.\s+/.test(lines[index] ?? "")) {
-        items.push((lines[index] ?? "").replace(/^\s*\d+\.\s+/, ""));
-        index += 1;
-      }
+    if (/^\s*\d+\.\s+/.test(first)) {
+      const items = lines
+        .slice(block.start, block.end)
+        .map((line) => line.replace(/^\s*\d+\.\s+/, ""));
       wrapBlock(
         key,
-        start,
-        index,
+        block.start,
+        block.end,
         <ol className="list-decimal space-y-1 pl-5 text-sm leading-6 text-neutral-100 marker:text-neutral-500">
           {items.map((item, itemIndex) => (
             <li key={itemIndex}>{renderInline(item, `${key}-${itemIndex}`)}</li>
           ))}
         </ol>,
       );
-      continue;
+      return;
     }
-    if (line.trim() === "") {
-      index += 1;
-      continue;
-    }
-    const paragraph: string[] = [];
-    while (
-      index < lines.length &&
-      (lines[index] ?? "").trim() !== "" &&
-      !/^(#{1,3})\s+/.test(lines[index] ?? "") &&
-      !/^\s*>\s?/.test(lines[index] ?? "") &&
-      !/^\s*([-*])\s+/.test(lines[index] ?? "") &&
-      !/^\s*\d+\.\s+/.test(lines[index] ?? "")
-    ) {
-      paragraph.push(lines[index] ?? "");
-      index += 1;
-    }
-    flushParagraph(paragraph, key, start, index);
+    const paragraph = lines.slice(block.start, block.end);
+    wrapBlock(
+      key,
+      block.start,
+      block.end,
+      <p className="text-sm leading-6 text-neutral-100">
+        {paragraph.map((line, lineIndex) => (
+          <span key={lineIndex}>
+            {lineIndex > 0 ? <br /> : null}
+            {renderInline(line, `${key}-${lineIndex}`)}
+          </span>
+        ))}
+      </p>,
+    );
+  });
+  if (editing && !editorShown) {
+    showEditor("block-editing-trailing");
   }
   return <div className="flex min-h-0 flex-col gap-3">{blocks}</div>;
 }
@@ -356,7 +446,6 @@ export function PlanDoc({ open, mode, onOpen, onClose, notice, className }: Plan
   const [draft, setDraft] = useState("");
   const [editingTab, setEditingTab] = useState<string | null>(null);
   const [editingLabel, setEditingLabel] = useState("");
-  const [preview, setPreview] = useState(true);
   const areaRef = useRef<HTMLTextAreaElement>(null);
 
   // In preview, a block is edited in place: click it and its source lines
@@ -364,14 +453,13 @@ export function PlanDoc({ open, mode, onOpen, onClose, notice, className }: Plan
   // Escape. Opening an edit pushes history; committing does not.
   const [editingBlock, setEditingBlock] = useState<{ start: number; end: number } | null>(null);
   const [blockDraft, setBlockDraft] = useState("");
-  const [caretOffset, setCaretOffset] = useState<number | null>(null);
 
   // The style trigger mirrors the block at the caret: the open block
   // editor's first line in preview, the selected line in source.
   const caretStyle: BlockStyleId = (() => {
-    const source = editingBlock ? blockDraft : (texts[doc] ?? "");
-    const offset = editingBlock ? 0 : caretOffset;
-    if (offset == null) return "normal";
+    if (!editingBlock) return "normal";
+    const source = blockDraft;
+    const offset = 0;
     const lineStart = source.lastIndexOf("\n", offset - 1) + 1;
     let lineEnd = source.indexOf("\n", offset);
     if (lineEnd < 0) lineEnd = source.length;
@@ -393,7 +481,6 @@ export function PlanDoc({ open, mode, onOpen, onClose, notice, className }: Plan
   };
   const undoRef = useRef<TextSnapshot[]>([]);
   const redoRef = useRef<TextSnapshot[]>([]);
-  const lastPushRef = useRef(0);
   const [histTick, setHistTick] = useState(0);
   const readCaret = (): readonly [number, number] | null => {
     const el = activeEditor();
@@ -462,6 +549,264 @@ export function PlanDoc({ open, mode, onOpen, onClose, notice, className }: Plan
   };
   const cancelBlockEditor = () => {
     setEditingBlock(null);
+  };
+  /**
+   * Replace a line range, then open whichever parsed block holds the caret
+   * line. The open range always follows the parse, never the reverse, so the
+   * editor can never point at lines that render as something else.
+   */
+  const commitLines = (
+    start: number,
+    end: number,
+    nextLines: string[],
+    caretLine: number,
+    caretCol: number,
+  ) => {
+    const base = texts[doc] ?? "";
+    const lines = base.split("\n");
+    const next = [...lines.slice(0, start), ...nextLines, ...lines.slice(end)].join("\n");
+    setTexts((current) => ({ ...current, [doc]: next }));
+    const targetLine = start + caretLine;
+    const target =
+      splitMarkdownBlocks(next).find(
+        (block) => block.start <= targetLine && targetLine < block.end,
+      ) ?? null;
+    if (!target) {
+      // Blank gap (e.g. split at the very end): keep editing an empty block
+      // there instead of dropping the editor.
+      setBlockDraft("");
+      setEditingBlock({ start: targetLine, end: targetLine });
+      requestAnimationFrame(() => {
+        const editor = blockAreaRef.current;
+        if (!editor) return;
+        editor.focus();
+        editor.setSelectionRange(0, 0);
+      });
+      return;
+    }
+    const draft = next.split("\n").slice(target.start, target.end).join("\n");
+    setBlockDraft(draft);
+    setEditingBlock({ start: target.start, end: target.end });
+    const before = draft.split("\n").slice(0, targetLine - target.start + 1);
+    const offset =
+      before.slice(0, -1).join("\n").length +
+      (before.length > 1 ? 1 : 0) +
+      caretCol;
+    requestAnimationFrame(() => {
+      const editor = blockAreaRef.current;
+      if (!editor) return;
+      editor.focus();
+      const at = Math.max(0, Math.min(offset, editor.value.length));
+      editor.setSelectionRange(at, at);
+    });
+  };
+  /** Commit silently, then open the neighbouring block, if there is one. */
+  const moveOutOfBlock = (direction: -1 | 1) => {
+    if (!editingBlock) return;
+    const committed = applyBlockToText(texts[doc] ?? "", editingBlock, blockDraft);
+    if (committed !== (texts[doc] ?? "")) {
+      setTexts((current) => ({ ...current, [doc]: committed }));
+    }
+    const blocks = splitMarkdownBlocks(committed);
+    const at = editingBlock.start;
+    const neighbour =
+      direction < 0
+        ? [...blocks].reverse().find((block) => block.end <= at)
+        : blocks.find((block) => block.start >= editingBlock.end);
+    // The edited block may have merged with its surroundings; fall back to
+    // whatever block now holds the caret line.
+    const target =
+      neighbour ??
+      blocks.find((block) => block.start <= at && at < block.end) ??
+      blocks[blocks.length - 1];
+    if (!target) {
+      setEditingBlock(null);
+      return;
+    }
+    pushHistory({
+      texts: { ...texts, [doc]: committed },
+      doc,
+      caret: null,
+    });
+    const targetLines = committed.split("\n").slice(target.start, target.end).join("\n");
+    setBlockDraft(targetLines);
+    setEditingBlock({ start: target.start, end: target.end });
+    requestAnimationFrame(() => {
+      const editor = blockAreaRef.current;
+      if (!editor) return;
+      editor.focus();
+      const at = direction < 0 ? editor.value.length : 0;
+      editor.setSelectionRange(at, at);
+    });
+  };
+  /** Enter splits the caret line; list items continue their marker. */
+  const splitBlockAtCaret = () => {
+    const editor = blockAreaRef.current;
+    if (!editor || !editingBlock) return;
+    if (!blockDraft.trim()) {
+      // Nothing to split: drop the empty block and hand the caret onward.
+      pushHistory();
+      const committed = applyBlockToText(texts[doc] ?? "", editingBlock, "");
+      setTexts((current) => ({ ...current, [doc]: committed }));
+      const next = splitMarkdownBlocks(committed).find(
+        (block) => block.start >= editingBlock.start,
+      );
+      if (!next) {
+        setEditingBlock(null);
+        return;
+      }
+      setBlockDraft(committed.split("\n").slice(next.start, next.end).join("\n"));
+      setEditingBlock({ start: next.start, end: next.end });
+      requestAnimationFrame(() => {
+        const target = blockAreaRef.current;
+        if (!target) return;
+        target.focus();
+        target.setSelectionRange(0, 0);
+      });
+      return;
+    }
+    pushHistory();
+    const caret = editor.selectionStart ?? blockDraft.length;
+    const draftLines = blockDraft.split("\n");
+    let caretLine = 0;
+    let count = 0;
+    for (let index = 0; index < draftLines.length; index += 1) {
+      const length = draftLines[index]?.length ?? 0;
+      if (count + length >= caret) break;
+      count += length + 1;
+      caretLine += 1;
+    }
+    const lineStart = count;
+    const line = draftLines[Math.min(caretLine, draftLines.length - 1)] ?? "";
+    const beforeText = blockDraft.slice(lineStart, caret);
+    const afterText = blockDraft.slice(caret, lineStart + line.length);
+    const list = line.match(/^(\s*)([-*]|\d+\.)\s+(.*)$/);
+    if (list) {
+      const indent = list[1] ?? "";
+      const marker = list[2] ?? "";
+      const itemText = list[3] ?? "";
+      if (itemText.trim() === "" && beforeText.trim() === "" && afterText.trim() === "") {
+        // Empty item: outdent into a plain paragraph line instead.
+        const nextLines = [...draftLines.slice(0, caretLine), "", ...draftLines.slice(caretLine + 1)];
+        commitLines(editingBlock.start, editingBlock.end, nextLines, caretLine, 0);
+        return;
+      }
+      const ordered = /^\d+\.$/.test(marker);
+      const nextMarker = ordered
+        ? `${draftLines.slice(0, caretLine + 1).filter((candidate) => /^\s*\d+\.\s+/.test(candidate)).length + 1}.`
+        : marker;
+      const headText = `${indent}${marker} ${beforeText}`;
+      const tailText = `${indent}${nextMarker} ${afterText}`;
+      let nextLines = [
+        ...draftLines.slice(0, caretLine),
+        headText,
+        tailText,
+        ...draftLines.slice(caretLine + 1),
+      ];
+      if (ordered) {
+        let seen = 0;
+        nextLines = nextLines.map((candidate) => {
+          const match = candidate.match(/^(\s*)\d+\.\s+(.*)$/);
+          if (!match) return candidate;
+          seen += 1;
+          return `${match[1]}${seen}. ${match[2]}`;
+        });
+      }
+      commitLines(editingBlock.start, editingBlock.end, nextLines, caretLine + 1, 0);
+      return;
+    }
+    const quote = line.match(/^(\s*>\s?)(.*)$/);
+    if (quote) {
+      const marker = quote[1] ?? "";
+      const quoteLines = draftLines.slice();
+      quoteLines[caretLine] = `${marker}${beforeText}`;
+      const inserted = `${afterText ? marker : ""}${afterText}`;
+      quoteLines.splice(caretLine + 1, 0, inserted);
+      commitLines(
+        editingBlock.start,
+        editingBlock.end,
+        quoteLines,
+        caretLine + 1,
+        afterText ? marker.length : 0,
+      );
+      return;
+    }
+    // Plain paragraph or heading line: a blank line separates the halves.
+    const heading = line.match(/^(#{1,3}\s+)(.*)$/);
+    const headLine = heading ? `${heading[1]}${beforeText}` : beforeText;
+    const nextLines = [
+      ...draftLines.slice(0, caretLine),
+      headLine,
+      "",
+      afterText,
+      ...draftLines.slice(caretLine + 1),
+    ];
+    commitLines(editingBlock.start, editingBlock.end, nextLines, caretLine + 2, 0);
+  };
+  /**
+   * Open whichever parsed block holds the given line of freshly written
+   * text, with the caret at an offset inside that line. Every structural
+   * edit funnels through here so the open range always matches the parse.
+   */
+  const openBlockAtLine = (next: string, line: number, caretCol: number) => {
+    setTexts((current) => ({ ...current, [doc]: next }));
+    const target =
+      splitMarkdownBlocks(next).find((block) => block.start <= line && line < block.end) ??
+      null;
+    if (!target) {
+      setEditingBlock(null);
+      return;
+    }
+    const targetLines = next.split("\n");
+    setBlockDraft(targetLines.slice(target.start, target.end).join("\n"));
+    setEditingBlock({ start: target.start, end: target.end });
+    const before = targetLines.slice(target.start, line).join("\n");
+    const offset = before.length + (line > target.start ? 1 : 0) + caretCol;
+    requestAnimationFrame(() => {
+      const editor = blockAreaRef.current;
+      if (!editor) return;
+      editor.focus();
+      const at = Math.max(0, Math.min(offset, editor.value.length));
+      editor.setSelectionRange(at, at);
+    });
+  };
+  /**
+   * Backspace at the very start joins the previous block; Delete at the
+   * very end joins the next one. Only the boundary lines fuse; every other
+   * line of both blocks survives untouched.
+   */
+  const joinBlockAtCaret = (direction: -1 | 1) => {
+    const editor = blockAreaRef.current;
+    if (!editor || !editingBlock) return;
+    const caret = editor.selectionStart ?? 0;
+    if (direction < 0 ? caret !== 0 : caret !== blockDraft.length) return;
+    const committed = applyBlockToText(texts[doc] ?? "", editingBlock, blockDraft);
+    const lines = committed.split("\n");
+    const blocks = splitMarkdownBlocks(committed);
+    const at = editingBlock.start;
+    const current = blocks.find((block) => block.start <= at && at < block.end) ?? {
+      start: editingBlock.start,
+      end: editingBlock.start + blockDraft.split("\n").length,
+    };
+    const sibling =
+      direction < 0
+        ? [...blocks].reverse().find((block) => block.end <= current.start)
+        : blocks.find((block) => block.start >= current.end);
+    if (!sibling) return;
+    pushHistory();
+    // Fuse the two boundary lines; blank lines between them vanish.
+    const jointStart = direction < 0 ? sibling.start : current.start;
+    const jointEnd = direction < 0 ? current.start + 1 : sibling.start + 1;
+    const joint =
+      direction < 0
+        ? `${lines[sibling.end - 1] ?? ""}${lines[current.start] ?? ""}`
+        : `${lines[current.end - 1] ?? ""}${lines[sibling.start] ?? ""}`;
+    const next = [...lines.slice(0, jointStart), joint, ...lines.slice(jointEnd)];
+    const caretCol =
+      direction < 0
+        ? (lines[sibling.end - 1] ?? "").length
+        : (lines[current.end - 1] ?? "").length;
+    openBlockAtLine(next.join("\n"), jointStart, caretCol);
   };
   const handleUndoKey = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
     const mod = event.metaKey || event.ctrlKey;
@@ -658,14 +1003,9 @@ export function PlanDoc({ open, mode, onOpen, onClose, notice, className }: Plan
 
   const applyFormat = (id: FormatId) => {
     const el = activeEditor();
-    if (!el) {
-      setPreview(false);
-      requestAnimationFrame(() => areaRef.current?.focus());
-      return;
-    }
+    if (!el || !editingBlock) return;
     pushHistory();
-    const inBlock = editingBlock !== null;
-    const value = inBlock ? blockDraft : (texts[doc] ?? "");
+    const value = blockDraft;
     const start = el.selectionStart;
     const end = el.selectionEnd;
     let result: { next: string; caret: readonly [number, number] };
@@ -689,24 +1029,15 @@ export function PlanDoc({ open, mode, onOpen, onClose, notice, className }: Plan
         result = prefixLines(value, start, end, () => "> ");
         break;
     }
-    if (inBlock) {
-      setBlockDraft(result.next);
-    } else {
-      setTexts((current) => ({ ...current, [doc]: result.next }));
-    }
+    setBlockDraft(result.next);
     focusCaret(result.caret);
   };
 
   const applyBlockStyle = (style: BlockStyleId) => {
     const el = activeEditor();
-    if (!el) {
-      setPreview(false);
-      requestAnimationFrame(() => areaRef.current?.focus());
-      return;
-    }
+    if (!el || !editingBlock) return;
     pushHistory();
-    const inBlock = editingBlock !== null;
-    const value = inBlock ? blockDraft : (texts[doc] ?? "");
+    const value = blockDraft;
     const start = el.selectionStart;
     const end = el.selectionEnd;
     const lineStart = value.lastIndexOf("\n", start - 1) + 1;
@@ -719,12 +1050,7 @@ export function PlanDoc({ open, mode, onOpen, onClose, notice, className }: Plan
       .map((line) => `${marker}${line.replace(/^\s*#{1,6}\s*/, "")}`)
       .join("\n");
     const caret = [lineStart, lineStart + next.length] as const;
-    const styled = `${value.slice(0, lineStart)}${next}${value.slice(endIndex)}`;
-    if (inBlock) {
-      setBlockDraft(styled);
-    } else {
-      setTexts((current) => ({ ...current, [doc]: styled }));
-    }
+    setBlockDraft(`${value.slice(0, lineStart)}${next}${value.slice(endIndex)}`);
     focusCaret(caret);
   };
 
@@ -1092,33 +1418,11 @@ export function PlanDoc({ open, mode, onOpen, onClose, notice, className }: Plan
               />
               <TooltipPopup sideOffset={8}>Redo</TooltipPopup>
             </Tooltip>
-            <Tooltip key="preview">
-              <TooltipTrigger
-                render={
-                  <Button
-                    type="button"
-                    size="icon-sm"
-                    variant="ghost"
-                    aria-label={preview ? "Edit the plan text" : "Preview the plan text"}
-                    aria-pressed={preview}
-                    data-pressed={preview ? "" : undefined}
-                    className="ml-auto"
-                    onClick={() => setPreview((current) => !current)}
-                  >
-                    <Eye />
-                  </Button>
-                }
-              />
-              <TooltipPopup sideOffset={8}>
-                {preview ? "Edit" : "Preview"}
-              </TooltipPopup>
-            </Tooltip>
           </div>
-          {preview ? (
-            <div
-              aria-label={`Preview ${tabs.find((tab) => tab.id === doc)?.label ?? doc}`}
-              className="min-h-[20rem] flex-1 overflow-y-auto"
-            >
+          <div
+            aria-label={`Preview ${tabs.find((tab) => tab.id === doc)?.label ?? doc}`}
+            className="min-h-[20rem] flex-1 overflow-y-auto"
+          >
               <MarkdownText
                 text={texts[doc] ?? ""}
                 editing={editingBlock}
@@ -1128,32 +1432,16 @@ export function PlanDoc({ open, mode, onOpen, onClose, notice, className }: Plan
                 onCommitBlock={commitBlockEditor}
                 onCancelBlock={cancelBlockEditor}
                 onUndoKey={handleUndoKey}
+                onInlineFormat={(id) => applyFormat(id)}
+                onSplitBlock={splitBlockAtCaret}
+                onJoinBackward={() => joinBlockAtCaret(-1)}
+                onJoinForward={() => joinBlockAtCaret(1)}
+                onMoveOut={moveOutOfBlock}
                 editorRef={(el) => {
                   blockAreaRef.current = el;
                 }}
               />
             </div>
-          ) : (
-            <textarea
-              ref={areaRef}
-              value={texts[doc] ?? ""}
-              aria-label={`Edit ${tabs.find((tab) => tab.id === doc)?.label ?? doc}`}
-              placeholder="Write the plan…"
-              className="min-h-[20rem] flex-1 resize-none border-0 bg-transparent text-sm leading-6 text-neutral-100 shadow-none outline-none ring-0 placeholder:text-neutral-600 focus-visible:outline-none"
-              onChange={(event) => {
-                const now = Date.now();
-                if (now - lastPushRef.current > 1000) {
-                  pushHistory();
-                  lastPushRef.current = now;
-                }
-                setTexts((current) => ({ ...current, [doc]: event.target.value }))
-              }}
-              onSelect={(event) => {
-                setCaretOffset(event.currentTarget.selectionStart);
-              }}
-              onKeyDown={handleUndoKey}
-            />
-          )}
         </>
       ) : (
         <>

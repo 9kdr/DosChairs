@@ -110,17 +110,19 @@ export function TaskChat({
         <TaskActivityPanel task={task} />
       </div>
 
-      <div className="mx-auto flex w-full max-w-3xl shrink-0 justify-center px-4 pt-2 pb-6">
-        <ChatPrompt
-          open
-          wide
-          placeholder={`Message about ${task.name}…`}
-          onOpen={() => {}}
-          onClose={() => {}}
-          onSend={(draft) => {
-            if (draft.text.trim()) onSend(draft.text);
-          }}
-        />
+      <div className="shrink-0 px-4 pt-2 pb-6">
+        <div className="mx-auto w-full max-w-3xl">
+          <ChatPrompt
+            open
+            wide
+            placeholder={`Message about ${task.name}…`}
+            onOpen={() => {}}
+            onClose={() => {}}
+            onSend={(draft) => {
+              if (draft.text.trim()) onSend(draft.text);
+            }}
+          />
+        </div>
       </div>
     </div>
   );
