@@ -312,6 +312,7 @@ function MarkdownText({
   onOpenBlock,
   onCommitBlock,
   onCancelBlock,
+  onBlurBlock,
   onUndoKey,
   onSelectChange,
   onInlineFormat,
@@ -328,6 +329,7 @@ function MarkdownText({
   onOpenBlock: (start: number, end: number) => void;
   onCommitBlock: () => void;
   onCancelBlock: () => void;
+  onBlurBlock: (event: React.FocusEvent<HTMLTextAreaElement>) => void;
   onUndoKey: (event: React.KeyboardEvent<HTMLTextAreaElement>) => boolean;
   onSelectChange: (start: number, end: number) => void;
   onInlineFormat: (id: "bold" | "italic") => void;
@@ -367,7 +369,7 @@ function MarkdownText({
       onSelect={(event) =>
         onSelectChange(event.currentTarget.selectionStart, event.currentTarget.selectionEnd)
       }
-      onBlur={onCommitBlock}
+      onBlur={onBlurBlock}
       onKeyDown={(event) => {
         if (event.nativeEvent.isComposing) return;
         const target = event.currentTarget;
@@ -571,7 +573,24 @@ export function PlanDoc({ open, mode, onOpen, onClose, notice, className }: Plan
   // Escape. Opening an edit pushes history; committing does not.
   const [editingBlock, setEditingBlock] = useState<{ start: number; end: number } | null>(null);
   const [blockDraft, setBlockDraft] = useState("");
+  // Mirrors blockDraft synchronously so commit paths that fire from stale
+  // closures (blur after a menu pick, rapid open/commit sequences) always
+  // write the latest text instead of silently dropping the edit.
+  const blockDraftRef = useRef(blockDraft);
+  const setDraftLive = (value: string) => {
+    blockDraftRef.current = value;
+    setBlockDraft(value);
+  };
   const [blockSel, setBlockSel] = useState<{ start: number; end: number } | null>(null);
+  // Blur commits the draft, EXCEPT when focus moves into the style menu:
+  // opening it legitimately takes focus, and committing would unmount the
+  // editor before the click lands. Menu items also preventDefault on
+  // mousedown, so picking a style never steals focus in the first place.
+  const handleBlockBlur = (event: React.FocusEvent<HTMLTextAreaElement>) => {
+    const next = event.relatedTarget;
+    if (next instanceof Element && next.closest('[data-slot="menu-popup"]')) return;
+    commitBlockEditor();
+  };
   const marks = editingBlock
     ? inlineMarksAt(blockDraft, blockSel?.start ?? 0, blockSel?.end ?? 0)
     : { bold: false, italic: false, strike: false };
@@ -652,7 +671,7 @@ export function PlanDoc({ open, mode, onOpen, onClose, notice, className }: Plan
     if (!top || JSON.stringify(top.texts) !== JSON.stringify(snapshot.texts)) {
       pushHistory(snapshot);
     }
-    setBlockDraft(base.split("\n").slice(resolved.start, resolved.end).join("\n"));
+    setDraftLive(base.split("\n").slice(resolved.start, resolved.end).join("\n"));
     setEditingBlock(resolved);
     requestAnimationFrame(() => {
       const editor = blockAreaRef.current;
@@ -664,7 +683,7 @@ export function PlanDoc({ open, mode, onOpen, onClose, notice, className }: Plan
   };
   const commitBlockEditor = () => {
     if (!editingBlock) return;
-    const next = applyBlockToText(texts[doc] ?? "", editingBlock, blockDraft);
+    const next = applyBlockToText(texts[doc] ?? "", editingBlock, blockDraftRef.current);
     if (next !== (texts[doc] ?? "")) {
       setTexts((current) => ({ ...current, [doc]: next }));
     }
@@ -697,7 +716,7 @@ export function PlanDoc({ open, mode, onOpen, onClose, notice, className }: Plan
     if (!target) {
       // Blank gap (e.g. split at the very end): keep editing an empty block
       // there instead of dropping the editor.
-      setBlockDraft("");
+      setDraftLive("");
       setEditingBlock({ start: targetLine, end: targetLine });
       setBlockSel({ start: 0, end: 0 });
       requestAnimationFrame(() => {
@@ -709,7 +728,7 @@ export function PlanDoc({ open, mode, onOpen, onClose, notice, className }: Plan
       return;
     }
     const draft = next.split("\n").slice(target.start, target.end).join("\n");
-    setBlockDraft(draft);
+    setDraftLive(draft);
     setEditingBlock({ start: target.start, end: target.end });
     const before = draft.split("\n").slice(0, targetLine - target.start + 1);
     const offset =
@@ -754,7 +773,7 @@ export function PlanDoc({ open, mode, onOpen, onClose, notice, className }: Plan
       caret: null,
     });
     const targetLines = committed.split("\n").slice(target.start, target.end).join("\n");
-    setBlockDraft(targetLines);
+    setDraftLive(targetLines);
     setEditingBlock({ start: target.start, end: target.end });
     requestAnimationFrame(() => {
       const editor = blockAreaRef.current;
@@ -781,7 +800,7 @@ export function PlanDoc({ open, mode, onOpen, onClose, notice, className }: Plan
         setEditingBlock(null);
         return;
       }
-      setBlockDraft(committed.split("\n").slice(next.start, next.end).join("\n"));
+      setDraftLive(committed.split("\n").slice(next.start, next.end).join("\n"));
       setEditingBlock({ start: next.start, end: next.end });
       requestAnimationFrame(() => {
         const target = blockAreaRef.current;
@@ -885,7 +904,7 @@ export function PlanDoc({ open, mode, onOpen, onClose, notice, className }: Plan
       return;
     }
     const targetLines = next.split("\n");
-    setBlockDraft(targetLines.slice(target.start, target.end).join("\n"));
+    setDraftLive(targetLines.slice(target.start, target.end).join("\n"));
     setEditingBlock({ start: target.start, end: target.end });
     const before = targetLines.slice(target.start, line).join("\n");
     const offset = before.length + (line > target.start ? 1 : 0) + caretCol;
@@ -1157,7 +1176,7 @@ export function PlanDoc({ open, mode, onOpen, onClose, notice, className }: Plan
         result = prefixLines(value, start, end, () => "> ");
         break;
     }
-    setBlockDraft(result.next);
+    setDraftLive(result.next);
     focusCaret(result.caret);
   };
 
@@ -1178,7 +1197,7 @@ export function PlanDoc({ open, mode, onOpen, onClose, notice, className }: Plan
       .map((line) => `${marker}${line.replace(/^\s*#{1,6}\s*/, "")}`)
       .join("\n");
     const caret = [lineStart, lineStart + next.length] as const;
-    setBlockDraft(`${value.slice(0, lineStart)}${next}${value.slice(endIndex)}`);
+    setDraftLive(`${value.slice(0, lineStart)}${next}${value.slice(endIndex)}`);
     focusCaret(caret);
   };
 
@@ -1579,10 +1598,11 @@ export function PlanDoc({ open, mode, onOpen, onClose, notice, className }: Plan
                 text={texts[doc] ?? ""}
                 editing={editingBlock}
                 draft={blockDraft}
-                onDraftChange={setBlockDraft}
+                onDraftChange={setDraftLive}
                 onOpenBlock={openBlockEditor}
                 onCommitBlock={commitBlockEditor}
                 onCancelBlock={cancelBlockEditor}
+                onBlurBlock={handleBlockBlur}
                 onUndoKey={handleUndoKey}
                 onSelectChange={(start, end) => setBlockSel({ start, end })}
                 onInlineFormat={(id) => applyFormat(id)}
