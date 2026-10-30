@@ -28,7 +28,7 @@ const LANE_LABEL: Record<TaskLane, string> = {
   colour: "Colour",
 };
 
-const LANE_INK: Record<TaskLane, DitherColor> = {
+export const LANE_INK: Record<TaskLane, DitherColor> = {
   edit: "blue",
   effects: "orange",
   colour: "purple",
@@ -46,7 +46,7 @@ const LANE_DOT: Record<TaskLane, string> = {
  * the left. The sea creeps a cell or two and a few dots breathe in and out.
  * `t` is already scaled by `speed`. A gradient over the row covers the titles.
  */
-const TASK_FIELD = `
+export const TASK_FIELD = `
 float field(vec2 uv, vec2 res, float t) {
   float x = uv.x * res.x;
   float row = floor(uv.y * res.y);
