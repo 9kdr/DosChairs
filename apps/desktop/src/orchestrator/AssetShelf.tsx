@@ -2,6 +2,8 @@ import {
   AudioLines,
   ChevronDown,
   ChevronLeft,
+  Eye,
+  EyeOff,
   Film,
   Folder,
   Image,
@@ -11,6 +13,7 @@ import {
   Puzzle,
   Rows3,
   Search,
+  Trash2,
   Upload,
   type LucideIcon,
 } from "lucide-react";
@@ -26,6 +29,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Menu, MenuPopup, MenuRadioGroup, MenuRadioItem, MenuTrigger } from "@/components/ui/menu";
 import { Tabs, TabsList, TabsTab } from "@/components/ui/tabs";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
 type AssetKind = "video" | "image" | "audio";
@@ -98,6 +102,15 @@ const SHELF_VIEW_KEY = "chair.shelfView";
 function loadShelfView(): ViewStyle {
   const saved = localStorage.getItem(SHELF_VIEW_KEY);
   return saved === "cards" || saved === "compact" || saved === "more" ? saved : "compact";
+}
+
+function loadIdList(key: string): string[] {
+  try {
+    const saved = JSON.parse(localStorage.getItem(key) ?? "[]");
+    return Array.isArray(saved) ? saved.filter((id) => typeof id === "string") : [];
+  } catch {
+    return [];
+  }
 }
 
 const STARTER_ASSETS: AssetItem[] = [
@@ -288,6 +301,33 @@ export function AssetShelf({ className, frozen = false, transitionLock = false }
   const [selectedIds, setSelectedIds] = useState<string[]>(() =>
     STARTER_ASSETS[0] ? [STARTER_ASSETS[0].id] : [],
   );
+  // Hidden items stay in the project but are marked to keep out of model
+  // context. Removed items leave the shelf (the file itself is untouched).
+  // Both persist so the shelf remembers across sessions.
+  const [hiddenIds, setHiddenIds] = useState<Set<string>>(
+    () => new Set(loadIdList("chair.shelfHidden")),
+  );
+  const [removedIds, setRemovedIds] = useState<Set<string>>(
+    () => new Set(loadIdList("chair.shelfRemoved")),
+  );
+  useEffect(() => {
+    localStorage.setItem("chair.shelfHidden", JSON.stringify([...hiddenIds]));
+  }, [hiddenIds]);
+  useEffect(() => {
+    localStorage.setItem("chair.shelfRemoved", JSON.stringify([...removedIds]));
+  }, [removedIds]);
+  const toggleHidden = (id: string) => {
+    setHiddenIds((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+  const removeItem = (id: string) => {
+    setRemovedIds((current) => new Set(current).add(id));
+    setSelectedIds((current) => current.filter((selected) => selected !== id));
+  };
   const [selecting, setSelecting] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
@@ -316,8 +356,9 @@ export function AssetShelf({ className, frozen = false, transitionLock = false }
 
   const folderRows = useMemo(() => {
     if (scope !== "assets" || folder) return [];
-    return FOLDERS.filter((item) => {
+    return FOLDERS.filter((item) => !removedIds.has(item.id)).filter((item) => {
       const contents = item.assetIds.flatMap((id) => {
+        if (removedIds.has(id)) return [];
         const asset = assets.find((entry) => entry.id === id);
         return asset ? [asset] : [];
       });
@@ -329,23 +370,26 @@ export function AssetShelf({ className, frozen = false, transitionLock = false }
       if (item.name.toLowerCase().includes(needle)) return true;
       return typed.some((asset) => asset.name.toLowerCase().includes(needle));
     });
-  }, [assets, folder, needle, scope, typeFilter]);
+  }, [assets, folder, needle, removedIds, scope, typeFilter]);
 
   const visible = useMemo(() => {
     if (scope === "pieces") {
-      return PIECES.filter((item) => item.name.toLowerCase().includes(needle));
+      return PIECES.filter(
+        (item) => !removedIds.has(item.id) && item.name.toLowerCase().includes(needle),
+      );
     }
     const pool = folder
       ? folder.assetIds.flatMap((id) => {
+          if (removedIds.has(id)) return [];
           const asset = assets.find((entry) => entry.id === id);
           return asset ? [asset] : [];
         })
-      : assets.filter((item) => !FILED_IDS.has(item.id));
+      : assets.filter((item) => !FILED_IDS.has(item.id) && !removedIds.has(item.id));
     return pool.filter((item) => {
       if (typeFilter !== "all" && item.kind !== typeFilter) return false;
       return item.name.toLowerCase().includes(needle);
     });
-  }, [assets, folder, needle, scope, typeFilter]);
+  }, [assets, folder, needle, removedIds, scope, typeFilter]);
 
   const importFiles = (list: FileList | null) => {
     if (!list || list.length === 0) return;
@@ -420,6 +464,7 @@ export function AssetShelf({ className, frozen = false, transitionLock = false }
     if (event.button !== 0) return;
     const target = event.target;
     if (!(target instanceof Element)) return;
+    if (target.closest("[data-shelf-action]")) return;
     if (target.closest("[data-drag-handle], input, textarea")) return;
     const held = target.closest<HTMLElement>("[data-shelf-id]");
     if (
@@ -809,35 +854,55 @@ export function AssetShelf({ className, frozen = false, transitionLock = false }
                     <AnimatePresence mode={listMode} initial={false}>
                       {folderRows.map((item) => (
                         <motion.li key={item.id} className="min-w-0" {...itemMotion}>
-                          <FolderCard
-                            id={item.id}
-                            name={item.name}
-                            selected={selectedIds.includes(item.id)}
-                            onOpen={(event) =>
-                              activate(() => {
-                                if (event.shiftKey) selectClick(item.id, true);
-                                else showFolder(item.id);
-                              })
-                            }
-                            onDragStart={(event) => beginDrag(event, item.id, item.name, "folder")}
-                            onDragEnd={finishDrag}
-                          />
+                          <div className="group relative min-w-0">
+                            <FolderCard
+                              id={item.id}
+                              name={item.name}
+                              dimmed={hiddenIds.has(item.id)}
+                              selected={selectedIds.includes(item.id)}
+                              onOpen={(event) =>
+                                activate(() => {
+                                  if (event.shiftKey) selectClick(item.id, true);
+                                  else showFolder(item.id);
+                                })
+                              }
+                              onDragStart={(event) => beginDrag(event, item.id, item.name, "folder")}
+                              onDragEnd={finishDrag}
+                            />
+                            <ShelfCardActions
+                              id={item.id}
+                              hidden={hiddenIds.has(item.id)}
+                              removable={false}
+                              onHide={toggleHidden}
+                              onRemove={removeItem}
+                            />
+                          </div>
                         </motion.li>
                       ))}
                       {visible.map((item) => (
                         <motion.li key={item.id} className="min-w-0" {...itemMotion}>
-                          <Tile
-                            item={item}
-                            selected={selectedIds.includes(item.id)}
-                            onSelect={(event) =>
-                              activate(() => selectClick(item.id, event.shiftKey))
-                            }
-                            onDragStart={(event) => {
-                              if (item.scope !== "assets") return;
-                              beginDrag(event, item.id, item.name, item.kind);
-                            }}
-                            onDragEnd={finishDrag}
-                          />
+                          <div className="group relative min-w-0">
+                            <Tile
+                              item={item}
+                              dimmed={hiddenIds.has(item.id)}
+                              selected={selectedIds.includes(item.id)}
+                              onSelect={(event) =>
+                                activate(() => selectClick(item.id, event.shiftKey))
+                              }
+                              onDragStart={(event) => {
+                                if (item.scope !== "assets") return;
+                                beginDrag(event, item.id, item.name, item.kind);
+                              }}
+                              onDragEnd={finishDrag}
+                            />
+                            <ShelfCardActions
+                              id={item.id}
+                              hidden={hiddenIds.has(item.id)}
+                              removable
+                              onHide={toggleHidden}
+                              onRemove={removeItem}
+                            />
+                          </div>
                         </motion.li>
                       ))}
                     </AnimatePresence>
@@ -849,6 +914,7 @@ export function AssetShelf({ className, frozen = false, transitionLock = false }
                     <AnimatePresence mode={listMode} initial={false}>
                       {folderRows.map((item) => (
                         <motion.li key={item.id} className="min-w-0" {...itemMotion}>
+                          <div className="group relative min-w-0">
                           <Button
                             type="button"
                             variant="ghost"
@@ -858,6 +924,7 @@ export function AssetShelf({ className, frozen = false, transitionLock = false }
                             data-pressed={selectedIds.includes(item.id) ? "" : undefined}
                             className={cn(
                               SHELF_BUTTON,
+                              hiddenIds.has(item.id) && "opacity-60",
                               selectedIds.includes(item.id) && "cursor-grab active:cursor-grabbing",
                               view === "compact" && "h-8 justify-start! gap-3! px-2.5 text-left sm:h-8",
                               view === "more" && "h-8 px-2 text-xs sm:h-8",
@@ -916,6 +983,14 @@ export function AssetShelf({ className, frozen = false, transitionLock = false }
                               </>
                             )}
                           </Button>
+                          <ShelfCardActions
+                            id={item.id}
+                            hidden={hiddenIds.has(item.id)}
+                            removable={false}
+                            onHide={toggleHidden}
+                            onRemove={removeItem}
+                          />
+                          </div>
                         </motion.li>
                       ))}
                     </AnimatePresence>
@@ -926,9 +1001,11 @@ export function AssetShelf({ className, frozen = false, transitionLock = false }
                       <AnimatePresence mode={listMode} initial={false}>
                         {visible.map((item) => (
                           <motion.li key={item.id} className="min-w-0" {...itemMotion}>
+                            <div className="group relative min-w-0">
                             <Row
                               item={item}
                               dense={view === "more"}
+                              dimmed={hiddenIds.has(item.id)}
                               selected={selectedIds.includes(item.id)}
                               onSelect={(event) =>
                               activate(() => selectClick(item.id, event.shiftKey))
@@ -939,6 +1016,14 @@ export function AssetShelf({ className, frozen = false, transitionLock = false }
                               }}
                               onDragEnd={finishDrag}
                             />
+                            <ShelfCardActions
+                              id={item.id}
+                              hidden={hiddenIds.has(item.id)}
+                              removable
+                              onHide={toggleHidden}
+                              onRemove={removeItem}
+                            />
+                            </div>
                           </motion.li>
                         ))}
                       </AnimatePresence>
@@ -998,9 +1083,78 @@ function DragHandle({
   );
 }
 
+function ShelfAction({
+  label,
+  onAction,
+  children,
+}: {
+  label: string;
+  onAction: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <button
+            type="button"
+            aria-label={label}
+            data-shelf-action=""
+            onClick={(event) => {
+              event.stopPropagation();
+              onAction();
+            }}
+            className="flex size-6 items-center justify-center rounded-full bg-black/60 text-neutral-300 ring-1 ring-white/15 backdrop-blur-sm transition-colors hover:bg-black/80 hover:text-white [&_svg]:size-3"
+          >
+            {children}
+          </button>
+        }
+      />
+      <TooltipPopup sideOffset={4}>{label}</TooltipPopup>
+    </Tooltip>
+  );
+}
+
+function ShelfCardActions({
+  id,
+  hidden,
+  removable,
+  onHide,
+  onRemove,
+}: {
+  id: string;
+  hidden: boolean;
+  removable: boolean;
+  onHide: (id: string) => void;
+  onRemove: (id: string) => void;
+}) {
+  return (
+    <div
+      className={
+        hidden
+          ? "absolute top-1 right-1 z-10 flex gap-1"
+          : "absolute top-1 right-1 z-10 flex gap-1 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100"
+      }
+    >
+      <ShelfAction
+        label={hidden ? "Show to model" : "Hide from model"}
+        onAction={() => onHide(id)}
+      >
+        {hidden ? <Eye /> : <EyeOff />}
+      </ShelfAction>
+      {removable ? (
+        <ShelfAction label="Remove from project" onAction={() => onRemove(id)}>
+          <Trash2 />
+        </ShelfAction>
+      ) : null}
+    </div>
+  );
+}
+
 function FolderCard({
   id,
   name,
+  dimmed,
   selected,
   onOpen,
   onDragStart,
@@ -1008,6 +1162,7 @@ function FolderCard({
 }: {
   id: string;
   name: string;
+  dimmed?: boolean;
   selected: boolean;
   onOpen: (event: ReactMouseEvent<HTMLElement>) => void;
   onDragStart: (event: DragEvent) => void;
@@ -1022,7 +1177,7 @@ function FolderCard({
       aria-pressed={selected}
       data-pressed={selected ? "" : undefined}
       onClick={onOpen}
-      className={cn(SHELF_BUTTON, "h-auto flex-col gap-1.5 px-1.5 pt-1.5 pb-2 sm:h-auto")}
+      className={cn(SHELF_BUTTON, dimmed && "opacity-60", "h-auto flex-col gap-1.5 px-1.5 pt-1.5 pb-2 sm:h-auto")}
     >
       <DragHandle
         className={cn(
@@ -1042,12 +1197,14 @@ function FolderCard({
 function Tile({
   item,
   selected,
+  dimmed,
   onSelect,
   onDragStart,
   onDragEnd,
 }: {
   item: ShelfItem;
   selected: boolean;
+  dimmed?: boolean;
   onSelect: (event: ReactMouseEvent<HTMLElement>) => void;
   onDragStart: (event: DragEvent) => void;
   onDragEnd: (event: DragEvent) => void;
@@ -1064,7 +1221,7 @@ function Tile({
       aria-pressed={selected}
       data-pressed={selected ? "" : undefined}
       onClick={onSelect}
-      className={cn(SHELF_BUTTON, "h-auto flex-col gap-1.5 px-1.5 pt-1.5 pb-2 sm:h-auto")}
+      className={cn(SHELF_BUTTON, dimmed && "opacity-60", "h-auto flex-col gap-1.5 px-1.5 pt-1.5 pb-2 sm:h-auto")}
     >
       {draggable ? (
       <DragHandle
@@ -1107,6 +1264,7 @@ function Row({
   item,
   dense,
   selected,
+  dimmed,
   onSelect,
   onDragStart,
   onDragEnd,
@@ -1114,6 +1272,7 @@ function Row({
   item: ShelfItem;
   dense: boolean;
   selected: boolean;
+  dimmed?: boolean;
   onSelect: (event: ReactMouseEvent<HTMLElement>) => void;
   onDragStart: (event: DragEvent) => void;
   onDragEnd: (event: DragEvent) => void;
@@ -1137,6 +1296,7 @@ function Row({
       onClick={onSelect}
       className={cn(
         SHELF_BUTTON,
+        dimmed && "opacity-60",
         dragRow && "cursor-grab active:cursor-grabbing",
         dense ? "h-8 px-2 text-xs sm:h-8" : "h-8 justify-start! gap-3! px-2.5 text-left sm:h-8",
       )}
