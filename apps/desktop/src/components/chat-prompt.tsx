@@ -387,6 +387,10 @@ export function ChatPrompt({
   const streamRef = useRef<MediaStream | null>(null);
   const blobsRef = useRef(new Map<string, Blob>());
   const [box, setBox] = useState({ width: CLOSED_WIDTH, height: 48 });
+  // Dropping chips in lands a whole row of content at once: tweening the box
+  // around it leaves the full-size content spilling out of a small rounded
+  // box mid-flight, which reads as broken. Snap that one commit instead.
+  const [snap, setSnap] = useState(false);
   const editorRef = useRef<HTMLDivElement>(null);
   const barRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
@@ -853,7 +857,8 @@ export function ChatPrompt({
   };
 
   const radius = open ? OPEN_RADIUS : CLOSED_RADIUS;
-  const morph = reduce ? "none" : `width ${MORPH}, height ${MORPH}, border-radius ${MORPH}`;
+  const morph =
+    reduce || snap ? "none" : `width ${MORPH}, height ${MORPH}, border-radius ${MORPH}`;
 
   return (
     <div
@@ -892,12 +897,16 @@ export function ChatPrompt({
         if (refs.length === 0) return;
         event.preventDefault();
         setDragOver(false);
+        // Snap this commit: the box lands at its final size instantly instead
+        // of tweening around full-size content. Re-enable the morph after.
+        setSnap(true);
         insertRefs(refs);
         // Dropping an asset opens the bar ready to type, starting right
         // after what was dragged in. `insertRefs` already leaves the caret
         // there; focus plus one placement makes it live.
         onOpen();
         requestAnimationFrame(() => {
+          setSnap(false);
           const editor = editorRef.current;
           if (!editor) return;
           editor.focus();
