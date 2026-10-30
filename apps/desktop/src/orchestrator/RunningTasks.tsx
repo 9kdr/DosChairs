@@ -34,6 +34,13 @@ const LANE_INK: Record<TaskLane, DitherColor> = {
   colour: "purple",
 };
 
+/** Ghost dot per lane, same treatment as the shelf's asset drag. */
+const LANE_DOT: Record<TaskLane, string> = {
+  edit: "#60a5fa",
+  effects: "#fb923c",
+  colour: "#c084fc",
+};
+
 /**
  * A dither sea on the right, with one-cell streams dripping out of it toward
  * the left. The sea creeps a cell or two and a few dots breathe in and out.
@@ -110,6 +117,8 @@ function TaskRow({
 }) {
   const isDraggingRef = useRef(false);
   const dragTimeoutRef = useRef<number | null>(null);
+  const dragGhostRef = useRef<HTMLDivElement | null>(null);
+  const rootRef = useRef<HTMLDivElement | null>(null);
   const startPosRef = useRef<{ x: number; y: number } | null>(null);
   const upPosRef = useRef<{ x: number; y: number } | null>(null);
 
@@ -118,6 +127,8 @@ function TaskRow({
       if (dragTimeoutRef.current !== null) {
         window.clearTimeout(dragTimeoutRef.current);
       }
+      dragGhostRef.current?.remove();
+      dragGhostRef.current = null;
     };
   }, []);
 
@@ -132,12 +143,45 @@ function TaskRow({
         label: task.name,
       }),
     );
+    // Same pill ghost as the shelf's asset drag: lane dot plus label.
+    rootRef.current?.setAttribute("data-dragging", "");
+    dragGhostRef.current?.remove();
+    const ghost = document.createElement("div");
+    const mark = document.createElement("span");
+    mark.style.cssText = `width:8px;height:8px;border-radius:999px;background:${LANE_DOT[task.lane]};flex:none`;
+    const name = document.createElement("span");
+    name.textContent = task.name.length > 28 ? `${task.name.slice(0, 18)}…` : task.name;
+    name.style.cssText = "overflow:hidden;text-overflow:ellipsis;white-space:nowrap";
+    ghost.append(mark, name);
+    ghost.style.cssText = [
+      "position:fixed",
+      "top:-1000px",
+      "left:0",
+      "z-index:80",
+      "display:inline-flex",
+      "align-items:center",
+      "gap:8px",
+      "max-width:220px",
+      "padding:6px 10px",
+      "border-radius:10px",
+      "border:1px solid rgb(255 255 255 / 12%)",
+      "background:#2a2a2a",
+      "color:#f5f5f5",
+      "font:500 13px/1.2 ui-sans-serif,system-ui,sans-serif",
+      "box-shadow:inset 0 1px 0 rgb(255 255 255 / 10%), 0 10px 24px rgb(0 0 0 / 35%)",
+    ].join(";");
+    document.body.appendChild(ghost);
+    dragGhostRef.current = ghost;
+    event.dataTransfer.setDragImage(ghost, 16, 16);
   };
 
   const handleDragEnd = () => {
     if (dragTimeoutRef.current !== null) {
       window.clearTimeout(dragTimeoutRef.current);
     }
+    rootRef.current?.removeAttribute("data-dragging");
+    dragGhostRef.current?.remove();
+    dragGhostRef.current = null;
     dragTimeoutRef.current = window.setTimeout(() => {
       isDraggingRef.current = false;
       dragTimeoutRef.current = null;
@@ -206,6 +250,7 @@ function TaskRow({
 
   return (
     <div
+      ref={rootRef}
       role="button"
       tabIndex={0}
       draggable
@@ -217,7 +262,7 @@ function TaskRow({
       onMouseUp={handlePointerUp}
       onClick={handleClick}
       onKeyDown={handleKeyDown}
-      className="dark relative cursor-pointer rounded-2xl bg-[#1a1a1a]"
+      className="dark relative cursor-pointer rounded-2xl bg-[#1a1a1a] data-[dragging]:opacity-64"
     >
       <DitherShader
         field={TASK_FIELD}
