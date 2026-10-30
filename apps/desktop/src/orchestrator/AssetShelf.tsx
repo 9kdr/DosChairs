@@ -872,6 +872,7 @@ export function AssetShelf({ className, frozen = false, transitionLock = false }
                             <ShelfCardActions
                               id={item.id}
                               hidden={hiddenIds.has(item.id)}
+                              selected={selectedIds.includes(item.id)}
                               removable={false}
                               onHide={toggleHidden}
                               onRemove={removeItem}
@@ -898,6 +899,7 @@ export function AssetShelf({ className, frozen = false, transitionLock = false }
                             <ShelfCardActions
                               id={item.id}
                               hidden={hiddenIds.has(item.id)}
+                              selected={selectedIds.includes(item.id)}
                               removable
                               onHide={toggleHidden}
                               onRemove={removeItem}
@@ -986,6 +988,7 @@ export function AssetShelf({ className, frozen = false, transitionLock = false }
                           <ShelfCardActions
                             id={item.id}
                             hidden={hiddenIds.has(item.id)}
+                            selected={selectedIds.includes(item.id)}
                             removable={false}
                             onHide={toggleHidden}
                             onRemove={removeItem}
@@ -1019,6 +1022,7 @@ export function AssetShelf({ className, frozen = false, transitionLock = false }
                             <ShelfCardActions
                               id={item.id}
                               hidden={hiddenIds.has(item.id)}
+                              selected={selectedIds.includes(item.id)}
                               removable
                               onHide={toggleHidden}
                               onRemove={removeItem}
@@ -1104,7 +1108,7 @@ function ShelfAction({
               event.stopPropagation();
               onAction();
             }}
-            className="flex size-6 items-center justify-center rounded-full bg-black/60 text-neutral-300 ring-1 ring-white/15 backdrop-blur-sm transition-colors hover:bg-black/80 hover:text-white [&_svg]:size-3"
+            className="flex size-6 items-center justify-center rounded-lg text-neutral-400 transition-colors hover:bg-white/10 hover:text-neutral-100 [&_svg]:size-4"
           >
             {children}
           </button>
@@ -1118,22 +1122,25 @@ function ShelfAction({
 function ShelfCardActions({
   id,
   hidden,
+  selected,
   removable,
   onHide,
   onRemove,
 }: {
   id: string;
   hidden: boolean;
+  selected: boolean;
   removable: boolean;
   onHide: (id: string) => void;
   onRemove: (id: string) => void;
 }) {
+  const pinned = hidden || selected;
   return (
     <div
       className={
-        hidden
-          ? "absolute top-1 right-1 z-10 flex gap-1"
-          : "absolute top-1 right-1 z-10 flex gap-1 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100"
+        pinned
+          ? "absolute top-1 right-1 z-10 flex gap-0.5"
+          : "absolute top-1 right-1 z-10 flex gap-0.5 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100"
       }
     >
       <ShelfAction
