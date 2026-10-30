@@ -1,13 +1,6 @@
-import {
-  HomeIcon,
-  PaintbrushIcon,
-  PaletteIcon,
-  ScissorsIcon,
-  WaypointsIcon,
-} from "lucide-react";
-import { useRef, useState, type ReactNode } from "react";
+import { BlocksIcon, HomeIcon, WaypointsIcon } from "lucide-react";
+import { useState, type ReactNode } from "react";
 import { ChatPrompt } from "@/components/chat-prompt";
-import { SmoothScrollTarget } from "@/components/smooth-scroll";
 import { Button } from "@/components/ui/button";
 import {
   Tooltip,
@@ -20,7 +13,10 @@ import { cn } from "@/lib/utils";
 import { ChairMark } from "./home/ChairMark";
 import type { EditorId } from "./home/data";
 import { EditorLogo } from "./home/EditorLogo";
+import { CreationBoard } from "./orchestrator/CreationBoard";
 import { OrchestratorBoard } from "./orchestrator/OrchestratorBoard";
+import { TaskChat } from "./orchestrator/TaskChat";
+import type { RunningTask } from "./orchestrator/RunningTasks";
 
 /** Same field as the home gallery (`HomeScreen`). */
 const SHELL_BG = "#111111";
@@ -34,9 +30,7 @@ type ProjectShellProps = {
 /** Same dock as home. Icons are the project lenses. */
 const SECTIONS = [
   { id: "orchestrator", label: "Orchestrator", icon: WaypointsIcon },
-  { id: "edit", label: "Edit", icon: ScissorsIcon },
-  { id: "effects", label: "Effects", icon: PaintbrushIcon },
-  { id: "colour", label: "Colour", icon: PaletteIcon },
+  { id: "creation", label: "Creation", icon: BlocksIcon },
 ] as const;
 
 type DockTipPayload = { label: string };
@@ -45,10 +39,13 @@ const dockTooltip = TooltipCreateHandle<DockTipPayload>();
 
 type SectionId = (typeof SECTIONS)[number]["id"];
 
-/** Blank project view: a way home, a prompt, section nav, and the Chair mark. */
+/** Blank project view: a way home, a command bar, section nav, and the Chair mark. */
 export function ProjectShell({ projectName, editorId, onHome }: ProjectShellProps) {
   const [section, setSection] = useState<SectionId>("orchestrator");
-  const scrollRef = useRef<HTMLElement>(null);
+  const [barOpen, setBarOpen] = useState(false);
+  const [command, setCommand] = useState<{ id: number; text: string } | null>(null);
+  const [taskChat, setTaskChat] = useState<RunningTask | null>(null);
+  const [taskNote, setTaskNote] = useState<{ id: number; text: string } | null>(null);
 
   return (
     <section
@@ -79,23 +76,56 @@ export function ProjectShell({ projectName, editorId, onHome }: ProjectShellProp
           {projectName}
         </h1>
       </header>
-      <main
-        ref={scrollRef}
-        className="relative min-h-0 flex-1 overflow-y-auto overscroll-contain"
-      >
-        {section === "orchestrator" ? <OrchestratorBoard /> : null}
+      <main className="relative flex min-h-0 flex-1 flex-col">
+        <div className="min-h-0 flex-1 overflow-hidden">
+          {taskChat ? (
+            <TaskChat
+              task={taskChat}
+              note={taskNote}
+              onClose={() => {
+                setTaskChat(null);
+                setTaskNote(null);
+              }}
+              onSend={(text) => setTaskNote({ id: Date.now(), text })}
+            />
+          ) : section === "orchestrator" ? (
+            <OrchestratorBoard
+              command={command}
+              onOpenTask={(task) => {
+                setTaskNote(null);
+                setTaskChat(task);
+              }}
+            />
+          ) : (
+            <CreationBoard />
+          )}
+        </div>
+        {!taskChat ? (
+          <div className="pointer-events-auto absolute inset-x-0 bottom-[calc(1.25rem+3rem+0.75rem)] z-20 flex justify-center px-4">
+            <ChatPrompt
+              open={barOpen}
+              onOpen={() => setBarOpen(true)}
+              onClose={() => setBarOpen(false)}
+              onSend={(draft) => {
+                if (draft.text.trim()) {
+                  setCommand({ id: Date.now(), text: draft.text });
+                }
+                setBarOpen(false);
+              }}
+            />
+          </div>
+        ) : null}
       </main>
-      <SmoothScrollTarget target={scrollRef} lerp={0.075} />
-      <div
-        aria-hidden="true"
-        className="pointer-events-none absolute inset-x-0 bottom-0 z-10 h-44"
-        style={{
-          background: `linear-gradient(to top, ${SHELL_BG} 0%, color-mix(in srgb, ${SHELL_BG} 85%, transparent) 55%, transparent 100%)`,
-        }}
-      />
-      <div className="pointer-events-auto absolute inset-x-0 bottom-[calc(1.25rem+3rem+0.75rem)] z-20 flex justify-center px-4">
-        <ChatPrompt />
-      </div>
+      {!taskChat ? (
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-x-0 bottom-0 z-10 h-64"
+          style={{
+            background: `linear-gradient(to top, ${SHELL_BG} 0%, color-mix(in srgb, ${SHELL_BG} 78%, transparent) 38%, transparent 100%)`,
+          }}
+        />
+      ) : null}
+      {!taskChat ? (
       <TooltipProvider delay={220} closeDelay={120} timeout={500}>
         <nav
           aria-label="Project sections"
@@ -115,7 +145,11 @@ export function ProjectShell({ projectName, editorId, onHome }: ProjectShellProp
                   key={item.id}
                   label={item.label}
                   active={section === item.id}
-                  onClick={() => setSection(item.id)}
+                  onClick={() => {
+                    setSection(item.id);
+                    setTaskChat(null);
+                    setTaskNote(null);
+                  }}
                 >
                   <Icon />
                 </DockButton>
@@ -131,6 +165,7 @@ export function ProjectShell({ projectName, editorId, onHome }: ProjectShellProp
           </Tooltip>
         </nav>
       </TooltipProvider>
+      ) : null}
       <div className="pointer-events-none absolute bottom-5 left-5 z-20 flex items-center gap-2.5 text-neutral-400">
         <ChairMark className="h-8 w-auto text-neutral-200" />
         <span className="text-base font-medium tracking-wide text-neutral-200">

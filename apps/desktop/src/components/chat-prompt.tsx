@@ -35,6 +35,9 @@ type ChatPromptProps = {
   onOpen: () => void;
   onClose: () => void;
   onSend: (draft: ChatDraft) => void;
+  /** Full parent width with room to grow, for inline thread composers. */
+  wide?: boolean;
+  placeholder?: string;
 };
 
 type ChairRef = {
@@ -359,7 +362,14 @@ function commandText(parts: readonly Piece[], key: string) {
  * Command bar for the open project. A click expands the bar. The project
  * view behind it stays where it is.
  */
-export function ChatPrompt({ open, onOpen, onClose, onSend }: ChatPromptProps) {
+export function ChatPrompt({
+  open,
+  onOpen,
+  onClose,
+  onSend,
+  wide = false,
+  placeholder = "Ask Chair, or / for an action",
+}: ChatPromptProps) {
   const [parts, setParts] = useState<Piece[]>(() => normalize([]));
   const [model, setModel] = useState<(typeof MODELS)[number]>("Chair");
   const [menuOpen, setMenuOpen] = useState(false);
@@ -403,7 +413,7 @@ export function ChatPrompt({ open, onOpen, onClose, onSend }: ChatPromptProps) {
     setParts(next.parts);
     if (source === "type") {
       setHighlight(0);
-      if (plainText(next.parts).startsWith("/")) {
+      if (!wide && plainText(next.parts).startsWith("/")) {
         setActionsOpen(true);
         setMenuOpen(false);
       }
@@ -496,11 +506,11 @@ export function ChatPrompt({ open, onOpen, onClose, onSend }: ChatPromptProps) {
       return;
     }
     el.style.height = "0px";
-    const max = LINE * MAX_ROWS;
+    const max = LINE * (wide ? 6 : MAX_ROWS);
     const next = Math.min(Math.max(el.scrollHeight, LINE + 16), max);
     el.style.height = `${next}px`;
     el.style.overflowY = el.scrollHeight > max ? "auto" : "hidden";
-  }, [draft, open]);
+  }, [draft, open, wide]);
 
   useLayoutEffect(() => {
     const bar = barRef.current;
@@ -509,7 +519,8 @@ export function ChatPrompt({ open, onOpen, onClose, onSend }: ChatPromptProps) {
 
     const measure = () => {
       const available = bar.parentElement?.clientWidth ?? OPEN_WIDTH;
-      const preferred = Math.min(open ? OPEN_WIDTH : CLOSED_WIDTH, available);
+      const cap = open ? (wide ? available : OPEN_WIDTH) : CLOSED_WIDTH;
+      const preferred = Math.min(cap, available);
       const previousContentWidth = content.style.width;
       content.style.width = "max-content";
       const needed = Math.ceil(content.getBoundingClientRect().width);
@@ -528,7 +539,7 @@ export function ChatPrompt({ open, onOpen, onClose, onSend }: ChatPromptProps) {
     const observer = new ResizeObserver(measure);
     observer.observe(parent);
     return () => observer.disconnect();
-  }, [draft, files, open]);
+  }, [draft, files, open, wide]);
 
   useLayoutEffect(() => {
     if (!actionsOpen) return;
@@ -948,7 +959,7 @@ export function ChatPrompt({ open, onOpen, onClose, onSend }: ChatPromptProps) {
                     open ? "top-3 left-4" : "top-1/2 left-4 -translate-y-1/2",
                   )}
                 >
-                  Ask Chair, or / for an action
+                  {placeholder}
                 </span>
               ) : null}
               <div
@@ -1020,25 +1031,27 @@ export function ChatPrompt({ open, onOpen, onClose, onSend }: ChatPromptProps) {
                         event.target.value = "";
                       }}
                     />
-                    <span ref={actionsRef} className="inline-flex">
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="ghost"
-                        aria-haspopup="listbox"
-                        aria-expanded={actionsOpen}
-                        aria-controls={listId}
-                        onClick={() => {
-                          setMenuOpen(false);
-                          setActionsOpen((current) => !current);
-                          setHighlight(0);
-                          editorRef.current?.focus();
-                        }}
-                      >
-                        <Slash />
-                        Actions
-                      </Button>
-                    </span>
+                    {wide ? null : (
+                      <span ref={actionsRef} className="inline-flex">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          aria-haspopup="listbox"
+                          aria-expanded={actionsOpen}
+                          aria-controls={listId}
+                          onClick={() => {
+                            setMenuOpen(false);
+                            setActionsOpen((current) => !current);
+                            setHighlight(0);
+                            editorRef.current?.focus();
+                          }}
+                        >
+                          <Slash />
+                          Actions
+                        </Button>
+                      </span>
+                    )}
                     <Button
                       type="button"
                       size="icon-sm"
