@@ -376,10 +376,6 @@ export function ChatPrompt({ open, onOpen, onClose, onSend }: ChatPromptProps) {
   const chunksRef = useRef<Blob[]>([]);
   const streamRef = useRef<MediaStream | null>(null);
   const blobsRef = useRef(new Map<string, Blob>());
-  // A drop onto the editor moves browser focus there, which would fire
-  // onFocus -> onOpen and spring the bar open. When the bar was closed at
-  // drop time, ignore that focus instead so a drop just attaches.
-  const dropFocusGuard = useRef(0);
   const [box, setBox] = useState({ width: CLOSED_WIDTH, height: 48 });
   const editorRef = useRef<HTMLDivElement>(null);
   const barRef = useRef<HTMLDivElement>(null);
@@ -885,10 +881,18 @@ export function ChatPrompt({ open, onOpen, onClose, onSend }: ChatPromptProps) {
         if (refs.length === 0) return;
         event.preventDefault();
         setDragOver(false);
-        if (!open && document.activeElement !== editorRef.current) {
-          dropFocusGuard.current = Date.now();
-        }
         insertRefs(refs);
+        // Dropping an asset opens the bar ready to type, starting right
+        // after what was dragged in. `insertRefs` already leaves the caret
+        // there; focus plus one placement makes it live.
+        onOpen();
+        requestAnimationFrame(() => {
+          const editor = editorRef.current;
+          if (!editor) return;
+          editor.focus();
+          const at = caretRef.current ?? totalSize(partsRef.current);
+          placeCaret(editor, partsRef.current, at);
+        });
       }}
     >
       <div
@@ -962,11 +966,6 @@ export function ChatPrompt({ open, onOpen, onClose, onSend }: ChatPromptProps) {
                     : "min-w-0 flex-1 overflow-x-clip overflow-y-hidden py-3 pr-10 pl-4 whitespace-nowrap [mask-image:linear-gradient(to_right,black_calc(100%-2.5rem),transparent)]",
                 )}
                 onFocus={() => {
-                  if (Date.now() - dropFocusGuard.current < 500) {
-                    dropFocusGuard.current = 0;
-                    editorRef.current?.blur();
-                    return;
-                  }
                   onOpen();
                   const editor = editorRef.current;
                   if (!editor) return;
