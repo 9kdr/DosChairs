@@ -73,6 +73,31 @@ function wrapSelection(value: string, start: number, end: number, marker: string
   return { next, caret: [at, at + selected.length] as const };
 }
 
+function wrappedRange(value: string, start: number, end: number, marker: string): boolean {
+  const len = marker.length;
+  if (start < len || end + len > value.length) return false;
+  if (value.slice(start - len, start) !== marker) return false;
+  if (value.slice(end, end + len) !== marker) return false;
+  // A marker that is itself part of a longer run belongs to the outer
+  // pair, not to this one: never split *** or ~~~ in half.
+  const edge = marker[0] ?? "";
+  const before = start - len - 1 >= 0 ? value[start - len - 1] : "";
+  const after = end + len < value.length ? value[end + len] : "";
+  return before !== edge && after !== edge;
+}
+
+/** Toggle inline marks: already-marked text unwraps instead of doubling. */
+function toggleWrap(value: string, start: number, end: number, marker: string) {
+  const len = marker.length;
+  if (wrappedRange(value, start, end, marker)) {
+    const inner = value.slice(start, end);
+    const next = value.slice(0, start - len) + inner + value.slice(end + len);
+    const at = start - len;
+    return { next, caret: [at, at + inner.length] as const };
+  }
+  return wrapSelection(value, start, end, marker);
+}
+
 function prefixLines(value: string, start: number, end: number, prefix: (index: number) => string) {
   const lineStart = value.lastIndexOf("\n", start - 1) + 1;
   const lineEnd = end < value.length ? value.indexOf("\n", end) : value.length;
@@ -1011,13 +1036,13 @@ export function PlanDoc({ open, mode, onOpen, onClose, notice, className }: Plan
     let result: { next: string; caret: readonly [number, number] };
     switch (id) {
       case "bold":
-        result = wrapSelection(value, start, end, "**");
+        result = toggleWrap(value, start, end, "**");
         break;
       case "italic":
-        result = wrapSelection(value, start, end, "*");
+        result = toggleWrap(value, start, end, "*");
         break;
       case "strike":
-        result = wrapSelection(value, start, end, "~~");
+        result = toggleWrap(value, start, end, "~~");
         break;
       case "bullet":
         result = prefixLines(value, start, end, () => "- ");
@@ -1340,6 +1365,12 @@ export function PlanDoc({ open, mode, onOpen, onClose, notice, className }: Plan
                   <MenuItem
                     key={style.id}
                     className="min-h-0 grid-cols-1 gap-0 rounded-xl px-2.5 py-1.5 text-sm data-highlighted:bg-white/8 [&>span:first-child]:hidden [&>span:last-child]:col-start-1 [&>span:last-child]:flex [&>span:last-child]:items-center [&>span:last-child]:gap-2"
+                    onMouseDown={(event) => {
+                      // Keep the editor focused so the selection survives the
+                      // click: without this the block commits and closes
+                      // before the style lands, and nothing happens.
+                      event.preventDefault();
+                    }}
                     onClick={() => applyBlockStyle(style.id)}
                   >
                     {style.label}
