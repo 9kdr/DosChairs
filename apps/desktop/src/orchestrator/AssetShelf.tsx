@@ -1107,6 +1107,9 @@ function ShelfAction({
             onClick={(event) => {
               event.stopPropagation();
               onAction();
+              // Release focus so focus-within does not hold the overlay
+              // open after the click; it hides with the hover from then on.
+              event.currentTarget.blur();
             }}
             className="flex size-6 items-center justify-center rounded-lg text-neutral-400 transition-colors hover:bg-white/10 hover:text-neutral-100 [&_svg]:size-4"
           >
@@ -1134,7 +1137,10 @@ function ShelfCardActions({
   onHide: (id: string) => void;
   onRemove: (id: string) => void;
 }) {
-  const pinned = hidden || selected;
+  // Pinned open on the selected card only. A hidden card dims instantly;
+  // its actions live under hover like everything else, so the overlay
+  // always dismisses the same way.
+  const pinned = selected;
   return (
     <div
       className={
