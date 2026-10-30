@@ -18,7 +18,13 @@ import {
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Menu, MenuItem, MenuPopup, MenuTrigger } from "@/components/ui/menu";
+import {
+  Menu,
+  MenuPopup,
+  MenuRadioGroup,
+  MenuRadioItem,
+  MenuTrigger,
+} from "@/components/ui/menu";
 import { Tabs, TabsList, TabsTab } from "@/components/ui/tabs";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
@@ -84,6 +90,50 @@ function wrappedRange(value: string, start: number, end: number, marker: string)
   const before = start - len - 1 >= 0 ? value[start - len - 1] : "";
   const after = end + len < value.length ? value[end + len] : "";
   return before !== edge && after !== edge;
+}
+
+/** Which inline marks cover the caret (or wrap the selection). */
+function inlineMarksAt(
+  draft: string,
+  start: number,
+  end: number,
+): { bold: boolean; italic: boolean; strike: boolean } {
+  const check = (marker: string, pattern: RegExp): boolean => {
+    if (start < end) {
+      // Selection between the markers (***bold*** selected as "bold").
+      if (wrappedRange(draft, start, end, marker)) return true;
+      // Selection including the markers themselves.
+      const len = marker.length;
+      const edge = marker[0] ?? "";
+      if (draft.slice(start, start + len) === marker && draft.slice(end - len, end) === marker) {
+        const before = start - 1 >= 0 ? draft[start - 1] : "";
+        const after = end < draft.length ? draft[end] : "";
+        if (before !== edge && after !== edge) return true;
+      }
+    }
+    const caret = start;
+    const lineStart = draft.lastIndexOf("\n", Math.max(0, caret - 1)) + 1;
+    let lineEnd = draft.indexOf("\n", caret);
+    if (lineEnd < 0) lineEnd = draft.length;
+    const line = draft.slice(lineStart, lineEnd);
+    const at = caret - lineStart;
+    pattern.lastIndex = 0;
+    let match: RegExpExecArray | null;
+    while ((match = pattern.exec(line)) !== null) {
+      if (match[0].length === 0) break;
+      const inner = match[1] ?? "";
+      const innerStart = (match.index ?? 0) + match[0].indexOf(inner);
+      // Typing at either edge of the span stays inside the formatting (or
+      // creates an empty one), so the indicator stays lit there too.
+      if (at >= innerStart && at <= innerStart + inner.length) return true;
+    }
+    return false;
+  };
+  return {
+    bold: check("**", /(?<!\*)\*\*(?!\*)([\s\S]*?)(?<!\*)\*\*(?!\*)/g),
+    italic: check("*", /(?<!\*)\*(?!\*)([^*\n]*?)(?<!\*)\*(?!\*)/g),
+    strike: check("~~", /(?<!~)~~(?!~)([\s\S]*?)(?<!~)~~(?!~)/g),
+  };
 }
 
 /** Toggle inline marks: already-marked text unwraps instead of doubling. */
@@ -225,6 +275,7 @@ function MarkdownText({
   onCommitBlock,
   onCancelBlock,
   onUndoKey,
+  onSelectChange,
   onInlineFormat,
   onSplitBlock,
   onJoinBackward,
@@ -240,6 +291,7 @@ function MarkdownText({
   onCommitBlock: () => void;
   onCancelBlock: () => void;
   onUndoKey: (event: React.KeyboardEvent<HTMLTextAreaElement>) => boolean;
+  onSelectChange: (start: number, end: number) => void;
   onInlineFormat: (id: "bold" | "italic") => void;
   onSplitBlock: () => void;
   onJoinBackward: () => void;
@@ -274,6 +326,9 @@ function MarkdownText({
       value={draft}
       aria-label="Edit block"
       onChange={(event) => onDraftChange(event.target.value)}
+      onSelect={(event) =>
+        onSelectChange(event.currentTarget.selectionStart, event.currentTarget.selectionEnd)
+      }
       onBlur={onCommitBlock}
       onKeyDown={(event) => {
         if (event.nativeEvent.isComposing) return;
@@ -478,6 +533,10 @@ export function PlanDoc({ open, mode, onOpen, onClose, notice, className }: Plan
   // Escape. Opening an edit pushes history; committing does not.
   const [editingBlock, setEditingBlock] = useState<{ start: number; end: number } | null>(null);
   const [blockDraft, setBlockDraft] = useState("");
+  const [blockSel, setBlockSel] = useState<{ start: number; end: number } | null>(null);
+  const marks = editingBlock
+    ? inlineMarksAt(blockDraft, blockSel?.start ?? 0, blockSel?.end ?? 0)
+    : { bold: false, italic: false, strike: false };
 
   // The style trigger mirrors the block at the caret: the open block
   // editor's first line in preview, the selected line in source.
@@ -562,6 +621,7 @@ export function PlanDoc({ open, mode, onOpen, onClose, notice, className }: Plan
       if (!editor) return;
       editor.focus();
       editor.setSelectionRange(editor.value.length, editor.value.length);
+      setBlockSel({ start: editor.value.length, end: editor.value.length });
     });
   };
   const commitBlockEditor = () => {
@@ -601,6 +661,7 @@ export function PlanDoc({ open, mode, onOpen, onClose, notice, className }: Plan
       // there instead of dropping the editor.
       setBlockDraft("");
       setEditingBlock({ start: targetLine, end: targetLine });
+      setBlockSel({ start: 0, end: 0 });
       requestAnimationFrame(() => {
         const editor = blockAreaRef.current;
         if (!editor) return;
@@ -623,6 +684,7 @@ export function PlanDoc({ open, mode, onOpen, onClose, notice, className }: Plan
       editor.focus();
       const at = Math.max(0, Math.min(offset, editor.value.length));
       editor.setSelectionRange(at, at);
+      setBlockSel({ start: at, end: at });
     });
   };
   /** Commit silently, then open the neighbouring block, if there is one. */
@@ -662,6 +724,7 @@ export function PlanDoc({ open, mode, onOpen, onClose, notice, className }: Plan
       editor.focus();
       const at = direction < 0 ? editor.value.length : 0;
       editor.setSelectionRange(at, at);
+      setBlockSel({ start: at, end: at });
     });
   };
   /** Enter splits the caret line; list items continue their marker. */
@@ -687,6 +750,7 @@ export function PlanDoc({ open, mode, onOpen, onClose, notice, className }: Plan
         if (!target) return;
         target.focus();
         target.setSelectionRange(0, 0);
+        setBlockSel({ start: 0, end: 0 });
       });
       return;
     }
@@ -793,6 +857,7 @@ export function PlanDoc({ open, mode, onOpen, onClose, notice, className }: Plan
       editor.focus();
       const at = Math.max(0, Math.min(offset, editor.value.length));
       editor.setSelectionRange(at, at);
+      setBlockSel({ start: at, end: at });
     });
   };
   /**
@@ -1361,48 +1426,66 @@ export function PlanDoc({ open, mode, onOpen, onClose, notice, className }: Plan
                 align="start"
                 className="min-w-36 rounded-2xl border-0 bg-[#1a1a1a] text-neutral-100 shadow-raised ring-1 ring-white/10 before:hidden"
               >
-                {BLOCK_STYLES.map((style) => (
-                  <MenuItem
-                    key={style.id}
-                    className="min-h-0 grid-cols-1 gap-0 rounded-xl px-2.5 py-1.5 text-sm data-highlighted:bg-white/8 [&>span:first-child]:hidden [&>span:last-child]:col-start-1 [&>span:last-child]:flex [&>span:last-child]:items-center [&>span:last-child]:gap-2"
-                    onMouseDown={(event) => {
-                      // Keep the editor focused so the selection survives the
-                      // click: without this the block commits and closes
-                      // before the style lands, and nothing happens.
-                      event.preventDefault();
-                    }}
-                    onClick={() => applyBlockStyle(style.id)}
-                  >
-                    {style.label}
-                  </MenuItem>
-                ))}
-              </MenuPopup>
-            </Menu>
-            {FORMAT_ACTIONS.map((action) => (
-              <Tooltip key={action.id}>
-                <TooltipTrigger
-                  render={
-                    <Button
-                      type="button"
-                      size="icon-sm"
-                      variant="ghost"
-                      aria-label={action.label}
+                <MenuRadioGroup
+                  value={caretStyle}
+                  onValueChange={(value) => {
+                    if (value === "normal" || value === "h1" || value === "h2" || value === "h3") {
+                      applyBlockStyle(value);
+                    }
+                  }}
+                >
+                  {BLOCK_STYLES.map((style) => (
+                    <MenuRadioItem
+                      key={style.id}
+                      value={style.id}
+                      closeOnClick
+                      className="min-h-0 rounded-xl px-2.5 py-1.5 text-sm data-highlighted:bg-white/8"
                       onMouseDown={(event) => {
-                        // Keep the textarea focused so the selection survives.
+                        // Keep the editor focused so the selection survives
+                        // the click: without this the block commits and closes
+                        // before the style lands, and nothing happens.
                         event.preventDefault();
-                      }}
-                      onClick={(event) => {
-                        event.preventDefault();
-                        applyFormat(action.id);
                       }}
                     >
-                      <action.icon />
-                    </Button>
-                  }
-                />
-                <TooltipPopup sideOffset={8}>{action.label}</TooltipPopup>
-              </Tooltip>
-            ))}
+                      {style.label}
+                    </MenuRadioItem>
+                  ))}
+                </MenuRadioGroup>
+              </MenuPopup>
+            </Menu>
+            {FORMAT_ACTIONS.map((action) => {
+              const pressed =
+                (action.id === "bold" && marks.bold) ||
+                (action.id === "italic" && marks.italic) ||
+                (action.id === "strike" && marks.strike);
+              return (
+                <Tooltip key={action.id}>
+                  <TooltipTrigger
+                    render={
+                      <Button
+                        type="button"
+                        size="icon-sm"
+                        variant="ghost"
+                        aria-label={action.label}
+                        aria-pressed={pressed || undefined}
+                        data-pressed={pressed ? "" : undefined}
+                        onMouseDown={(event) => {
+                          // Keep the textarea focused so the selection survives.
+                          event.preventDefault();
+                        }}
+                        onClick={(event) => {
+                          event.preventDefault();
+                          applyFormat(action.id);
+                        }}
+                      >
+                        <action.icon />
+                      </Button>
+                    }
+                  />
+                  <TooltipPopup sideOffset={8}>{action.label}</TooltipPopup>
+                </Tooltip>
+              );
+            })}
             <Tooltip key="undo">
               <TooltipTrigger
                 render={
@@ -1463,6 +1546,7 @@ export function PlanDoc({ open, mode, onOpen, onClose, notice, className }: Plan
                 onCommitBlock={commitBlockEditor}
                 onCancelBlock={cancelBlockEditor}
                 onUndoKey={handleUndoKey}
+                onSelectChange={(start, end) => setBlockSel({ start, end })}
                 onInlineFormat={(id) => applyFormat(id)}
                 onSplitBlock={splitBlockAtCaret}
                 onJoinBackward={() => joinBlockAtCaret(-1)}
