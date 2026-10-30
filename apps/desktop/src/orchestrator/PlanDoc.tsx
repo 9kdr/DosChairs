@@ -136,14 +136,52 @@ function inlineMarksAt(
   };
 }
 
-/** Toggle inline marks: already-marked text unwraps instead of doubling. */
+/** Toggle inline marks: already-marked text unwraps instead of doubling.
+ * Selections are trimmed first, so catching a trailing space (or the
+ * markers themselves, e.g. via triple-click) still toggles instead of
+ * stacking another pair.
+ */
 function toggleWrap(value: string, start: number, end: number, marker: string) {
   const len = marker.length;
-  if (wrappedRange(value, start, end, marker)) {
-    const inner = value.slice(start, end);
-    const next = value.slice(0, start - len) + inner + value.slice(end + len);
-    const at = start - len;
-    return { next, caret: [at, at + inner.length] as const };
+  const selected = value.slice(start, end);
+  const leading = /^\s*/.exec(selected)?.[0].length ?? 0;
+  const trailing = /\s*$/.exec(selected)?.[0].length ?? 0;
+  const coreStart = start + leading;
+  const coreEnd = Math.max(coreStart, end - trailing);
+  const edge = marker[0] ?? "";
+  const bounded = (from: number, toExclusive: number) => {
+    const before = from - 1 >= 0 ? value[from - 1] : "";
+    const after = toExclusive < value.length ? value[toExclusive] : "";
+    return before !== edge && after !== edge;
+  };
+  // Markers hugging the selection from the outside: *|foo|*.
+  if (coreStart < coreEnd && wrappedRange(value, coreStart, coreEnd, marker)) {
+    const inner = value.slice(coreStart, coreEnd);
+    return {
+      next: value.slice(0, coreStart - len) + inner + value.slice(coreEnd + len),
+      caret: [coreStart - len, coreStart - len + inner.length] as const,
+    };
+  }
+  // Markers included in the selection itself: |*foo*|.
+  if (
+    coreStart + len <= coreEnd &&
+    value.slice(coreStart, coreStart + len) === marker &&
+    value.slice(coreEnd - len, coreEnd) === marker &&
+    bounded(coreStart, coreEnd)
+  ) {
+    const inner = value.slice(coreStart + len, coreEnd - len);
+    return {
+      next: value.slice(0, coreStart) + inner + value.slice(coreEnd),
+      caret: [coreStart, coreStart + inner.length] as const,
+    };
+  }
+  if (coreStart < coreEnd) {
+    const inner = value.slice(coreStart, coreEnd);
+    const at = coreStart + len;
+    return {
+      next: `${value.slice(0, coreStart)}${marker}${inner}${marker}${value.slice(coreEnd)}`,
+      caret: [at, at + inner.length] as const,
+    };
   }
   return wrapSelection(value, start, end, marker);
 }
