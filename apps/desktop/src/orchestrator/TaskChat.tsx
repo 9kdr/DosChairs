@@ -89,7 +89,7 @@ export function TaskChat({
       </header>
 
       <div className="flex min-h-0 flex-1 gap-4 px-4">
-        <div className="min-h-0 min-w-0 flex-1 overflow-y-auto">
+        <div className="min-h-0 min-w-0 flex-1 overflow-y-auto [scrollbar-gutter:stable]">
           <ol className="mx-auto flex w-full max-w-3xl flex-col gap-6 py-4">
             {turns.map((turn) =>
               turn.role === "user" ? (
@@ -110,19 +110,23 @@ export function TaskChat({
         <TaskActivityPanel task={task} />
       </div>
 
-      <div className="shrink-0 px-4 pt-2 pb-6">
-        <div className="mx-auto w-full max-w-3xl">
-          <ChatPrompt
-            open
-            wide
-            placeholder={`Message about ${task.name}…`}
-            onOpen={() => {}}
-            onClose={() => {}}
-            onSend={(draft) => {
-              if (draft.text.trim()) onSend(draft.text);
-            }}
-          />
+      <div className="flex shrink-0 gap-4 px-4 pt-2 pb-6">
+        <div className="min-w-0 flex-1">
+          <div className="mx-auto w-full max-w-3xl">
+            <ChatPrompt
+              open
+              wide
+              placeholder={`Message about ${task.name}…`}
+              onOpen={() => {}}
+              onClose={() => {}}
+              onSend={(draft) => {
+                if (draft.text.trim()) onSend(draft.text);
+              }}
+            />
+          </div>
         </div>
+        {/* Spacer matching the activity rail so the bar starts where the text starts. */}
+        <div aria-hidden className="hidden w-72 shrink-0 lg:block" />
       </div>
     </div>
   );
