@@ -1,5 +1,12 @@
 @import "tailwindcss";
 
+/* While the board is mid-morph the tab indicator must track its tabs 1:1.
+ * Its own 200ms ease would restart on every frame's re-aim and rubber-band
+ * behind them, so transitions lock for the duration. */
+[data-transition-lock="true"] [data-slot="tab-indicator"] {
+  transition: none !important;
+}
+
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
@@ -37,6 +44,15 @@
   --color-edge: var(--surface-border);
   --shadow-rim: var(--surface-rim);
   --shadow-raised: var(--surface-rim), var(--surface-lift);
+  --color-dither-ink: var(--dither-ink);
+  --color-dither-paper: var(--dither-paper);
+  --color-dither-blue: var(--dither-color-blue);
+  --color-dither-purple: var(--dither-color-purple);
+  --color-dither-green: var(--dither-color-green);
+  --color-dither-pink: var(--dither-color-pink);
+  --color-dither-orange: var(--dither-color-orange);
+  --color-dither-red: var(--dither-color-red);
+  --color-dither-grey: var(--dither-color-grey);
 }
 
 :root {
@@ -77,6 +93,17 @@
     inset 0 1px 0 color-mix(in srgb, white 70%, transparent),
     inset 0 -1px 0 color-mix(in srgb, black 7%, transparent);
   --surface-lift: 0 1px 2px color-mix(in srgb, black 6%, transparent);
+  --dither-ink: var(--primary);
+  --dither-paper: var(--background);
+  --dither-cell: 3px;
+  --dither-color-blue: oklch(0.56 0.18 248);
+  --dither-color-purple: oklch(0.53 0.22 302);
+  --dither-color-green: oklch(0.58 0.15 152);
+  --dither-color-pink: oklch(0.58 0.21 355);
+  --dither-color-orange: oklch(0.64 0.17 52);
+  --dither-color-red: oklch(0.55 0.21 27);
+  --dither-color-grey: oklch(0.55 0 0);
+  --dither-bloom: 0.6;
 }
 
 html {
@@ -212,4 +239,15 @@ html[data-window-maximized] .chair-shell {
     inset 0 1px 0 color-mix(in srgb, white 10%, transparent),
     inset 0 -1px 0 color-mix(in srgb, black 45%, transparent);
   --surface-lift: 0 1px 2px rgb(0 0 0 / 0.35);
+  --dither-ink: var(--primary);
+  --dither-paper: var(--background);
+  --dither-cell: 3px;
+  --dither-color-blue: oklch(0.72 0.14 240);
+  --dither-color-purple: oklch(0.7 0.18 304);
+  --dither-color-green: oklch(0.78 0.17 152);
+  --dither-color-pink: oklch(0.74 0.17 354);
+  --dither-color-orange: oklch(0.79 0.15 62);
+  --dither-color-red: oklch(0.68 0.2 25);
+  --dither-color-grey: oklch(0.66 0 0);
+  --dither-bloom: 1;
 }
