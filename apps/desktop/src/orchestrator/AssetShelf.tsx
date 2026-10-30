@@ -15,7 +15,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion, type Variants } from "motion/react";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type {
   DragEvent,
   MouseEvent as ReactMouseEvent,
@@ -92,6 +92,13 @@ const VIEWS: { id: ViewStyle; label: string; icon: LucideIcon }[] = [
   { id: "compact", label: "Compact", icon: Rows3 },
   { id: "more", label: "More", icon: List },
 ];
+
+const SHELF_VIEW_KEY = "chair.shelfView";
+
+function loadShelfView(): ViewStyle {
+  const saved = localStorage.getItem(SHELF_VIEW_KEY);
+  return saved === "cards" || saved === "compact" || saved === "more" ? saved : "compact";
+}
 
 const STARTER_ASSETS: AssetItem[] = [
   { id: "a1", scope: "assets", name: "A001_C004_1024_RAW.mov", kind: "video" },
@@ -269,7 +276,12 @@ export function AssetShelf({ className, frozen = false, transitionLock = false }
   const [assets, setAssets] = useState(STARTER_ASSETS);
   const [scope, setScope] = useState<Scope>("assets");
   const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");
-  const [view, setView] = useState<ViewStyle>("cards");
+  // One sizing shared by assets and pieces, compact unless the user picked
+  // otherwise. Persisted across sessions.
+  const [view, setView] = useState<ViewStyle>(loadShelfView);
+  useEffect(() => {
+    localStorage.setItem(SHELF_VIEW_KEY, view);
+  }, [view]);
   const [query, setQuery] = useState("");
   const [openFolder, setOpenFolder] = useState<string | null>(null);
   const [shift, setShift] = useState<Shift>("fade");
