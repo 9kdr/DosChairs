@@ -5,6 +5,7 @@ import { DitherShader } from "@/lib/dither";
 import type { DitherColor } from "@/lib/dither";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { historyForTask } from "../project/store";
 
 export type TaskLane = "edit" | "effects" | "colour";
 
@@ -13,6 +14,11 @@ export interface RunningTask {
   name: string;
   status: string;
   lane: TaskLane;
+}
+
+/** True when a task is completed and has at least one accepted history entry to rewind. */
+export function canUndoTask(task: RunningTask): boolean {
+  return task.status.toLowerCase() === "completed" && historyForTask(task.id).length > 0;
 }
 
 export interface RunningTasksProps {
@@ -305,7 +311,7 @@ function TaskRow({
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-1.5">
-          {onUndo ? (
+          {onUndo && canUndoTask(task) ? (
             <Button
               type="button"
               size="sm"

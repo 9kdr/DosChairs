@@ -3,7 +3,7 @@ import { ArrowLeft, Undo2 } from "lucide-react";
 import { ChatPrompt } from "@/components/chat-prompt";
 import { SmoothScrollTarget } from "@/components/smooth-scroll";
 import { Button } from "@/components/ui/button";
-import type { RunningTask } from "./RunningTasks";
+import { canUndoTask, type RunningTask } from "./RunningTasks";
 import { TaskActivityPanel } from "./TaskActivity";
 import { historyForTask } from "../project/store";
 import { opLabel } from "../project/ReviewBoard";
@@ -143,17 +143,19 @@ export function TaskChat({
       <div className="flex shrink-0 gap-4 px-4 pt-2 pb-6">
         <div className="min-w-0 flex-1">
           <div className="mx-auto w-full max-w-3xl">
-            <div className="pb-2">
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                onClick={() => onSend(UNDO_PROMPT)}
-              >
-                <Undo2 />
-                Undo this task&rsquo;s changes
-              </Button>
-            </div>
+            {canUndoTask(task) ? (
+              <div className="pb-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => onSend(UNDO_PROMPT)}
+                >
+                  <Undo2 />
+                  Undo this task&rsquo;s changes
+                </Button>
+              </div>
+            ) : null}
             <ChatPrompt
               open
               wide
