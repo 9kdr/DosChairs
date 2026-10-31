@@ -5,6 +5,7 @@ import { DitherShader } from "@/lib/dither";
 import type { DitherColor } from "@/lib/dither";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { historyForTask } from "../project/store";
 
 export type TaskLane = "edit" | "effects" | "colour";
 
@@ -13,6 +14,11 @@ export interface RunningTask {
   name: string;
   status: string;
   lane: TaskLane;
+}
+
+/** True when a task is completed and has at least one accepted history entry to rewind. */
+export function canUndoTask(task: RunningTask): boolean {
+  return task.status.toLowerCase() === "completed" && historyForTask(task.id).length > 0;
 }
 
 export interface RunningTasksProps {
@@ -192,18 +198,14 @@ function TaskRow({
     }, 100);
   };
 
-  const handlePointerDown = (
-    event: PointerEvent<HTMLDivElement> | MouseEvent<HTMLDivElement>,
-  ) => {
+  const handlePointerDown = (event: PointerEvent<HTMLDivElement> | MouseEvent<HTMLDivElement>) => {
     if (event.button !== 0) return;
     isDraggingRef.current = false;
     startPosRef.current = { x: event.clientX, y: event.clientY };
     upPosRef.current = { x: event.clientX, y: event.clientY };
   };
 
-  const handlePointerUp = (
-    event: PointerEvent<HTMLDivElement> | MouseEvent<HTMLDivElement>,
-  ) => {
+  const handlePointerUp = (event: PointerEvent<HTMLDivElement> | MouseEvent<HTMLDivElement>) => {
     if (event.button !== 0) return;
     upPosRef.current = { x: event.clientX, y: event.clientY };
   };
@@ -230,10 +232,7 @@ function TaskRow({
           ? event.clientY
           : (upPosRef.current?.y ?? event.clientY);
 
-      const dist = Math.hypot(
-        endX - startPosRef.current.x,
-        endY - startPosRef.current.y,
-      );
+      const dist = Math.hypot(endX - startPosRef.current.x, endY - startPosRef.current.y);
       startPosRef.current = null;
       upPosRef.current = null;
 
@@ -291,21 +290,18 @@ function TaskRow({
         aria-hidden
         className="pointer-events-none absolute inset-y-0 left-0 w-1/2"
         style={{
-          background:
-            "linear-gradient(to right, #1a1a1a 0%, #1a1a1a 60%, transparent 100%)",
+          background: "linear-gradient(to right, #1a1a1a 0%, #1a1a1a 60%, transparent 100%)",
         }}
       />
       <div className="relative flex items-center justify-between gap-3 px-3.5 py-2.5">
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-medium text-neutral-100">
-            {task.name}
-          </p>
+          <p className="truncate text-sm font-medium text-neutral-100">{task.name}</p>
           <p className="truncate text-xs text-neutral-400">
             {LANE_LABEL[task.lane]} · {task.status}
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-1.5">
-          {onUndo ? (
+          {onUndo && canUndoTask(task) ? (
             <Button
               type="button"
               size="sm"
@@ -350,9 +346,7 @@ export function RunningTasks({
       <div className="flex items-center justify-between px-1">
         <div className="flex items-center gap-2">
           <Waypoints className="size-4 text-neutral-400" />
-          <h2 className="text-sm font-semibold tracking-wide text-neutral-100">
-            Running Tasks
-          </h2>
+          <h2 className="text-sm font-semibold tracking-wide text-neutral-100">Running Tasks</h2>
         </div>
         <span className="flex items-center gap-1.5 text-xs text-neutral-400">
           <span className="size-1.5 rounded-full bg-emerald-400 animate-pulse" />
@@ -372,9 +366,7 @@ export function RunningTasks({
           />
         ))}
         {tasks.length === 0 ? (
-          <p className="py-4 text-center text-xs text-neutral-400">
-            No running tasks
-          </p>
+          <p className="py-4 text-center text-xs text-neutral-400">No running tasks</p>
         ) : null}
       </div>
     </div>
