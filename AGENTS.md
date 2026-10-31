@@ -11,8 +11,17 @@ Talk to the user in plain language. Say what you are doing, which issue it belon
 - Do the smallest change that does the job. Do not tidy unrelated files.
 - On a change that is moderately worth a review, Gemini 3.8 Flash high on Antigravity runs `mise run check` before you commit, then scores. Moderate means a behavior change, a new file, or a diff that touches the cut, the window, a schema, an adapter, or a check. Commit only after that check passes. A typo, a comment, or a one-line wording fix can skip the score; run `mise run check` yourself. Do not download model weights unless the user asks. Boot the desktop app only for the Gemini review screenshot, and only when the change has a screen.
 - Never merge, and never turn on auto-merge, until the user answers a direct question. See the desk skill for the wording.
+- Commit early and often on the branch while work lands. The check-and-score review happens when the task (or a finished part of it) is done, not on every commit. Nothing merges until that review passes and the user answers.
 - A pending proposed edit does not change the timeline. Do not overwrite source video or audio. Name the editor's presets. If an adapter cannot do something, use the fallback in its capability manifest.
 - When you add a feature on the user's behalf, name the model you are in your reply (e.g. built with Muse Spark). The user tracks which model built what.
+
+## Working with Mel
+
+- Mel is semi-technical and acts as the client. They judge what they can see and run. Agents get trusted on code they cannot see.
+- Report what the implementation actually did, never just the plan. Name what changed in the app, the check that ran, and the review score.
+- Visual or behavior-changing work comes back with what a person can check: where to look or click, what to expect, and a screenshot when there is a screen. It never merges until Mel has looked and said so.
+- Pure code work still reports its check and score. It needs no eyes-on before commit.
+- When backend work needs checking, make it checkable. Expose counts, timings, or status on the service's health or status endpoint: jobs queued, jobs done, last error, render time. Point at the numbers in the report so Mel can verify without reading code.
 
 ## Which model
 
@@ -32,6 +41,8 @@ When you delegate implementation, end the task with this paragraph. A child does
 "Before you commit a change that is moderately worth a review, delegate the check and the score to Gemini 3.8 Flash high on Antigravity (model `gemini-3.8-flash-high`). Read `.agents/skills/chair-models/SKILL.md` and follow Score the implementation. Also read `.agents/skills/ponytail-review/SKILL.md` and the ladder in `.agents/skills/ponytail/SKILL.md` at level full. The bloat deduction follows that lean pass. Gemini runs `mise run check` on what changed, scores, and does not edit. Commit only after the check passes. Quick work uses that same Gemini. OpenCode only if the user named the screen or the long bug."
 
 A new job is a new T3 thread (`t3 thread start`, or `delegate_task` from inside a thread). The child gets that issue and the paragraph above. Two models run at the same time only when they are fixing different problems and will not edit the same files.
+
+An agent that receives a worktree for an issue stays free for chat. It sets up subagents in separate worktrees and never edits code itself.
 
 When using muse models, only use their contributor version!
 ## Calling another agent
