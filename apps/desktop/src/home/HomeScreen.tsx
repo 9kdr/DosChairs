@@ -1,4 +1,5 @@
 import { PlusIcon } from "lucide-react";
+import packageJson from "../../package.json";
 import { motion, useReducedMotion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
 import { SmoothScrollTarget } from "@/components/smooth-scroll";
@@ -106,6 +107,10 @@ export function HomeScreen({ onOpenProject }: HomeScreenProps) {
         <span className="text-base font-medium tracking-wide text-neutral-200">
           Chair
         </span>
+      </div>
+
+      <div className="pointer-events-none absolute bottom-5 right-5 z-20 flex h-8 items-center text-xs text-neutral-500">
+        v{packageJson.version}
       </div>
 
       <HomeDock
