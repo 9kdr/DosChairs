@@ -42,6 +42,7 @@ When you delegate implementation, end the task with this paragraph. A child does
 "Before you commit a change that is moderately worth a review, delegate the check and the score to Gemini 3.8 Flash high on Antigravity (model `gemini-3.8-flash-high`). Read `.agents/skills/chair-models/SKILL.md` and follow Score the implementation. Also read `.agents/skills/ponytail-review/SKILL.md` and the ladder in `.agents/skills/ponytail/SKILL.md` at level full. The bloat deduction follows that lean pass. Gemini runs `mise run check` on what changed, scores, and does not edit. Commit only after the check passes. Quick work uses that same Gemini. OpenCode only if the user named the screen or the long bug."
 
 A new job is a new T3 thread (`t3 thread start`, or `delegate_task` from inside a thread). The child gets that issue and the paragraph above. Two models run at the same time only when they are fixing different problems and will not edit the same files.
+Any chat may spawn separate sub-chats with no callback to the parent when the task is long, spans multiple issues, or Mel will follow that chat directly.
 
 An agent that receives a worktree for an issue stays free for chat. It sets up subagents in separate worktrees and never edits code itself.
 
