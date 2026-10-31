@@ -315,3 +315,30 @@ def test_worker_survives_bad_handler_result(tmp_path: Path) -> None:
     assert controller.get(good_id).status == "completed"
     reloaded = JobController(tmp_path / "jobs.json", deliver=lambda url, body, headers: None)
     assert reloaded.get(bad_id).status == "failed"
+
+
+def test_worker_survives_malformed_webhook_secret(tmp_path: Path) -> None:
+    controller = _controller(tmp_path, webhook_secret="not-valid-base64!!")
+
+    def ok(job: Job) -> HandlerResult:
+        return HandlerResult()
+
+    first = controller.submit("ok", webhook_url="https://example.test/hook")
+    second = controller.submit("ok", webhook_url="https://example.test/hook")
+    stop = threading.Event()
+    thread = threading.Thread(
+        target=run_worker, args=(controller, {"ok": ok}), kwargs={"stop": stop}
+    )
+    thread.start()
+    try:
+        for _ in range(200):
+            if controller.get(second.request_id).status == "completed":
+                break
+            stop.wait(0.05)
+    finally:
+        stop.set()
+        thread.join(timeout=5)
+
+    assert controller.get(first.request_id).status == "completed"
+    assert controller.get(first.request_id).webhook_delivered is False
+    assert controller.get(second.request_id).status == "completed"

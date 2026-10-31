@@ -319,10 +319,12 @@ class JobController:
         if job.webhook_url is None:
             return
         body = json.dumps(_envelope(job), default=str).encode()
-        headers = (
-            sign_delivery(self._webhook_secret, body) if self._webhook_secret is not None else {}
-        )
         try:
+            headers = (
+                sign_delivery(self._webhook_secret, body)
+                if self._webhook_secret is not None
+                else {}
+            )
             self._deliver(job.webhook_url, body, headers)
             delivered = True
         except Exception:
