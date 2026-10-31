@@ -1,0 +1,10 @@
+{
+  "schemaVersion": "0.1.0",
+  "effect": "motion_graphics",
+  "prompt": "Lower thirds for both guests",
+  "shots": [
+    { "prompt": "Lower third: guest one, host", "durationSec": 5 },
+    { "prompt": "Lower third: guest two, chef", "durationSec": 5 }
+  ],
+  "params": { "template": "lower-third", "loop": "once" }
+}

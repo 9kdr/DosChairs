@@ -1,0 +1,15 @@
+{
+  "schemaVersion": "0.1.0",
+  "effect": "muse_image",
+  "prompt": "Foggy harbor at dawn for the title card",
+  "mediaRefs": ["asset://reference/harbor-still"],
+  "shots": [
+    { "prompt": "Wide foggy harbor at dawn", "durationSec": 4 },
+    {
+      "prompt": "Close push-in on the moored boat",
+      "durationSec": 3,
+      "mediaRef": "asset://reference/boat-still"
+    }
+  ],
+  "params": { "aspect": "16:9", "style": "cinematic" }
+}
