@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from "react";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Undo2 } from "lucide-react";
 import { ChatPrompt } from "@/components/chat-prompt";
 import { SmoothScrollTarget } from "@/components/smooth-scroll";
 import { Button } from "@/components/ui/button";
 import type { RunningTask } from "./RunningTasks";
 import { TaskActivityPanel } from "./TaskActivity";
+import { historyForTask } from "../project/store";
+import { opLabel } from "../project/ReviewBoard";
 
 type Turn = {
   id: string;
@@ -24,6 +26,26 @@ const LANE: Record<RunningTask["lane"], string> = {
   effects: "Effects",
   colour: "Colour",
 };
+
+/** The prompt the Undo chip (and the row's Undo task button) sends. */
+export const UNDO_PROMPT = "Undo this task's changes.";
+
+/**
+ * Stand-in rewind summary for an undo prompt, read off the task's
+ * stand-in history (#75's shape). Newest first, like the rewind would run.
+ */
+function undoReply(task: RunningTask): string {
+  const entries = historyForTask(task.id);
+  if (entries.length === 0) return `No accepted edits to rewind for ${task.name} yet.`;
+  const list = [...entries]
+    .reverse()
+    .map((entry) =>
+      entry.targetId ? `${opLabel(entry.op)} on ${entry.targetId}` : opLabel(entry.op),
+    )
+    .join("; ");
+  const count = entries.length === 1 ? "1 accepted edit" : `${entries.length} accepted edits`;
+  return `Would rewind ${count}, newest first: ${list}. Real undo arrives with #75 — nothing changed.`;
+}
 
 /**
  * A full thread for one running task. Stand-in replies only.
@@ -56,13 +78,15 @@ export function TaskChat({
     seenNote.current = note.id;
     const text = note.text.trim();
     if (!text) return;
-    const reply = `Still on ${task.name}. I kept that note. The timeline is unchanged.`;
+    const reply = text.toLowerCase().startsWith("undo")
+      ? undoReply(task)
+      : `Still on ${task.name}. I kept that note. The timeline is unchanged.`;
     setTurns((current) => [
       ...current,
       { id: `user-${note.id}`, role: "user", text },
       { id: `assistant-${note.id}`, role: "assistant", text: reply },
     ]);
-  }, [note, task.name]);
+  }, [note, task]);
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ block: "end" });
@@ -119,6 +143,17 @@ export function TaskChat({
       <div className="flex shrink-0 gap-4 px-4 pt-2 pb-6">
         <div className="min-w-0 flex-1">
           <div className="mx-auto w-full max-w-3xl">
+            <div className="pb-2">
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={() => onSend(UNDO_PROMPT)}
+              >
+                <Undo2 />
+                Undo this task&rsquo;s changes
+              </Button>
+            </div>
             <ChatPrompt
               open
               wide

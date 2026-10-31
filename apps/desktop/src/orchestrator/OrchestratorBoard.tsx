@@ -23,6 +23,7 @@ type PlanMode = "edit" | "talk";
 type OrchestratorBoardProps = {
   command?: { id: number; text: string } | null;
   onOpenTask?: (task: RunningTask) => void;
+  onUndoTask?: (task: RunningTask) => void;
 };
 
 function columnWidths(available: number, editing: boolean) {
@@ -38,6 +39,7 @@ function columnWidths(available: number, editing: boolean) {
 export function OrchestratorBoard({
   command = null,
   onOpenTask,
+  onUndoTask,
 }: OrchestratorBoardProps) {
   const [planOpen, setPlanOpen] = useState(false);
   const [planMode, setPlanMode] = useState<PlanMode>("edit");
@@ -247,7 +249,11 @@ export function OrchestratorBoard({
                 transition: reduce ? "none" : "opacity 160ms cubic-bezier(0.22, 1, 0.36, 1)",
               }}
             >
-              <RunningTasks onOpen={onOpenTask} frozen={planTweening} />
+              <RunningTasks
+                onOpen={onOpenTask}
+                onUndo={onUndoTask}
+                frozen={planTweening}
+              />
             </div>,
             slotContainer,
           )}

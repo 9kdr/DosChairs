@@ -15,7 +15,7 @@ import type { EditorId } from "./home/data";
 import { EditorLogo } from "./home/EditorLogo";
 import { CreationBoard } from "./orchestrator/CreationBoard";
 import { OrchestratorBoard } from "./orchestrator/OrchestratorBoard";
-import { TaskChat } from "./orchestrator/TaskChat";
+import { TaskChat, UNDO_PROMPT } from "./orchestrator/TaskChat";
 import type { RunningTask } from "./orchestrator/RunningTasks";
 import { ReviewBoard } from "./project/ReviewBoard";
 import { useProject } from "./project/store";
@@ -101,6 +101,10 @@ export function ProjectShell({ projectId, projectName, editorId, onHome }: Proje
               onOpenTask={(task) => {
                 setTaskNote(null);
                 setTaskChat(task);
+              }}
+              onUndoTask={(task) => {
+                setTaskChat(task);
+                setTaskNote({ id: Date.now(), text: UNDO_PROMPT });
               }}
             />
           ) : (
