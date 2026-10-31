@@ -24,6 +24,16 @@
           "intent": { "type": "string" },
           "pacing": { "enum": ["slow", "medium", "fast"] },
           "tone": { "type": "string" },
+          "startSec": {
+            "type": "number",
+            "minimum": 0,
+            "description": "Where the beat starts on the timeline. Needed to place its marker."
+          },
+          "endSec": {
+            "type": "number",
+            "minimum": 0,
+            "description": "Where the beat ends on the timeline."
+          },
           "candidateClipIds": {
             "type": "array",
             "items": { "type": "string" }
