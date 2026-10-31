@@ -69,6 +69,7 @@ Read the matching skill before editing that area:
 - `.cursor/skills/chair-ir/SKILL.md` for `schemas/`, `packages/timeline-ir`, or `crates/chair-ir`
 - `.cursor/skills/chair-adapter/SKILL.md` for `adapters/`
 - `.agents/skills/coss/SKILL.md` and `.agents/skills/coss-particles/SKILL.md` before editing `apps/desktop` or `packages/ui`. The window uses coss. Use its components. Do not invent a second set.
+- `.agents/skills/taste/SKILL.md` before styling, polishing, or reviewing a screen in `apps/desktop`. App screens only; the page run does not apply.
 
 ## Where things live
 
