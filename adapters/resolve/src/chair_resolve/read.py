@@ -72,10 +72,11 @@ def timeline_from_resolve(snapshot: dict[str, Any]) -> dict[str, Any]:
 
 def read_current_timeline() -> dict[str, Any]:
     """Read the timeline open in Resolve Studio."""
-    return timeline_from_resolve(_snapshot(_scriptapp()))
+    return timeline_from_resolve(_snapshot(resolve_app()))
 
 
-def _scriptapp() -> Any:
+def resolve_app() -> Any:
+    """Return the Studio scripting app, shared by the read and write paths."""
     try:
         import DaVinciResolveScript as dvr_script
     except ImportError as exc:
@@ -312,7 +313,7 @@ def _markers(raw: Any, num: int, den: int) -> list[dict[str, Any]]:
 
 
 def _marker_kind(info: dict[str, Any]) -> str:
-    for key in ("name", "color"):
+    for key in ("name", "color", "customData"):
         raw = info.get(key)
         if isinstance(raw, str) and raw.strip().casefold() in CHAIR_MARKER_KINDS:
             return raw.strip().casefold()

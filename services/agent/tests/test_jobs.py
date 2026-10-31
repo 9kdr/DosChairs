@@ -182,7 +182,14 @@ def test_worker_runs_jobs_to_terminal(tmp_path: Path) -> None:
     thread.start()
     try:
         for _ in range(200):
-            if controller.get(known.request_id).status == "completed":
+            known_done = controller.get(known.request_id).status == "completed"
+            unknown_done = controller.get(unknown.request_id).status in {
+                "completed",
+                "failed",
+                "moderated",
+                "canceled",
+            }
+            if known_done and unknown_done:
                 break
             stop.wait(0.05)
     finally:

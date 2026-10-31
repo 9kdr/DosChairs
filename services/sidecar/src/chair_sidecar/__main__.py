@@ -13,8 +13,10 @@ from chair_sidecar.jobs import (
     MediaRequest,
     MusicRequest,
     Sam3Request,
+    SamAudioRequest,
     default_proxy_dir,
     sam3_runner,
+    sam_audio_runner,
 )
 
 
@@ -35,6 +37,7 @@ class Handler(BaseHTTPRequestHandler):
                     "device": os.environ.get("CHAIR_SIDECAR_DEVICE", "cpu"),
                     "jobs": [kind.value for kind in JobKind],
                     "sam3_runner": sam3_runner() is not None,
+                    "sam_audio_runner": sam_audio_runner() is not None,
                 },
             )
             return
@@ -60,7 +63,9 @@ class Handler(BaseHTTPRequestHandler):
         if tool not in FFMPEG_TOOLS and tool not in MODEL_TOOLS and tool not in MUSIC_TOOLS:
             self._json(404, {"error": "unknown tool"})
             return
-        if tool in MODEL_TOOLS:
+        if tool == "sam_audio":
+            model = SamAudioRequest
+        elif tool in MODEL_TOOLS:
             model = Sam3Request
         elif tool in MUSIC_TOOLS:
             model = MusicRequest

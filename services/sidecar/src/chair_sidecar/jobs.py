@@ -20,6 +20,8 @@ from chair_sidecar.music import SAMPLE_RATE, analyze, build_markers
 
 PREVIEW_PRESET = "preview-640"
 PREVIEW_WIDTH = 640
+DEFAULT_SCENE_THRESHOLD = 0.4
+DEFAULT_MIN_SHOT = 0.0
 
 
 class JobKind(StrEnum):
@@ -30,12 +32,14 @@ class JobKind(StrEnum):
     FRAME = "frame"
     MEASURE_AUDIO = "measure_audio"
     ANALYZE_MUSIC = "analyze_music"
+    SCENE_CUTS = "scene_cuts"
 
 
 FFMPEG_TOOLS: dict[str, JobKind] = {
     "render_preview": JobKind.PROXY,
     "get_frame": JobKind.FRAME,
     "measure_audio": JobKind.MEASURE_AUDIO,
+    "detect_scenes": JobKind.SCENE_CUTS,
 }
 
 MUSIC_TOOLS: dict[str, JobKind] = {
@@ -48,8 +52,15 @@ MUSIC_TOOLS: dict[str, JobKind] = {
 # --output <matte.mp4>`. The prompt json is {"kind": "text", "prompt": "..."}
 # or {"kind": "point", "point": [x, y]} with x, y in 0..1. The runner writes
 # `progress=0..1` lines to stderr and exits 0 with a video file at --output.
+# sam_audio protocol: `$CHAIR_SAM_AUDIO_RUNNER --source <media> --prompt <json>
+# --output <stem.wav>`. The prompt json is {"kind": "text", "prompt": "...",
+# "mode": ...} or {"kind": "span", "span": [start, end], "mode": ...} with
+# start/end in seconds naming an example of the target sound. Mode is
+# "isolate" or "remove". The runner writes `progress=0..1` lines to stderr
+# and exits 0 with an audio file at --output.
 MODEL_TOOLS: dict[str, JobKind] = {
     "sam3_mask": JobKind.SAM3_MASK,
+    "sam_audio": JobKind.SAM_AUDIO,
 }
 
 
@@ -64,6 +75,8 @@ class MediaRequest(BaseModel):
 
     source: str
     time: float | None = None
+    threshold: float | None = None
+    min_shot: float | None = None
 
     @field_validator("source")
     @classmethod
@@ -75,6 +88,20 @@ class MediaRequest(BaseModel):
     def time_non_negative(cls, value: float | None) -> float | None:
         if value is not None and value < 0:
             raise ValueError("time must be >= 0")
+        return value
+
+    @field_validator("threshold")
+    @classmethod
+    def threshold_in_range(cls, value: float | None) -> float | None:
+        if value is not None and not 0 <= value <= 1:
+            raise ValueError("threshold must sit between 0 and 1")
+        return value
+
+    @field_validator("min_shot")
+    @classmethod
+    def min_shot_non_negative(cls, value: float | None) -> float | None:
+        if value is not None and value < 0:
+            raise ValueError("min_shot must be >= 0")
         return value
 
 
@@ -160,6 +187,40 @@ class MusicRequest(BaseModel):
         return value
 
 
+class SamAudioRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    source: str
+    prompt_kind: Literal["text", "span"] = "text"
+    prompt: str | None = None
+    span: tuple[float, float] | None = None
+    mode: Literal["isolate", "remove"] = "isolate"
+
+    @field_validator("source")
+    @classmethod
+    def source_not_blank(cls, value: str) -> str:
+        return _checked_source(value)
+
+    @model_validator(mode="after")
+    def prompt_matches_kind(self) -> "SamAudioRequest":
+        if self.prompt_kind == "text":
+            if self.prompt is None or not self.prompt.strip():
+                raise ValueError("text prompts need prompt")
+        elif self.span is None:
+            raise ValueError("span prompts need span")
+        elif not 0 <= self.span[0] < self.span[1]:
+            raise ValueError("span must run forward from a time >= 0")
+        return self
+
+    def prompt_payload(self) -> dict:
+        payload: dict[str, object] = {"kind": self.prompt_kind, "mode": self.mode}
+        if self.prompt is not None:
+            payload["prompt"] = self.prompt
+        if self.span is not None:
+            payload["span"] = list(self.span)
+        return payload
+
+
 @dataclass
 class JobRecord:
     id: str
@@ -202,6 +263,11 @@ def binary(name: str) -> str:
 
 def sam3_runner() -> str | None:
     configured = os.environ.get("CHAIR_SAM3_RUNNER", "").strip()
+    return configured or None
+
+
+def sam_audio_runner() -> str | None:
+    configured = os.environ.get("CHAIR_SAM_AUDIO_RUNNER", "").strip()
     return configured or None
 
 
@@ -255,6 +321,18 @@ def parse_silence(log: str, duration: float) -> list[dict[str, float]]:
     return spans
 
 
+def parse_scene_cuts(log: str, duration: float, *, min_shot: float = 0.0) -> list[float]:
+    times = sorted(
+        {round(float(value), 3) for value in re.findall(r"pts_time:([0-9]+(?:\.[0-9]+)?)", log)}
+    )
+    cuts = [moment for moment in times if 0 < moment < duration]
+    kept: list[float] = []
+    for cut in cuts:
+        if not kept or cut - kept[-1] >= min_shot:
+            kept.append(cut)
+    return kept
+
+
 def active_spans(silence: list[dict[str, float]], duration: float) -> list[dict[str, float]]:
     spans: list[dict[str, float]] = []
     cursor = 0.0
@@ -292,7 +370,11 @@ class JobStore:
         self._lock = threading.Lock()
         self._load()
 
-    def submit(self, tool: str, request: MediaRequest | Sam3Request | MusicRequest) -> dict:
+    def submit(
+        self,
+        tool: str,
+        request: MediaRequest | Sam3Request | MusicRequest | SamAudioRequest,
+    ) -> dict:
         if tool in FFMPEG_TOOLS:
             if not isinstance(request, MediaRequest):
                 raise ValueError(f"{tool} needs source and time fields")
@@ -300,13 +382,20 @@ class JobStore:
             if tool == "get_frame" and request.time is None:
                 raise ValueError("get_frame requires time")
             time_s = request.time
+            threshold = (
+                request.threshold if request.threshold is not None else DEFAULT_SCENE_THRESHOLD
+            )
+            min_shot = request.min_shot if request.min_shot is not None else DEFAULT_MIN_SHOT
             prompt: dict | None = None
             music: dict | None = None
         elif tool in MODEL_TOOLS:
-            if not isinstance(request, Sam3Request):
+            expected = SamAudioRequest if tool == "sam_audio" else Sam3Request
+            if not isinstance(request, expected):
                 raise ValueError(f"{tool} needs source and prompt fields")
             kind = MODEL_TOOLS[tool]
             time_s = None
+            threshold = DEFAULT_SCENE_THRESHOLD
+            min_shot = DEFAULT_MIN_SHOT
             prompt = request.prompt_payload()
             music = None
         elif tool in MUSIC_TOOLS:
@@ -314,6 +403,8 @@ class JobStore:
                 raise ValueError(f"{tool} needs source, fps, and words fields")
             kind = MUSIC_TOOLS[tool]
             time_s = None
+            threshold = DEFAULT_SCENE_THRESHOLD
+            min_shot = DEFAULT_MIN_SHOT
             prompt = None
             music = {"fps": request.fps, "words": [word.model_dump() for word in request.words]}
         else:
@@ -334,7 +425,7 @@ class JobStore:
             snapshot = job.public()
         threading.Thread(
             target=self._run,
-            args=(job.id, tool, source, time_s, prompt, music),
+            args=(job.id, tool, source, time_s, prompt, music, threshold, min_shot),
             daemon=True,
         ).start()
         return snapshot
@@ -377,6 +468,8 @@ class JobStore:
         time_s: float | None,
         prompt: dict | None,
         music: dict | None,
+        threshold: float = DEFAULT_SCENE_THRESHOLD,
+        min_shot: float = DEFAULT_MIN_SHOT,
     ) -> None:
         self._update(job_id, status="running")
         before = _fingerprint(source)
@@ -387,6 +480,8 @@ class JobStore:
                 if time_s is None:
                     raise RuntimeError("get_frame requires time")
                 result = self._get_frame(job_id, source, time_s)
+            elif tool == "detect_scenes":
+                result = self._detect_scenes(job_id, source, threshold, min_shot)
             elif tool == "sam3_mask":
                 if prompt is None:
                     raise RuntimeError("sam3_mask requires a prompt")
@@ -395,6 +490,10 @@ class JobStore:
                 if music is None:
                     raise RuntimeError("analyze_music requires music params")
                 result = self._analyze_music(job_id, source, music["fps"], music["words"])
+            elif tool == "sam_audio":
+                if prompt is None:
+                    raise RuntimeError("sam_audio requires a prompt")
+                result = self._separate_stem(job_id, source, prompt)
             else:
                 result = self._measure_audio(job_id, source)
             if _fingerprint(source) != before:
@@ -595,6 +694,36 @@ class JobStore:
             samples.byteswap()
         return samples
 
+
+    def _detect_scenes(
+        self, job_id: str, source: Path, threshold: float, min_shot: float
+    ) -> dict:
+        info = self._probe(source)
+        if _video_size(info) is None:
+            raise RuntimeError("source has no video stream")
+        duration = _duration(info)
+        log = self._ffmpeg(
+            job_id,
+            [
+                "-i",
+                str(source),
+                "-map",
+                "0:v:0",
+                "-vf",
+                f"select='gt(scene,{threshold})',showinfo",
+                "-f",
+                "null",
+                "-",
+            ],
+            duration,
+        )
+        return {
+            "cuts": parse_scene_cuts(log, duration, min_shot=min_shot),
+            "duration": duration,
+            "threshold": threshold,
+            "min_shot": min_shot,
+        }
+
     def _track_matte(self, job_id: str, source: Path, prompt: dict) -> dict:
         runner = sam3_runner()
         if runner is None:
@@ -631,6 +760,44 @@ class JobStore:
             self._probe(dest), source=str(source), prompt=prompt, matte=str(dest), cached=False
         )
 
+    def _separate_stem(self, job_id: str, source: Path, prompt: dict) -> dict:
+        runner = sam_audio_runner()
+        if runner is None:
+            raise RuntimeError(
+                "CHAIR_SAM_AUDIO_RUNNER is not set; SAM Audio weights run outside the repo"
+            )
+        info = self._probe(source)
+        if not _has_stream(info, "audio"):
+            raise RuntimeError("source has no audio stream")
+        key = _cache_key(source, "sam_audio", json.dumps(prompt, sort_keys=True))
+        dest = self._output(source, f"stem-{key}.wav")
+        cached = self._probe_if_ready(dest)
+        if cached is not None:
+            return _stem_result(
+                cached, source=str(source), prompt=prompt, stem=str(dest), cached=True
+            )
+        part = self._part(dest, job_id)
+        command = [
+            runner,
+            "--source",
+            str(source),
+            "--prompt",
+            json.dumps(prompt),
+            "--output",
+            str(part),
+        ]
+        try:
+            self._run_runner(job_id, command, what="sam audio runner")
+            if not _has_stream(self._probe(part), "audio"):
+                raise RuntimeError("sam audio runner output has no audio stream")
+            os.replace(part, dest)
+        except Exception:
+            part.unlink(missing_ok=True)
+            raise
+        return _stem_result(
+            self._probe(dest), source=str(source), prompt=prompt, stem=str(dest), cached=False
+        )
+
     def _ffmpeg(self, job_id: str, args: list[str], duration: float) -> str:
         command = [
             binary("ffmpeg"),
@@ -645,8 +812,8 @@ class JobStore:
             job_id, command, lambda line: parse_progress(line, duration), what="ffmpeg"
         )
 
-    def _run_runner(self, job_id: str, command: list[str]) -> str:
-        return self._run_command(job_id, command, parse_runner_progress, what="sam3 runner")
+    def _run_runner(self, job_id: str, command: list[str], what: str = "sam3 runner") -> str:
+        return self._run_command(job_id, command, parse_runner_progress, what=what)
 
     def _run_command(
         self,
@@ -762,6 +929,19 @@ def _matte_result(
         "prompt_kind": prompt.get("kind"),
         "width": width,
         "height": height,
+        "duration": _duration(info),
+        "cached": cached,
+    }
+
+
+def _stem_result(
+    info: dict, *, source: str, prompt: dict, stem: str, cached: bool
+) -> dict:
+    return {
+        "stem": stem,
+        "source": source,
+        "prompt_kind": prompt.get("kind"),
+        "mode": prompt.get("mode"),
         "duration": _duration(info),
         "cached": cached,
     }
