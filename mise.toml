@@ -43,8 +43,23 @@ description = "Start the web UI (Vite). Use dev:desktop for the Tauri shell."
 run = "pnpm --filter @chair/desktop dev"
 
 [tasks."dev:desktop"]
-description = "Start the Tauri shell. Needs WebKitGTK on Linux."
-run = "pnpm --filter @chair/desktop dev:desktop"
+description = "Start the Tauri shell. Needs WebKitGTK and a display on Linux."
+run = """
+runtime="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+if [ -z "${XDG_RUNTIME_DIR:-}" ] && [ -d "$runtime" ]; then
+  export XDG_RUNTIME_DIR="$runtime"
+fi
+if [ -z "${WAYLAND_DISPLAY:-}" ] && [ -S "$runtime/wayland-0" ]; then
+  export WAYLAND_DISPLAY=wayland-0
+fi
+if [ -z "${DISPLAY:-}" ] && [ -S /tmp/.X11-unix/X0 ]; then
+  export DISPLAY=:0
+fi
+if [ -z "${DBUS_SESSION_BUS_ADDRESS:-}" ] && [ -S "$runtime/bus" ]; then
+  export DBUS_SESSION_BUS_ADDRESS="unix:path=$runtime/bus"
+fi
+pnpm --filter @chair/desktop dev:desktop
+"""
 
 [tasks."dev:agent"]
 description = "Start agent runtime"
