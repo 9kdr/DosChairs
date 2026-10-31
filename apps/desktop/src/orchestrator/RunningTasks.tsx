@@ -1,8 +1,9 @@
 import { useEffect, useRef } from "react";
 import type { DragEvent, KeyboardEvent, MouseEvent, PointerEvent } from "react";
-import { Loader2, Waypoints } from "lucide-react";
+import { Loader2, Undo2, Waypoints } from "lucide-react";
 import { DitherShader } from "@/lib/dither";
 import type { DitherColor } from "@/lib/dither";
+import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 export type TaskLane = "edit" | "effects" | "colour";
@@ -20,6 +21,7 @@ export interface RunningTasksProps {
   /** Hold the dither shaders on their current frame (e.g. mid-morph). */
   frozen?: boolean;
   onOpen?: (task: RunningTask) => void;
+  onUndo?: (task: RunningTask) => void;
 }
 
 const LANE_LABEL: Record<TaskLane, string> = {
@@ -109,11 +111,13 @@ function TaskRow({
   seed,
   frozen,
   onOpen,
+  onUndo,
 }: {
   task: RunningTask;
   seed: number;
   frozen: boolean;
   onOpen: () => void;
+  onUndo?: () => void;
 }) {
   const isDraggingRef = useRef(false);
   const dragTimeoutRef = useRef<number | null>(null);
@@ -262,7 +266,7 @@ function TaskRow({
       onMouseUp={handlePointerUp}
       onClick={handleClick}
       onKeyDown={handleKeyDown}
-      className="dark relative cursor-pointer rounded-2xl bg-[#1a1a1a] data-[dragging]:opacity-64"
+      className="dark group relative cursor-pointer rounded-2xl bg-[#1a1a1a] data-[dragging]:opacity-64"
     >
       <DitherShader
         field={TASK_FIELD}
@@ -300,7 +304,26 @@ function TaskRow({
             {LANE_LABEL[task.lane]} · {task.status}
           </p>
         </div>
-        <Loader2 className="size-3.5 shrink-0 animate-spin text-neutral-400" />
+        <div className="flex shrink-0 items-center gap-1.5">
+          {onUndo ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              aria-label={`Undo ${task.name}`}
+              onClick={(event) => {
+                event.stopPropagation();
+                onUndo();
+              }}
+              onKeyDown={(event) => event.stopPropagation()}
+              className="bg-[#1a1a1a] text-neutral-400 opacity-0 ring-1 ring-white/10 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100 hover:text-neutral-100 focus-visible:opacity-100"
+            >
+              <Undo2 />
+              Undo task
+            </Button>
+          ) : null}
+          <Loader2 className="size-3.5 shrink-0 animate-spin text-neutral-400" />
+        </div>
       </div>
     </div>
   );
@@ -315,6 +338,7 @@ export function RunningTasks({
   tasks = STANDIN_TASKS,
   frozen = false,
   onOpen,
+  onUndo,
 }: RunningTasksProps) {
   return (
     <div
@@ -344,6 +368,7 @@ export function RunningTasks({
             seed={index + 1}
             frozen={frozen}
             onOpen={() => onOpen?.(task)}
+            onUndo={onUndo ? () => onUndo(task) : undefined}
           />
         ))}
         {tasks.length === 0 ? (

@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { reviewItem, sampleChangeset, sampleTimeline } from "./store";
+import {
+  acceptAllPending,
+  historyEntryForItem,
+  historyForTask,
+  reviewItem,
+  sampleChangeset,
+  sampleTimeline,
+} from "./store";
 
 describe("reviewItem", () => {
   it("accepts one item and leaves the rest pending", () => {
@@ -22,6 +29,94 @@ describe("reviewItem", () => {
   it("ignores unknown ids", () => {
     const before = sampleChangeset();
     expect(reviewItem(before, "item-missing", "accepted")).toBe(before);
+  });
+});
+
+describe("acceptAllPending", () => {
+  it("accepts every pending item and reports what it accepted", () => {
+    const before = sampleChangeset();
+    const { changeset: after, accepted } = acceptAllPending(before);
+
+    expect(after.items.map((item) => item.status)).toEqual(["accepted", "accepted", "accepted"]);
+    expect(accepted.map((item) => item.id)).toEqual(before.items.map((item) => item.id));
+    // The input is untouched: review builds a new changeset.
+    expect(before.items.every((item) => item.status === "pending")).toBe(true);
+  });
+
+  it("leaves decided items alone and reports nothing new", () => {
+    const decided = reviewItem(sampleChangeset(), "item-trim-interview", "rejected");
+    const { changeset: after, accepted } = acceptAllPending(decided);
+
+    expect(after.items.find((item) => item.id === "item-trim-interview")?.status).toBe("rejected");
+    expect(accepted).toHaveLength(2);
+    expect(acceptAllPending(after).accepted).toHaveLength(0);
+    expect(acceptAllPending(after).changeset).toBe(after);
+  });
+});
+
+describe("historyEntryForItem", () => {
+  it("shapes one accepted item like the history entry in #75", () => {
+    const changeset = sampleChangeset();
+    const item = changeset.items[1]!;
+    const entry = historyEntryForItem(changeset, item, "you", "2026-10-31T12:00:00.000Z");
+
+    expect(entry).toEqual({
+      taskId: "task-stand-in",
+      changesetId: changeset.id,
+      itemId: item.id,
+      op: item.op,
+      targetId: item.targetId,
+      baseRevision: changeset.baseRevision,
+      forward: item.patch,
+      inverse: { op: item.op, standIn: true },
+      acceptedAt: "2026-10-31T12:00:00.000Z",
+      acceptedBy: "you",
+    });
+  });
+
+  it("defaults a missing forward patch to an empty object", () => {
+    const changeset = sampleChangeset();
+    const entry = historyEntryForItem(
+      changeset,
+      { id: "item-bare", op: "move" },
+      "you",
+      "2026-10-31T12:00:00.000Z",
+    );
+    expect(entry.forward).toEqual({});
+    expect(entry.targetId).toBeUndefined();
+  });
+
+  it("carries an explicit task id when given", () => {
+    const entry = historyEntryForItem(
+      sampleChangeset(),
+      { id: "item-bare", op: "move" },
+      "you",
+      "2026-10-31T12:00:00.000Z",
+      "task-1",
+    );
+    expect(entry.taskId).toBe("task-1");
+  });
+});
+
+describe("historyForTask", () => {
+  it("returns stand-in history shaped like #75, oldest first", () => {
+    const entries = historyForTask("task-1");
+
+    expect(entries.map((entry) => entry.itemId)).toEqual(["item-task-1-a", "item-task-1-b"]);
+    expect(entries[0]).toMatchObject({
+      taskId: "task-1",
+      changesetId: "cs-task-1-1",
+      op: "add_clip",
+      targetId: "v1",
+      baseRevision: "r0",
+      forward: { clipId: "clip-a-roll" },
+      inverse: { op: "add_clip", standIn: true },
+      acceptedBy: "you",
+    });
+  });
+
+  it("returns no entries for unknown tasks", () => {
+    expect(historyForTask("task-missing")).toEqual([]);
   });
 });
 
