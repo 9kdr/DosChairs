@@ -1,0 +1,156 @@
+{
+  "input": {
+    "brief": "Remove the silence and filler words from the interview proxy",
+    "context": {
+      "proxy_url": "file:///proxies/interview-proxy.mp4",
+      "base_revision": "rev-7",
+      "target_id": "clip-interview",
+      "changeset_id": "cs-golden-1",
+      "total_frames": 9000
+    },
+    "spans": [
+      {
+        "start_frames": 120,
+        "frames": 48,
+        "kind": "silence"
+      },
+      {
+        "start_frames": 900,
+        "frames": 18,
+        "kind": "filler"
+      },
+      {
+        "start_frames": 2400,
+        "frames": 120,
+        "kind": "silence"
+      }
+    ],
+    "artifact_urls": [
+      "file:///previews/cs-golden-1.mp4"
+    ]
+  },
+  "expected": {
+    "plan": {
+      "brief": "Remove the silence and filler words from the interview proxy",
+      "intents": [
+        "silence",
+        "filler"
+      ],
+      "steps": [
+        {
+          "tool": "measure_audio",
+          "goal": "find silent spans on the proxy"
+        },
+        {
+          "tool": "transcribe",
+          "goal": "find filler words on the proxy"
+        },
+        {
+          "tool": "editor_op",
+          "goal": "cut the flagged spans"
+        },
+        {
+          "tool": "render_preview",
+          "goal": "render a low-res preview"
+        }
+      ]
+    },
+    "tool_calls": [
+      {
+        "tool": "measure_audio",
+        "goal": "find silent spans on the proxy",
+        "args": {
+          "media_url": "file:///proxies/interview-proxy.mp4",
+          "detect": [
+            "silence"
+          ]
+        }
+      },
+      {
+        "tool": "transcribe",
+        "goal": "find filler words on the proxy",
+        "args": {
+          "media_url": "file:///proxies/interview-proxy.mp4",
+          "word_timing": true
+        }
+      },
+      {
+        "tool": "editor_op",
+        "goal": "cut the flagged spans",
+        "args": {
+          "media_url": "file:///proxies/interview-proxy.mp4",
+          "cuts": [
+            {
+              "start_frames": 120,
+              "frames": 48,
+              "kind": "silence"
+            },
+            {
+              "start_frames": 900,
+              "frames": 18,
+              "kind": "filler"
+            },
+            {
+              "start_frames": 2400,
+              "frames": 120,
+              "kind": "silence"
+            }
+          ]
+        }
+      },
+      {
+        "tool": "render_preview",
+        "goal": "render a low-res preview",
+        "args": {
+          "media_url": "file:///proxies/interview-proxy.mp4"
+        }
+      }
+    ],
+    "changeset": {
+      "schemaVersion": "0.1.0",
+      "id": "cs-golden-1",
+      "baseRevision": "rev-7",
+      "summary": "Remove the silence and filler words from the interview proxy",
+      "items": [
+        {
+          "id": "cut-1",
+          "op": "remove_clip",
+          "targetId": "clip-interview",
+          "rationale": "Remove silence span: 48 frames at 120",
+          "patch": {
+            "startFrames": 120,
+            "frames": 48
+          },
+          "status": "pending"
+        },
+        {
+          "id": "cut-2",
+          "op": "remove_clip",
+          "targetId": "clip-interview",
+          "rationale": "Remove filler span: 18 frames at 900",
+          "patch": {
+            "startFrames": 900,
+            "frames": 18
+          },
+          "status": "pending"
+        },
+        {
+          "id": "cut-3",
+          "op": "remove_clip",
+          "targetId": "clip-interview",
+          "rationale": "Remove silence span: 120 frames at 2400",
+          "patch": {
+            "startFrames": 2400,
+            "frames": 120
+          },
+          "status": "pending"
+        }
+      ]
+    },
+    "verdict": {
+      "accepted": true,
+      "reasons": []
+    },
+    "show_to_ui": true
+  }
+}

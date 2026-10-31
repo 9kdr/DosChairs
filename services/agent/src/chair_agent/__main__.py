@@ -15,9 +15,10 @@ from chair_agent.jobs import (
     TaskHandler,
     run_worker,
 )
+from chair_agent.loop import handle_edit
 from chair_agent.models import TOOLS
 
-HANDLERS: dict[str, TaskHandler] = {}
+HANDLERS: dict[str, TaskHandler] = {"edit": handle_edit}
 
 
 class Handler(BaseHTTPRequestHandler):
