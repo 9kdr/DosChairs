@@ -19,6 +19,7 @@ Talk to the user in plain language. Say what you are doing, which issue it belon
 
 - Mel is semi-technical and acts as the client. They judge what they can see and run. Agents get trusted on code they cannot see.
 - Report what the implementation actually did, never just the plan. Name what changed in the app, the check that ran, and the review score.
+- When the user wants another round on an already-open PR, comment on the PR first: one line saying the user is reiterating, so the next push doesn't land unexplained.
 - Visual or behavior-changing work comes back with what a person can check: where to look or click, what to expect, and a screenshot when there is a screen. It never merges until Mel has looked and said so.
 - Pure code work still reports its check and score. It needs no eyes-on before commit.
 - When backend work needs checking, make it checkable. Expose counts, timings, or status on the service's health or status endpoint: jobs queued, jobs done, last error, render time. Point at the numbers in the report so Mel can verify without reading code.
@@ -64,6 +65,7 @@ Read the matching skill before editing that area:
 - `.agents/skills/chair-review/SKILL.md` before you commit a change that is moderately worth a review
 - `.agents/skills/ponytail-review/SKILL.md` and `.agents/skills/ponytail/SKILL.md` when scoring. The ladder is level full. Do not replace those files with a summary.
 - `.cursor/skills/chair-desk/SKILL.md` for issues, branches, pull requests, and handoffs. Same file: `.agents/skills/chair-desk/SKILL.md`
+- `.agents/skills/chair-modernize/SKILL.md` when asked to rebase a PR or modernize. Same file: `.cursor/skills/chair-modernize/SKILL.md`
 - `.cursor/skills/chair-ir/SKILL.md` for `schemas/`, `packages/timeline-ir`, or `crates/chair-ir`
 - `.cursor/skills/chair-adapter/SKILL.md` for `adapters/`
 - `.agents/skills/coss/SKILL.md` and `.agents/skills/coss-particles/SKILL.md` before editing `apps/desktop` or `packages/ui`. The window uses coss. Use its components. Do not invent a second set.
