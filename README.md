@@ -28,14 +28,14 @@ Chair is an agentic, non-destructive video editor. It keeps the cut in the NLE y
   - [x] TypeScript IR
   - [x] Rust IR
   - [x] Pending items do not apply
-  - [Project store and revisions](https://github.com/9kdr/DosChairs/issues/3)
+  - [x] Project store and revisions
 - Agent
   - [x] Non-destructive tool registry
   - [x] Health endpoint
-  - [Model clients (Wonder / Spark)](https://github.com/9kdr/DosChairs/issues/4)
+  - [x] Model clients (Wonder / Spark)
   - [Transcription and subtitles](https://github.com/9kdr/DosChairs/issues/6)
   - [Shot index](https://github.com/9kdr/DosChairs/issues/7)
-  - [Edit operations](https://github.com/9kdr/DosChairs/issues/8)
+  - [x] Edit operations
   - [Planner / executor / verifier](https://github.com/9kdr/DosChairs/issues/9)
   - [Story beat sheet](https://github.com/9kdr/DosChairs/issues/10)
   - [Style profile](https://github.com/9kdr/DosChairs/issues/12)
@@ -44,20 +44,20 @@ Chair is an agentic, non-destructive video editor. It keeps the cut in the NLE y
   - [Image generation adapter](https://github.com/9kdr/DosChairs/issues/22)
 - Sidecar
   - [x] Health endpoint and job kinds
-  - [Proxy, frame, and loudness](https://github.com/9kdr/DosChairs/issues/5)
-  - [SAM 3 mattes](https://github.com/9kdr/DosChairs/issues/14)
+  - [x] Proxy, frame, and loudness
+  - [x] SAM 3 mattes
   - [SAM Audio stems](https://github.com/9kdr/DosChairs/issues/20)
-  - [SAM 3D assets](https://github.com/9kdr/DosChairs/issues/21)
+  - [2D rigging](https://github.com/9kdr/DosChairs/issues/107)
 - Adapters
   - [x] Capability manifests (Resolve, Kdenlive, OTIO)
-  - [Kdenlive round-trip](https://github.com/9kdr/DosChairs/issues/1)
-  - [OTIO export](https://github.com/9kdr/DosChairs/issues/2)
+  - [x] Kdenlive round-trip
+  - [x] OTIO export
   - [Reference grade](https://github.com/9kdr/DosChairs/issues/17)
   - [Motion template](https://github.com/9kdr/DosChairs/issues/18)
   - [Resolve Studio round-trip](https://github.com/9kdr/DosChairs/issues/23)
 - Desktop
   - [x] Chat, timeline mirror, accept / reject (W.I.P)
-  - [Open a project against a real timeline](https://github.com/9kdr/DosChairs/issues/3)
+  - [x] Open a project against a real timeline
 - Demo
   - [Rehearsal checklist](https://github.com/9kdr/DosChairs/issues/19)
 
