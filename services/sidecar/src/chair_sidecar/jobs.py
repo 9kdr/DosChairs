@@ -230,8 +230,10 @@ class JobStore:
     def __init__(self, proxy_dir: Path) -> None:
         self.proxy_dir = proxy_dir.resolve()
         self.proxy_dir.mkdir(parents=True, exist_ok=True)
+        self._path = self.proxy_dir / "jobs.json"
         self._jobs: dict[str, JobRecord] = {}
         self._lock = threading.Lock()
+        self._load()
 
     def submit(self, tool: str, request: MediaRequest | Sam3Request) -> dict:
         if tool in FFMPEG_TOOLS:
@@ -262,6 +264,7 @@ class JobStore:
         )
         with self._lock:
             self._jobs[job.id] = job
+            self._save()
             snapshot = job.public()
         threading.Thread(
             target=self._run,
@@ -280,6 +283,25 @@ class JobStore:
             job = self._jobs[job_id]
             for key, value in fields.items():
                 setattr(job, key, value)
+            self._save()
+
+    def _load(self) -> None:
+        # No requeue: a restart reports the last known state, it never re-runs.
+        try:
+            raw = json.loads(self._path.read_text(encoding="utf-8"))
+            jobs = {key: JobRecord(**value) for key, value in raw["jobs"].items()}
+        except (OSError, ValueError, KeyError, TypeError, AttributeError):
+            return
+        self._jobs = jobs
+
+    def _save(self) -> None:
+        self._path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = self._path.with_suffix(".tmp")
+        tmp.write_text(
+            json.dumps({"jobs": {key: job.public() for key, job in self._jobs.items()}}),
+            encoding="utf-8",
+        )
+        tmp.replace(self._path)
 
     def _run(
         self,
