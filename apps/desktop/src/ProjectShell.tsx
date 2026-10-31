@@ -98,6 +98,7 @@ export function ProjectShell({ projectId, projectName, editorId, onHome }: Proje
           ) : section === "orchestrator" ? (
             <OrchestratorBoard
               command={command}
+              history={project.history}
               onOpenTask={(task) => {
                 setTaskNote(null);
                 setTaskChat(task);
@@ -132,7 +133,7 @@ export function ProjectShell({ projectId, projectName, editorId, onHome }: Proje
           aria-hidden="true"
           className="pointer-events-none absolute inset-x-0 bottom-0 z-10 h-64"
           style={{
-            background: `linear-gradient(to top, ${SHELL_BG} 0%, color-mix(in srgb, ${SHELL_BG} 78%, transparent) 38%, transparent 100%)`,
+            background: `linear-gradient(to top, ${SHELL_BG} 0%, color-mix(in srgb, ${SHELL_BG} 78%, transparent) 38%, transparent 100%)`, // taste-skill-ignore: neutral scrim keeps the dock legible over scrolled content.
           }}
         />
       ) : null}

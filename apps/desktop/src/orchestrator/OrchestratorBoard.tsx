@@ -6,6 +6,8 @@ import { AssetShelf } from "./AssetShelf";
 import { parseAction } from "./actions";
 import { PlanDoc } from "./PlanDoc";
 import { RunningTasks, type RunningTask } from "./RunningTasks";
+import { HistoryCard } from "../project/HistoryCard";
+import type { HistoryEntry } from "../project/store";
 
 /**
  * Three small independent motions, each cheap: columns ease widths on a
@@ -22,6 +24,8 @@ type PlanMode = "edit" | "talk";
 
 type OrchestratorBoardProps = {
   command?: { id: number; text: string } | null;
+  /** Accepted edits, shown in the History card under the running tasks. */
+  history: HistoryEntry[];
   onOpenTask?: (task: RunningTask) => void;
   onUndoTask?: (task: RunningTask) => void;
 };
@@ -38,6 +42,7 @@ function columnWidths(available: number, editing: boolean) {
 
 export function OrchestratorBoard({
   command = null,
+  history,
   onOpenTask,
   onUndoTask,
 }: OrchestratorBoardProps) {
@@ -243,6 +248,7 @@ export function OrchestratorBoard({
         ? null
         : createPortal(
             <div
+              className="flex flex-col gap-4"
               style={{
                 display: side === "none" ? "none" : "",
                 opacity: lit ? 1 : 0,
@@ -254,6 +260,7 @@ export function OrchestratorBoard({
                 onUndo={onUndoTask}
                 frozen={planTweening}
               />
+              <HistoryCard entries={history} />
             </div>,
             slotContainer,
           )}
