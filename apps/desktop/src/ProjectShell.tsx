@@ -1,6 +1,7 @@
 import { BlocksIcon, HomeIcon, ListChecksIcon, WaypointsIcon } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { ChatPrompt } from "@/components/chat-prompt";
+import { ServiceStatus } from "@/components/service-status";
 import { Button } from "@/components/ui/button";
 import {
   Tooltip,
@@ -80,6 +81,9 @@ export function ProjectShell({ projectId, projectName, editorId, onHome }: Proje
         <h1 className="min-w-0 truncate text-sm font-medium text-neutral-200">
           {projectName}
         </h1>
+        <div className="ml-auto flex shrink-0 items-center">
+          <ServiceStatus />
+        </div>
       </header>
       <main className="relative flex min-h-0 flex-1 flex-col">
         <div className="min-h-0 flex-1 overflow-hidden">
