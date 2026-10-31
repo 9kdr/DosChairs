@@ -1139,18 +1139,17 @@ function ShelfCardActions({
   onHide: (id: string) => void;
   onRemove: (id: string) => void;
 }) {
-  // Pinned open on the selected card only. A hidden card dims instantly;
-  // its actions live under hover like everything else, so the overlay
-  // always dismisses the same way.
+  // Pinned open on the selected card only. Everywhere else the actions
+  // flip with the hover on the same frame: no opacity transition, and
+  // pointer events off while hidden so the invisible buttons never steal
+  // row clicks or drags. Focus-within keeps keyboard users covered.
   const pinned = selected;
+  const resting =
+    "absolute top-1 right-1 z-10 flex gap-0.5 opacity-0 pointer-events-none " +
+    "group-focus-within:opacity-100 group-focus-within:pointer-events-auto " +
+    "group-hover:opacity-100 group-hover:pointer-events-auto";
   return (
-    <div
-      className={
-        pinned
-          ? "absolute top-1 right-1 z-10 flex gap-0.5"
-          : "absolute top-1 right-1 z-10 flex gap-0.5 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100"
-      }
-    >
+    <div className={pinned ? "absolute top-1 right-1 z-10 flex gap-0.5" : resting}>
       <ShelfAction
         label={hidden ? "Show to model" : "Hide from model"}
         onAction={() => onHide(id)}
