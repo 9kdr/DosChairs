@@ -34,6 +34,12 @@ Each adapter publishes a capability manifest. The agent plans against that manif
 - Executor (Muse Spark): tool calls and local fixes.
 - Verifier (Muse Spark with image and audio): critiques a proxy render before the UI shows it.
 
+## Pieces
+
+Command hierarchy: main command (Mel) -> agent task -> specialized subagents (tool/skill agents, one workflow per effect).
+
+A piece is a set of parameterized motion: a smart template ranging from an entire plugin down to an explanation with examples. Each piece carries detailed parameters so agents can create from it independently of the editor, pulling real information when needed. Single templates (e.g. a lower-third) are instances that feed the catalog; the catalog (#64) owns the records, search, ranking, and defaults.
+
 Tools return new assets or changeset items. They do not overwrite source media. The registry lives in `packages/agent-protocol` and `services/agent`.
 
 ## Processes
