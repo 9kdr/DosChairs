@@ -54,7 +54,7 @@ Chair is an agentic, non-destructive video editor. It keeps the cut in the NLE y
   - [x] OTIO export
   - [Reference grade](https://github.com/9kdr/DosChairs/issues/17)
   - [Motion template](https://github.com/9kdr/DosChairs/issues/18)
-  - [Resolve Studio round-trip](https://github.com/9kdr/DosChairs/issues/23)
+  - [x] [Resolve Studio round-trip](https://github.com/9kdr/DosChairs/issues/23)
 - Desktop
   - [x] Chat, timeline mirror, accept / reject (W.I.P)
   - [x] Open a project against a real timeline
