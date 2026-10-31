@@ -36,19 +36,40 @@ export function WindowChrome() {
 
   useEffect(() => {
     if (!tauri) return;
+    let active = true;
     let unlisten: (() => void) | undefined;
-    void (async () => {
-      const win = await appWindow();
-      const next = await win.isMaximized();
-      setMaximized(next);
-      setMaximizedAttr(next);
-      unlisten = await win.onResized(async () => {
-        const resized = await win.isMaximized();
-        setMaximized(resized);
-        setMaximizedAttr(resized);
+
+    const sync = async () => {
+      if (!active) return;
+      try {
+        const win = await appWindow();
+        const next = await win.isMaximized();
+        if (active) {
+          setMaximized(next);
+          setMaximizedAttr(next);
+        }
+      } catch {
+        // Window unavailable or closing.
+      }
+    };
+
+    void sync();
+
+    void appWindow()
+      .then((win) => {
+        if (!active) return;
+        return win.onResized(() => void sync());
+      })
+      .then((fn) => {
+        if (active) {
+          unlisten = fn;
+        } else {
+          fn?.();
+        }
       });
-    })();
+
     return () => {
+      active = false;
       unlisten?.();
       setMaximizedAttr(false);
     };
@@ -60,12 +81,28 @@ export function WindowChrome() {
   }, [tauri]);
 
   const toggleMaximize = useCallback(async () => {
-    if (!tauri) return;
-    await (await appWindow()).toggleMaximize();
-    const next = await (await appWindow()).isMaximized();
+    const next = !maximized;
     setMaximized(next);
     setMaximizedAttr(next);
-  }, [tauri]);
+    if (!tauri) return;
+
+    try {
+      const win = await appWindow();
+      await win.toggleMaximize();
+      setTimeout(async () => {
+        try {
+          const settled = await win.isMaximized();
+          setMaximized(settled);
+          setMaximizedAttr(settled);
+        } catch {
+          // Window unavailable.
+        }
+      }, 150);
+    } catch {
+      setMaximized(maximized);
+      setMaximizedAttr(maximized);
+    }
+  }, [tauri, maximized]);
 
   const close = useCallback(async () => {
     if (!tauri) return;
