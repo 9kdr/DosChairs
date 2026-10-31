@@ -12,6 +12,7 @@ from chair_sidecar.__main__ import SidecarServer
 from chair_sidecar.jobs import (
     JobKind,
     JobStore,
+    MediaRequest,
     Sam3Request,
     active_spans,
     default_proxy_dir,
@@ -456,3 +457,62 @@ def test_sam3_mask_fails_with_a_clear_error_when_no_runner(
     job = _wait(server, queued["id"])
     assert job["status"] == "failed"
     assert "CHAIR_SAM3_RUNNER" in job["error"]
+
+
+def _wait_store(store: JobStore, job_id: str) -> dict:
+    deadline = time.monotonic() + 30
+    while time.monotonic() < deadline:
+        job = store.get(job_id)
+        assert job is not None
+        if job["status"] in {"done", "failed"}:
+            return job
+        time.sleep(0.02)
+    raise AssertionError(f"job {job_id} did not finish")
+
+
+def test_finished_jobs_survive_a_restart(
+    store: JobStore, proxy_dir: Path, source_media: Path
+) -> None:
+    queued = store.submit(
+        "get_frame", MediaRequest(source=str(source_media), time=0.25)
+    )
+    job = _wait_store(store, queued["id"])
+    assert job["status"] == "done", job["error"]
+    assert (proxy_dir / "jobs.json").is_file()
+    restarted = JobStore(proxy_dir)
+    assert restarted.get(queued["id"]) == job
+
+
+def test_restart_reports_the_last_known_state(proxy_dir: Path) -> None:
+    def record(job_id: str, status: str) -> dict:
+        return {
+            "id": job_id,
+            "tool": "render_preview",
+            "kind": "proxy",
+            "status": status,
+            "progress": 0.5,
+            "result": None,
+            "error": None,
+        }
+
+    (proxy_dir / "jobs.json").write_text(
+        json.dumps(
+            {
+                "jobs": {
+                    "queued": record("queued", "queued"),
+                    "running": record("running", "running"),
+                    "done": record("done", "done"),
+                }
+            }
+        )
+    )
+    restarted = JobStore(proxy_dir)
+    assert restarted.get("queued")["status"] == "queued"
+    assert restarted.get("running")["status"] == "running"
+    assert restarted.get("done")["status"] == "done"
+
+
+def test_corrupt_job_file_starts_empty(proxy_dir: Path) -> None:
+    (proxy_dir / "jobs.json").write_text("not json{")
+    restarted = JobStore(proxy_dir)
+    assert restarted.get("anything") is None
