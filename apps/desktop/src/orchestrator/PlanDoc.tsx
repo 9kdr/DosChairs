@@ -16,6 +16,7 @@ import {
   X,
 } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { SmoothScrollTarget } from "@/components/smooth-scroll";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -582,6 +583,7 @@ export function PlanDoc({ open, mode, onOpen, onClose, notice, className }: Plan
     setBlockDraft(value);
   };
   const [blockSel, setBlockSel] = useState<{ start: number; end: number } | null>(null);
+  const planScrollRef = useRef<HTMLDivElement | null>(null);
   // Blur commits the draft, EXCEPT when focus moves into the style menu:
   // opening it legitimately takes focus, and committing would unmount the
   // editor before the click lands. Menu items also preventDefault on
@@ -1177,7 +1179,8 @@ export function PlanDoc({ open, mode, onOpen, onClose, notice, className }: Plan
         break;
     }
     setDraftLive(result.next);
-    focusCaret(result.caret);
+    // Commit at once so the rendered result shows immediately.
+    commitBlockEditor();
   };
 
   const applyBlockStyle = (style: BlockStyleId) => {
@@ -1196,9 +1199,9 @@ export function PlanDoc({ open, mode, onOpen, onClose, notice, className }: Plan
       .split("\n")
       .map((line) => `${marker}${line.replace(/^\s*#{1,6}\s*/, "")}`)
       .join("\n");
-    const caret = [lineStart, lineStart + next.length] as const;
     setDraftLive(`${value.slice(0, lineStart)}${next}${value.slice(endIndex)}`);
-    focusCaret(caret);
+    // Commit at once so the rendered result shows immediately.
+    commitBlockEditor();
   };
 
   const send = () => {
@@ -1591,8 +1594,9 @@ export function PlanDoc({ open, mode, onOpen, onClose, notice, className }: Plan
             </Tooltip>
           </div>
           <div
+            ref={planScrollRef}
             aria-label={`Preview ${tabs.find((tab) => tab.id === doc)?.label ?? doc}`}
-            className="min-h-[20rem] flex-1 overflow-y-auto"
+            className="min-h-[20rem] flex-1 overflow-y-auto overscroll-contain"
           >
               <MarkdownText
                 text={texts[doc] ?? ""}
@@ -1615,6 +1619,7 @@ export function PlanDoc({ open, mode, onOpen, onClose, notice, className }: Plan
                 }}
               />
             </div>
+          <SmoothScrollTarget target={planScrollRef} lerp={0.075} />
         </>
       ) : (
         <>

@@ -25,6 +25,7 @@ import type {
   PointerEvent as ReactPointerEvent,
   ReactNode,
 } from "react";
+import { SmoothScrollTarget } from "@/components/smooth-scroll";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Menu, MenuPopup, MenuRadioGroup, MenuRadioItem, MenuTrigger } from "@/components/ui/menu";
@@ -1053,6 +1054,7 @@ export function AssetShelf({ className, frozen = false, transitionLock = false }
                   className="pointer-events-none absolute z-30 rounded-md border-2 border-white/80 bg-white/25"
                 />
               </div>
+              <SmoothScrollTarget target={listRef} lerp={0.075} />
             </motion.div>
           </AnimatePresence>
         </div>

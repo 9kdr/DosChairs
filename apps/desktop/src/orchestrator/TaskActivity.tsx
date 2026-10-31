@@ -1,5 +1,7 @@
+import { useRef, type Ref } from "react";
 import { Check, Loader2 } from "lucide-react";
 import { DitherShader } from "@/lib/dither";
+import { SmoothScrollTarget } from "@/components/smooth-scroll";
 import { cn } from "@/lib/utils";
 import { LANE_INK, TASK_FIELD, type RunningTask } from "./RunningTasks";
 
@@ -45,11 +47,14 @@ export function activityForTask(task: RunningTask): TaskActivity {
 /** Live rail beside the thread: what this task is doing right now. */
 export function TaskActivityPanel({ task }: { task: RunningTask }) {
   const activity = activityForTask(task);
+  const scrollRef = useRef<HTMLElement | null>(null);
   return (
     <aside
+      ref={scrollRef as Ref<HTMLElement>}
       aria-label="Task activity"
-      className="hidden w-72 shrink-0 flex-col gap-3 overflow-y-auto lg:flex"
+      className="hidden w-72 shrink-0 flex-col gap-3 overflow-y-auto overscroll-contain lg:flex"
     >
+      <SmoothScrollTarget target={scrollRef} lerp={0.075} />
       <div className="flex flex-col gap-3 rounded-[28px] bg-[#1a1a1a] p-4 text-neutral-100 shadow-raised ring-1 ring-white/8">
         <div className="relative h-28 shrink-0 overflow-hidden rounded-2xl">
           <DitherShader

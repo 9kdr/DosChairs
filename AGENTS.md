@@ -12,15 +12,18 @@ Talk to the user in plain language. Say what you are doing, which issue it belon
 - Verify with `mise run check` on what you touched. Do not download model weights unless the user asks. Boot the desktop app only for the Gemini review screenshot, and only when the change has a screen.
 - Never merge, and never turn on auto-merge, until the user answers a direct question. See the desk skill for the wording.
 - A pending proposed edit does not change the timeline. Do not overwrite source video or audio. Name the editor's presets. If an adapter cannot do something, use the fallback in its capability manifest.
+- When you add a feature on the user's behalf, name the model you are in your reply (e.g. built with Muse Spark). The user tracks which model built what.
 
 ## Which model
 
 Read `.cursor/skills/chair-models/SKILL.md` before you hand work off.
 
 - Name the field, then the weight. The models skill has the order.
-- Cheap work and every score go to Gemini 3.8 Flash high on Antigravity.
-- A screen that is the whole task goes to DeepSeek v4.1 on OpenCode. That is the best UI model we can call. Any other screen goes to Grok 4.7 high on Cursor (not fast, 256k). Gemini 4 Argon is not available.
-- Several packages stay with Grok 4.7 high on Cursor (not fast, 256k).
+- Short cheap fixes go to Gemini 3.8 Flash low or medium on Antigravity (prefer low). Every score stays on Gemini 3.8 Flash high.
+- A screen that is the whole task goes to DeepSeek v4.1 on OpenCode. That is the best UI model we can call. Any other screen goes to Grok 4.7 high on Cursor (not fast, 256k), or to Muse Spark 1.3 when Grok is unavailable. Gemini 4 Argon is not available.
+- Several packages stay with Grok 4.7 high on Cursor (not fast, 256k), or with Muse Spark 1.3 when Grok is unavailable.
+- Agent work goes to DeepSeek v4.1 on OpenCode first, then Muse Spark 1.3, then Gemini.
+- For UI work, Gemini stays ahead of DeepSeek. Muse Spark has no UI place yet.
 - DeepSeek v4.1 on OpenCode is the free pool. Spend it on one named screen or one named long bug, not on a ping.
 - If you cannot tell the field, use Cursor Auto.
 

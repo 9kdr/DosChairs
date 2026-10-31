@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useReducedMotion } from "motion/react";
+import { SmoothScrollTarget } from "@/components/smooth-scroll";
 import { AssetShelf } from "./AssetShelf";
 import { parseAction } from "./actions";
 import { PlanDoc } from "./PlanDoc";
@@ -188,8 +189,9 @@ export function OrchestratorBoard({
   }, [command]);
 
   return (
-    <div ref={scrollerRef} className="h-full overflow-x-hidden overflow-y-auto p-4 pb-[9.5rem]">
-      <div className="flex min-h-full items-stretch gap-4">
+    <>
+      <div ref={scrollerRef} className="h-full overflow-x-hidden overflow-y-auto p-4 pb-[9.5rem]">
+        <div className="flex min-h-full items-stretch gap-4">
         <div
           className="flex min-h-0 min-w-0 shrink-0 flex-col gap-4"
           style={
@@ -249,6 +251,8 @@ export function OrchestratorBoard({
             </div>,
             slotContainer,
           )}
-    </div>
+      </div>
+      <SmoothScrollTarget target={scrollerRef} lerp={0.075} />
+    </>
   );
 }

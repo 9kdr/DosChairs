@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ArrowLeft } from "lucide-react";
 import { ChatPrompt } from "@/components/chat-prompt";
+import { SmoothScrollTarget } from "@/components/smooth-scroll";
 import { Button } from "@/components/ui/button";
 import type { RunningTask } from "./RunningTasks";
 import { TaskActivityPanel } from "./TaskActivity";
@@ -47,6 +48,7 @@ export function TaskChat({
     },
   ]);
   const endRef = useRef<HTMLDivElement>(null);
+  const threadRef = useRef<HTMLDivElement>(null);
   const seenNote = useRef<number | null>(null);
 
   useEffect(() => {
@@ -89,7 +91,11 @@ export function TaskChat({
       </header>
 
       <div className="flex min-h-0 flex-1 gap-4 px-4">
-        <div className="min-h-0 min-w-0 flex-1 overflow-y-auto [scrollbar-gutter:stable]">
+        <div
+          ref={threadRef}
+          className="min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain [scrollbar-gutter:stable]"
+        >
+          <SmoothScrollTarget target={threadRef} lerp={0.075} />
           <ol className="mx-auto flex w-full max-w-3xl flex-col gap-6 py-4">
             {turns.map((turn) =>
               turn.role === "user" ? (
