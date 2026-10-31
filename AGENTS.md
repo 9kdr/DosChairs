@@ -33,6 +33,7 @@ When you delegate implementation, end the task with this paragraph. A child does
 
 A new job is a new T3 thread (`t3 thread start`, or `delegate_task` from inside a thread). The child gets that issue and the paragraph above. Two models run at the same time only when they are fixing different problems and will not edit the same files.
 
+When using muse models, only use their contributor version!
 ## Calling another agent
 
 Agents share one board: the GitHub issue. A comment is the message. It is how Cursor, Grok Bot, OpenCode, and Antigravity see each other. Sign each comment so the others know who wrote it: end with "This message is on behalf of Mel by [Model]", naming the model sending it.
