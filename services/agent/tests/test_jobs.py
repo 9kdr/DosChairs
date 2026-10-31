@@ -282,3 +282,36 @@ def test_http_rejects_non_string_webhook_url(tmp_path: Path) -> None:
         server.shutdown()
         thread.join(timeout=2)
         server.server_close()
+
+
+def test_worker_survives_bad_handler_result(tmp_path: Path) -> None:
+    controller = _controller(tmp_path)
+
+    def bad(job: Job) -> HandlerResult:
+        return HandlerResult(artifacts=[{"url": "https://x/f", "bogus": 1}], ops=[])
+
+    def good(job: Job) -> HandlerResult:
+        return HandlerResult(artifacts=[{"url": "https://x/g"}], ops=[])
+
+    bad_id = controller.submit("bad").request_id
+    good_id = controller.submit("good").request_id
+    stop = threading.Event()
+    thread = threading.Thread(
+        target=run_worker, args=(controller, {"bad": bad, "good": good}), kwargs={"stop": stop}
+    )
+    thread.start()
+    try:
+        for _ in range(200):
+            if controller.get(good_id).status == "completed":
+                break
+            stop.wait(0.05)
+    finally:
+        stop.set()
+        thread.join(timeout=5)
+
+    failed = controller.get(bad_id)
+    assert failed.status == "failed"
+    assert "ValidationError" in (failed.error or "")
+    assert controller.get(good_id).status == "completed"
+    reloaded = JobController(tmp_path / "jobs.json", deliver=lambda url, body, headers: None)
+    assert reloaded.get(bad_id).status == "failed"

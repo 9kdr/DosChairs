@@ -259,12 +259,14 @@ class JobController:
     ) -> Job:
         with self._lock:
             job = self._running(request_id)
+            validated = [Artifact.model_validate(item) for item in (artifacts or [])]
+            changeset = ChangesetProposal(ops=ops or []) if ops else None
             job.status = "completed"
             job.finished_at = _now()
             job.expires_at = job.finished_at + RETENTION
             job.billable = True
-            job.artifacts = [Artifact.model_validate(item) for item in (artifacts or [])]
-            job.changeset = ChangesetProposal(ops=ops or []) if ops else None
+            job.artifacts = validated
+            job.changeset = changeset
             self._save()
         self._notify(request_id)
         return self.get(request_id)
@@ -417,4 +419,8 @@ def run_worker(
             # A bad handler fails its job, never the worker.
             controller.finish_failed(job.request_id, f"{type(error).__name__}: {error}")
         else:
-            controller.finish_completed(job.request_id, result.artifacts, result.ops)
+            try:
+                controller.finish_completed(job.request_id, result.artifacts, result.ops)
+            except Exception as error:
+                # A bad handler result fails its job, never the worker.
+                controller.finish_failed(job.request_id, f"{type(error).__name__}: {error}")
