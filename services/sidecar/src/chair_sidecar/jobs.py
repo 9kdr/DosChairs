@@ -1,9 +1,11 @@
+import array
 import hashlib
 import json
 import os
 import re
 import shutil
 import subprocess
+import sys
 import threading
 import uuid
 from collections.abc import Callable
@@ -12,7 +14,9 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+from chair_sidecar.music import SAMPLE_RATE, analyze, build_markers
 
 PREVIEW_PRESET = "preview-640"
 PREVIEW_WIDTH = 640
@@ -27,6 +31,7 @@ class JobKind(StrEnum):
     PROXY = "proxy"
     FRAME = "frame"
     MEASURE_AUDIO = "measure_audio"
+    ANALYZE_MUSIC = "analyze_music"
     SCENE_CUTS = "scene_cuts"
 
 
@@ -35,6 +40,10 @@ FFMPEG_TOOLS: dict[str, JobKind] = {
     "get_frame": JobKind.FRAME,
     "measure_audio": JobKind.MEASURE_AUDIO,
     "detect_scenes": JobKind.SCENE_CUTS,
+}
+
+MUSIC_TOOLS: dict[str, JobKind] = {
+    "analyze_music": JobKind.ANALYZE_MUSIC,
 }
 
 
@@ -128,6 +137,54 @@ class Sam3Request(BaseModel):
         if self.point is not None:
             payload["point"] = list(self.point)
         return payload
+
+
+class WordTiming(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    word: str
+    start: float
+    end: float
+
+    @field_validator("word")
+    @classmethod
+    def word_not_blank(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("word is required")
+        return value
+
+    @field_validator("start")
+    @classmethod
+    def start_non_negative(cls, value: float) -> float:
+        if value < 0:
+            raise ValueError("start must be >= 0")
+        return value
+
+    @model_validator(mode="after")
+    def end_covers_start(self) -> "WordTiming":
+        if self.end < self.start:
+            raise ValueError("end must be >= start")
+        return self
+
+
+class MusicRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    source: str
+    fps: float | None = None
+    words: list[WordTiming] = Field(default_factory=list, max_length=20000)
+
+    @field_validator("source")
+    @classmethod
+    def source_not_blank(cls, value: str) -> str:
+        return _checked_source(value)
+
+    @field_validator("fps")
+    @classmethod
+    def fps_positive(cls, value: float | None) -> float | None:
+        if value is not None and value <= 0:
+            raise ValueError("fps must be > 0")
+        return value
 
 
 class SamAudioRequest(BaseModel):
@@ -314,7 +371,9 @@ class JobStore:
         self._load()
 
     def submit(
-        self, tool: str, request: MediaRequest | Sam3Request | SamAudioRequest
+        self,
+        tool: str,
+        request: MediaRequest | Sam3Request | MusicRequest | SamAudioRequest,
     ) -> dict:
         if tool in FFMPEG_TOOLS:
             if not isinstance(request, MediaRequest):
@@ -328,6 +387,7 @@ class JobStore:
             )
             min_shot = request.min_shot if request.min_shot is not None else DEFAULT_MIN_SHOT
             prompt: dict | None = None
+            music: dict | None = None
         elif tool in MODEL_TOOLS:
             expected = SamAudioRequest if tool == "sam_audio" else Sam3Request
             if not isinstance(request, expected):
@@ -337,6 +397,16 @@ class JobStore:
             threshold = DEFAULT_SCENE_THRESHOLD
             min_shot = DEFAULT_MIN_SHOT
             prompt = request.prompt_payload()
+            music = None
+        elif tool in MUSIC_TOOLS:
+            if not isinstance(request, MusicRequest):
+                raise ValueError(f"{tool} needs source, fps, and words fields")
+            kind = MUSIC_TOOLS[tool]
+            time_s = None
+            threshold = DEFAULT_SCENE_THRESHOLD
+            min_shot = DEFAULT_MIN_SHOT
+            prompt = None
+            music = {"fps": request.fps, "words": [word.model_dump() for word in request.words]}
         else:
             raise ValueError(f"unknown tool: {tool}")
         source = Path(request.source).expanduser().resolve()
@@ -355,7 +425,7 @@ class JobStore:
             snapshot = job.public()
         threading.Thread(
             target=self._run,
-            args=(job.id, tool, source, time_s, prompt, threshold, min_shot),
+            args=(job.id, tool, source, time_s, prompt, music, threshold, min_shot),
             daemon=True,
         ).start()
         return snapshot
@@ -397,6 +467,7 @@ class JobStore:
         source: Path,
         time_s: float | None,
         prompt: dict | None,
+        music: dict | None,
         threshold: float = DEFAULT_SCENE_THRESHOLD,
         min_shot: float = DEFAULT_MIN_SHOT,
     ) -> None:
@@ -415,6 +486,10 @@ class JobStore:
                 if prompt is None:
                     raise RuntimeError("sam3_mask requires a prompt")
                 result = self._track_matte(job_id, source, prompt)
+            elif tool == "analyze_music":
+                if music is None:
+                    raise RuntimeError("analyze_music requires music params")
+                result = self._analyze_music(job_id, source, music["fps"], music["words"])
             elif tool == "sam_audio":
                 if prompt is None:
                     raise RuntimeError("sam_audio requires a prompt")
@@ -543,6 +618,82 @@ class JobStore:
             "silence": silence,
             "active": active_spans(silence, duration),
         }
+
+    def _analyze_music(
+        self, job_id: str, source: Path, fps: float | None, words: list[dict]
+    ) -> dict:
+        info = self._probe(source)
+        if not _has_stream(info, "audio"):
+            raise RuntimeError("source has no audio stream")
+        duration = _duration(info)
+        key = _cache_key(source, "music", repr(fps), json.dumps(words, sort_keys=True))
+        dest = self._output(source, f"music-{key}.json")
+        if dest.is_file() and dest.stat().st_size > 0:
+            try:
+                cached = json.loads(dest.read_text(encoding="utf-8"))
+            except ValueError:
+                cached = None
+            if isinstance(cached, dict) and isinstance(cached.get("markers"), list):
+                return {**cached, "markers_file": str(dest), "cached": True}
+        self._update(job_id, progress=0.25)
+        samples = self._decode_mono(source)
+        self._update(job_id, progress=0.6)
+        found = analyze(samples, duration=duration)
+        markers = build_markers(
+            beats=found["beats"],
+            transients=found["transients"],
+            words=words,
+            tempo_bpm=found["tempo_bpm"],
+            fps=fps,
+        )
+        payload = {
+            "source": str(source),
+            "duration": duration,
+            **found,
+            "words": words,
+            "markers": markers,
+            "fps": fps,
+        }
+        part = self._part(dest, job_id)
+        try:
+            part.write_text(json.dumps(payload), encoding="utf-8")
+            os.replace(part, dest)
+        except Exception:
+            part.unlink(missing_ok=True)
+            raise
+        return {**payload, "markers_file": str(dest), "cached": False}
+
+    def _decode_mono(self, source: Path) -> array.array[int]:
+        completed = subprocess.run(
+            [
+                binary("ffmpeg"),
+                "-hide_banner",
+                "-nostdin",
+                "-v",
+                "error",
+                "-i",
+                str(source),
+                "-map",
+                "0:a:0",
+                "-ac",
+                "1",
+                "-ar",
+                str(SAMPLE_RATE),
+                "-f",
+                "s16le",
+                "-",
+            ],
+            check=False,
+            capture_output=True,
+        )
+        if completed.returncode != 0:
+            details = _tail(completed.stderr.decode("utf-8", "replace"))
+            raise RuntimeError(details or "ffmpeg decode failed")
+        samples: array.array[int] = array.array("h", completed.stdout)
+        if sys.byteorder != "little":
+            samples.byteswap()
+        return samples
+
 
     def _detect_scenes(
         self, job_id: str, source: Path, threshold: float, min_shot: float
