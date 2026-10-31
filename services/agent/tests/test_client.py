@@ -16,8 +16,10 @@ from chair_agent.client import (
     RoleModels,
     UnexpectedResponse,
     build_client,
+    build_planner_messages,
     configured_models,
 )
+from chair_agent.pieces import search_pieces
 
 HandlerFn = Callable[[httpx.Request], httpx.Response]
 
@@ -129,6 +131,16 @@ def test_build_client_reads_env_names() -> None:
     assert client.models.planner == "muse-wonder-1.0"
     assert client.models.executor == "muse-spark-1"
     assert client.models.verifier == "muse-spark-1"
+
+
+def test_planner_prompt_carries_pieces_refs_and_defaults() -> None:
+    messages = build_planner_messages("Cut a 60 s teaser", search_pieces(effect="motion_graphics"))
+    assert [message.role for message in messages] == ["developer", "user"]
+    assert "kinetic-title" in messages[0].content
+    assert "music bed with beat grid" in messages[0].content
+    assert "template=lower-third" in messages[0].content
+    with pytest.raises(ValueError):
+        build_planner_messages("  ", search_pieces())
 
 
 def test_health_reports_configured_model_names(monkeypatch: pytest.MonkeyPatch) -> None:

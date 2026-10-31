@@ -30,6 +30,8 @@ export const TOOLS = [
 
 export type ToolName = (typeof TOOLS)[number]["name"];
 
+export * from "./pieces";
+
 export interface AgentContext {
   timelineSummary: string;
   transcriptExcerpt: string;
