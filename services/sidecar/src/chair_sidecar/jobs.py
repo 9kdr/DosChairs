@@ -16,6 +16,8 @@ from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
 PREVIEW_PRESET = "preview-640"
 PREVIEW_WIDTH = 640
+DEFAULT_SCENE_THRESHOLD = 0.4
+DEFAULT_MIN_SHOT = 0.0
 
 
 class JobKind(StrEnum):
@@ -25,12 +27,14 @@ class JobKind(StrEnum):
     PROXY = "proxy"
     FRAME = "frame"
     MEASURE_AUDIO = "measure_audio"
+    SCENE_CUTS = "scene_cuts"
 
 
 FFMPEG_TOOLS: dict[str, JobKind] = {
     "render_preview": JobKind.PROXY,
     "get_frame": JobKind.FRAME,
     "measure_audio": JobKind.MEASURE_AUDIO,
+    "detect_scenes": JobKind.SCENE_CUTS,
 }
 
 
@@ -62,6 +66,8 @@ class MediaRequest(BaseModel):
 
     source: str
     time: float | None = None
+    threshold: float | None = None
+    min_shot: float | None = None
 
     @field_validator("source")
     @classmethod
@@ -73,6 +79,20 @@ class MediaRequest(BaseModel):
     def time_non_negative(cls, value: float | None) -> float | None:
         if value is not None and value < 0:
             raise ValueError("time must be >= 0")
+        return value
+
+    @field_validator("threshold")
+    @classmethod
+    def threshold_in_range(cls, value: float | None) -> float | None:
+        if value is not None and not 0 <= value <= 1:
+            raise ValueError("threshold must sit between 0 and 1")
+        return value
+
+    @field_validator("min_shot")
+    @classmethod
+    def min_shot_non_negative(cls, value: float | None) -> float | None:
+        if value is not None and value < 0:
+            raise ValueError("min_shot must be >= 0")
         return value
 
 
@@ -244,6 +264,18 @@ def parse_silence(log: str, duration: float) -> list[dict[str, float]]:
     return spans
 
 
+def parse_scene_cuts(log: str, duration: float, *, min_shot: float = 0.0) -> list[float]:
+    times = sorted(
+        {round(float(value), 3) for value in re.findall(r"pts_time:([0-9]+(?:\.[0-9]+)?)", log)}
+    )
+    cuts = [moment for moment in times if 0 < moment < duration]
+    kept: list[float] = []
+    for cut in cuts:
+        if not kept or cut - kept[-1] >= min_shot:
+            kept.append(cut)
+    return kept
+
+
 def active_spans(silence: list[dict[str, float]], duration: float) -> list[dict[str, float]]:
     spans: list[dict[str, float]] = []
     cursor = 0.0
@@ -291,6 +323,10 @@ class JobStore:
             if tool == "get_frame" and request.time is None:
                 raise ValueError("get_frame requires time")
             time_s = request.time
+            threshold = (
+                request.threshold if request.threshold is not None else DEFAULT_SCENE_THRESHOLD
+            )
+            min_shot = request.min_shot if request.min_shot is not None else DEFAULT_MIN_SHOT
             prompt: dict | None = None
         elif tool in MODEL_TOOLS:
             expected = SamAudioRequest if tool == "sam_audio" else Sam3Request
@@ -298,6 +334,8 @@ class JobStore:
                 raise ValueError(f"{tool} needs source and prompt fields")
             kind = MODEL_TOOLS[tool]
             time_s = None
+            threshold = DEFAULT_SCENE_THRESHOLD
+            min_shot = DEFAULT_MIN_SHOT
             prompt = request.prompt_payload()
         else:
             raise ValueError(f"unknown tool: {tool}")
@@ -317,7 +355,7 @@ class JobStore:
             snapshot = job.public()
         threading.Thread(
             target=self._run,
-            args=(job.id, tool, source, time_s, prompt),
+            args=(job.id, tool, source, time_s, prompt, threshold, min_shot),
             daemon=True,
         ).start()
         return snapshot
@@ -359,6 +397,8 @@ class JobStore:
         source: Path,
         time_s: float | None,
         prompt: dict | None,
+        threshold: float = DEFAULT_SCENE_THRESHOLD,
+        min_shot: float = DEFAULT_MIN_SHOT,
     ) -> None:
         self._update(job_id, status="running")
         before = _fingerprint(source)
@@ -369,6 +409,8 @@ class JobStore:
                 if time_s is None:
                     raise RuntimeError("get_frame requires time")
                 result = self._get_frame(job_id, source, time_s)
+            elif tool == "detect_scenes":
+                result = self._detect_scenes(job_id, source, threshold, min_shot)
             elif tool == "sam3_mask":
                 if prompt is None:
                     raise RuntimeError("sam3_mask requires a prompt")
@@ -500,6 +542,35 @@ class JobStore:
             "duration": duration,
             "silence": silence,
             "active": active_spans(silence, duration),
+        }
+
+    def _detect_scenes(
+        self, job_id: str, source: Path, threshold: float, min_shot: float
+    ) -> dict:
+        info = self._probe(source)
+        if _video_size(info) is None:
+            raise RuntimeError("source has no video stream")
+        duration = _duration(info)
+        log = self._ffmpeg(
+            job_id,
+            [
+                "-i",
+                str(source),
+                "-map",
+                "0:v:0",
+                "-vf",
+                f"select='gt(scene,{threshold})',showinfo",
+                "-f",
+                "null",
+                "-",
+            ],
+            duration,
+        )
+        return {
+            "cuts": parse_scene_cuts(log, duration, min_shot=min_shot),
+            "duration": duration,
+            "threshold": threshold,
+            "min_shot": min_shot,
         }
 
     def _track_matte(self, job_id: str, source: Path, prompt: dict) -> dict:

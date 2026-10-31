@@ -20,6 +20,7 @@ from chair_sidecar.jobs import (
     parse_ebur128,
     parse_progress,
     parse_runner_progress,
+    parse_scene_cuts,
     parse_silence,
 )
 from pydantic import ValidationError
@@ -120,6 +121,34 @@ def test_loudness_parser_uses_the_summary() -> None:
     }
 
 
+def test_scene_cuts_keep_interior_times_only() -> None:
+    log = """
+[out #0/null @ 0x1] video:0kB audio:0kB
+[Parsed_showinfo_1 @ 0x1] n: 0 pts: 0 pts_time:0 pos: 1
+[Parsed_showinfo_1 @ 0x1] n: 5 pts: 5 pts_time:0.5 pos: 2
+[Parsed_showinfo_1 @ 0x1] n: 5 pts: 5 pts_time:0.5004 pos: 3
+[Parsed_showinfo_1 @ 0x1] n: 9 pts: 9 pts_time:0.9 pos: 4
+[Parsed_showinfo_1 @ 0x1] n: 10 pts: 10 pts_time:1 pos: 5
+[out_time_us=900000]
+"""
+    assert parse_scene_cuts(log, 1.0) == [0.5, 0.9]
+    assert parse_scene_cuts(log, 1.0, min_shot=0.5) == [0.5]
+    assert parse_scene_cuts("no cuts here\n", 1.0) == []
+
+
+def test_scene_request_validates_its_thresholds() -> None:
+    with pytest.raises(ValidationError, match="between 0 and 1"):
+        MediaRequest.model_validate({"source": "clip.mp4", "threshold": 1.5})
+    with pytest.raises(ValidationError, match="between 0 and 1"):
+        MediaRequest.model_validate({"source": "clip.mp4", "threshold": -0.1})
+    with pytest.raises(ValidationError, match="min_shot must be >= 0"):
+        MediaRequest.model_validate({"source": "clip.mp4", "min_shot": -0.5})
+    request = MediaRequest.model_validate(
+        {"source": "clip.mp4", "threshold": 0.3, "min_shot": 0.2}
+    )
+    assert (request.threshold, request.min_shot) == (0.3, 0.2)
+
+
 def test_silence_spans_leave_the_active_parts() -> None:
     log = "silence_start: 0\nsilence_end: 0.4\nsilence_start: 1.5\n"
     silence = parse_silence(log, 2.0)
@@ -178,6 +207,36 @@ def source_media(tmp_path_factory: pytest.TempPathFactory) -> Path:
             "aac",
             "-b:a",
             "128k",
+            str(dest),
+        ],
+        check=True,
+        capture_output=True,
+    )
+    return dest
+
+
+@pytest.fixture(scope="module")
+def two_shot_media(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    dest = tmp_path_factory.mktemp("two_shot") / "two_shot.mp4"
+    subprocess.run(
+        [
+            "ffmpeg",
+            "-y",
+            "-hide_banner",
+            "-f",
+            "lavfi",
+            "-i",
+            "color=red:size=320x240:rate=10:duration=0.5",
+            "-f",
+            "lavfi",
+            "-i",
+            "color=blue:size=320x240:rate=10:duration=0.5",
+            "-filter_complex",
+            "[0][1]concat=n=2:v=1:a=0",
+            "-c:v",
+            "libx264",
+            "-pix_fmt",
+            "yuv420p",
             str(dest),
         ],
         check=True,
@@ -313,6 +372,7 @@ def test_health_lists_job_kinds(server: str) -> None:
     assert "measure_audio" in body["jobs"]
     assert "sam3_mask" in body["jobs"]
     assert "sam_audio" in body["jobs"]
+    assert "scene_cuts" in body["jobs"]
     assert isinstance(body["sam3_runner"], bool)
     assert isinstance(body["sam_audio_runner"], bool)
 
@@ -406,6 +466,57 @@ def test_measure_audio_reports_loudness(
     assert result["active"][0]["end"] > 0.5
     assert isinstance(result["silence"], list)
     assert _sha256(source_media) == digest
+
+
+def test_detect_scenes_returns_cut_times_only(
+    server: str,
+    store: _RecordingStore,
+    source_media: Path,
+    two_shot_media: Path,
+) -> None:
+    digest = _sha256(two_shot_media)
+    status, queued = _request(
+        "POST",
+        f"{server}/jobs/detect_scenes",
+        {"source": str(two_shot_media)},
+    )
+    assert status == 202
+    assert queued["tool"] == "detect_scenes"
+    assert queued["kind"] == "scene_cuts"
+    job = _wait(server, queued["id"])
+    assert job["status"] == "done", job["error"]
+    assert job["progress"] == 1.0
+    assert any(0 < seen < 1 for seen in store.seen)
+    result = job["result"]
+    assert set(result) == {"cuts", "duration", "threshold", "min_shot"}
+    assert result["cuts"] == pytest.approx([0.5])
+    assert result["duration"] == pytest.approx(1.0)
+    assert result["threshold"] == 0.4
+    assert result["min_shot"] == 0.0
+    assert result["cuts"] == sorted(set(result["cuts"]))
+    assert all(0 < cut < result["duration"] for cut in result["cuts"])
+    assert _sha256(two_shot_media) == digest
+
+    tuned = _wait(
+        server,
+        _request(
+            "POST",
+            f"{server}/jobs/detect_scenes",
+            {"source": str(two_shot_media), "threshold": 0.3, "min_shot": 0.2},
+        )[1]["id"],
+    )
+    assert tuned["status"] == "done", tuned["error"]
+    assert tuned["result"]["cuts"] == pytest.approx([0.5])
+    assert tuned["result"]["threshold"] == 0.3
+    assert tuned["result"]["min_shot"] == 0.2
+    assert _sha256(two_shot_media) == digest
+
+    queued_solid = _request(
+        "POST", f"{server}/jobs/detect_scenes", {"source": str(source_media)}
+    )[1]
+    solid = _wait(server, queued_solid["id"])
+    assert solid["status"] == "done", solid["error"]
+    assert solid["result"]["cuts"] == []
 
 
 def test_get_frame_rejects_a_time_past_the_end(server: str, source_media: Path) -> None:
