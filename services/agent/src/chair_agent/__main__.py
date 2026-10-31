@@ -16,8 +16,9 @@ from chair_agent.jobs import (
     run_worker,
 )
 from chair_agent.models import TOOLS
+from chair_agent.transcribe import handle_transcribe
 
-HANDLERS: dict[str, TaskHandler] = {}
+HANDLERS: dict[str, TaskHandler] = {"transcribe": handle_transcribe}
 
 
 class Handler(BaseHTTPRequestHandler):
