@@ -6,6 +6,8 @@ from typing import Any, Literal, Protocol
 import httpx
 from pydantic import BaseModel, ConfigDict
 
+from chair_agent.pieces import PieceHit
+
 DEFAULT_BASE_URL = "https://api.meta.ai/v1"
 _TIMEOUT_SECONDS = 120.0
 
@@ -140,6 +142,24 @@ class ModelClient:
         if not isinstance(name, str) or not name:
             raise ModelNotConfigured(role)
         return name
+
+
+def build_planner_messages(instruction: str, hits: Sequence[PieceHit]) -> list[Message]:
+    """Planner prompt carrying the catalog search: pieces, refs, and defaults."""
+    if not instruction.strip():
+        raise ValueError("instruction must be a non-empty string")
+    lines = ["Candidate pieces (id [effect via endpoint]; needs refs; defaults):"]
+    for hit in hits:
+        refs = ", ".join(hit.required_refs) if hit.required_refs else "no refs"
+        defaults = ", ".join(f"{name}={value}" for name, value in hit.defaults.items())
+        piece = hit.piece
+        lines.append(
+            f"- {piece.id} [{piece.effect} via {piece.endpoint}]; "
+            f"needs {refs}; defaults {defaults}: {piece.summary}"
+        )
+    lines.append("Propose a validated plan per effect. Omit nothing the pieces need.")
+    developer = Message(role="developer", content="\n".join(lines))
+    return [developer, Message(role="user", content=instruction)]
 
 
 def build_client(env: Mapping[str, str] | None = None) -> ModelClient:
