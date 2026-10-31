@@ -1,4 +1,5 @@
 /** Editor-neutral timeline. Mirrors schemas/timeline.schema.json. */
+export * from "./plans";
 
 export interface RationalTime {
   value: number;

@@ -13,6 +13,10 @@ const pairs = [
   ["timeline.schema.json", "timelines/empty.timeline.json"],
   ["changeset.schema.json", "timelines/example.changeset.json"],
   ["capability-manifest.schema.json", "presets/kdenlive.capabilities.json"],
+  ["plan-muse-image.schema.json", "plans/muse-image.plan.json"],
+  ["plan-sam-mask.schema.json", "plans/sam-mask.plan.json"],
+  ["plan-grade.schema.json", "plans/grade.plan.json"],
+  ["plan-motion.schema.json", "plans/motion.plan.json"],
 ];
 
 const ajv = new Ajv2020({ allErrors: true, strict: true });

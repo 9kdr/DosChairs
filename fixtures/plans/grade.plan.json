@@ -1,0 +1,8 @@
+{
+  "schemaVersion": "0.1.0",
+  "effect": "grade",
+  "prompt": "Warm evening grade from the editor preset",
+  "mediaRefs": ["asset://reference/evening-still"],
+  "durationSec": 12,
+  "params": { "intensity": "subtle", "source": "preset" }
+}

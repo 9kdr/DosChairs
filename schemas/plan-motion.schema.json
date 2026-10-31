@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/9kdr/DosChairs/schemas/plan-motion.schema.json",
+  "title": "MotionPlan",
+  "description": "Plan for the motion_graphics effect: prompt plus media refs plus enums with defaults. A shot list, not a timeline: bridge shots to pending cuts with planToChangeset.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "effect", "prompt"],
+  "properties": {
+    "schemaVersion": { "const": "0.1.0" },
+    "effect": { "const": "motion_graphics" },
+    "prompt": { "type": "string", "minLength": 1 },
+    "mediaRefs": {
+      "type": "array",
+      "default": [],
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "durationSec": { "type": "number", "exclusiveMinimum": 0 },
+    "shots": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["prompt", "durationSec"],
+        "properties": {
+          "prompt": { "type": "string", "minLength": 1 },
+          "durationSec": { "type": "number", "exclusiveMinimum": 0 },
+          "mediaRef": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "params": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "template": {
+          "enum": ["lower-third", "title-card", "callout"],
+          "default": "lower-third"
+        },
+        "loop": {
+          "enum": ["once", "loop"],
+          "default": "once"
+        }
+      }
+    }
+  }
+}

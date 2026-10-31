@@ -1,0 +1,8 @@
+{
+  "schemaVersion": "0.1.0",
+  "effect": "sam3_mask",
+  "prompt": "Isolate the speaker",
+  "mediaRefs": ["asset://shot/hook-take2"],
+  "durationSec": 6,
+  "params": { "promptKind": "text", "trackMode": "tracked" }
+}
