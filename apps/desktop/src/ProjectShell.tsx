@@ -1,4 +1,4 @@
-import { BlocksIcon, HomeIcon, WaypointsIcon } from "lucide-react";
+import { BlocksIcon, HomeIcon, ListChecksIcon, WaypointsIcon } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { ChatPrompt } from "@/components/chat-prompt";
 import { Button } from "@/components/ui/button";
@@ -17,11 +17,14 @@ import { CreationBoard } from "./orchestrator/CreationBoard";
 import { OrchestratorBoard } from "./orchestrator/OrchestratorBoard";
 import { TaskChat } from "./orchestrator/TaskChat";
 import type { RunningTask } from "./orchestrator/RunningTasks";
+import { ReviewBoard } from "./project/ReviewBoard";
+import { useProject } from "./project/store";
 
 /** Same field as the home gallery (`HomeScreen`). */
 const SHELL_BG = "#111111";
 
 type ProjectShellProps = {
+  projectId: string;
   projectName: string;
   editorId?: EditorId;
   onHome: () => void;
@@ -29,6 +32,7 @@ type ProjectShellProps = {
 
 /** Same dock as home. Icons are the project lenses. */
 const SECTIONS = [
+  { id: "review", label: "Review", icon: ListChecksIcon },
   { id: "orchestrator", label: "Orchestrator", icon: WaypointsIcon },
   { id: "creation", label: "Creation", icon: BlocksIcon },
 ] as const;
@@ -40,8 +44,9 @@ const dockTooltip = TooltipCreateHandle<DockTipPayload>();
 type SectionId = (typeof SECTIONS)[number]["id"];
 
 /** Blank project view: a way home, a command bar, section nav, and the Chair mark. */
-export function ProjectShell({ projectName, editorId, onHome }: ProjectShellProps) {
-  const [section, setSection] = useState<SectionId>("orchestrator");
+export function ProjectShell({ projectId, projectName, editorId, onHome }: ProjectShellProps) {
+  const [section, setSection] = useState<SectionId>("review");
+  const project = useProject(projectId, projectName);
   const [barOpen, setBarOpen] = useState(false);
   const [command, setCommand] = useState<{ id: number; text: string } | null>(null);
   const [taskChat, setTaskChat] = useState<RunningTask | null>(null);
@@ -88,6 +93,8 @@ export function ProjectShell({ projectName, editorId, onHome }: ProjectShellProp
               }}
               onSend={(text) => setTaskNote({ id: Date.now(), text })}
             />
+          ) : section === "review" ? (
+            <ReviewBoard store={project} />
           ) : section === "orchestrator" ? (
             <OrchestratorBoard
               command={command}

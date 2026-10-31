@@ -20,6 +20,7 @@ export function App() {
         <WindowChrome />
         {projectOpen ? (
           <ProjectShell
+            projectId={project.id}
             projectName={project.name}
             editorId={project.editorId}
             onHome={() => setScreen("home")}
