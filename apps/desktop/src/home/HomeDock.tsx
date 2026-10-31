@@ -1,7 +1,7 @@
 import {
   BlocksIcon,
   HomeIcon,
-  MonitorPlayIcon,
+  LibraryBigIcon,
   SettingsIcon,
   StoreIcon,
   UserRoundIcon,
@@ -16,13 +16,11 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
-import type { EditorInfo } from "./data";
 
-export type HomeTab = "projects" | "pieces" | "marketplace" | "editors";
+export type HomeTab = "projects" | "pieces" | "marketplace" | "library";
 
 type HomeDockProps = {
   tab: HomeTab;
-  editors: readonly EditorInfo[];
   onTab: (tab: HomeTab) => void;
   onAccount: () => void;
   onSettings: () => void;
@@ -33,15 +31,7 @@ type DockTipPayload = { label: string };
 /** One shared tip so the bubble morphs between dock icons. */
 const dockTooltip = TooltipCreateHandle<DockTipPayload>();
 
-export function HomeDock({
-  tab,
-  editors,
-  onTab,
-  onAccount,
-  onSettings,
-}: HomeDockProps) {
-  const inProject = editors.filter((editor) => editor.status === "inProject").length;
-
+export function HomeDock({ tab, onTab, onAccount, onSettings }: HomeDockProps) {
   return (
     <TooltipProvider delay={220} closeDelay={120} timeout={500}>
       <nav
@@ -77,16 +67,11 @@ export function HomeDock({
             <StoreIcon />
           </DockButton>
           <DockButton
-            label={
-              inProject > 0
-                ? `Editors · ${inProject} in project`
-                : "Editors · none in project"
-            }
-            active={tab === "editors"}
-            onClick={() => onTab("editors")}
-            badge={inProject > 0}
+            label="Library"
+            active={tab === "library"}
+            onClick={() => onTab("library")}
           >
-            <MonitorPlayIcon />
+            <LibraryBigIcon />
           </DockButton>
 
           <span
@@ -117,13 +102,11 @@ export function HomeDock({
 function DockButton({
   label,
   active,
-  badge,
   children,
   onClick,
 }: {
   label: string;
   active?: boolean;
-  badge?: boolean;
   children: ReactNode;
   onClick: () => void;
 }) {
@@ -149,12 +132,6 @@ function DockButton({
       }
     >
       {children}
-      {badge ? (
-        <span
-          aria-hidden="true"
-          className="pointer-events-none absolute top-1.5 right-1.5 size-1.5 rounded-full bg-success"
-        />
-      ) : null}
     </TooltipTrigger>
   );
 }

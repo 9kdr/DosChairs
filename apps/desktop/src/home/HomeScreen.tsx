@@ -1,10 +1,14 @@
-import { PlusIcon } from "lucide-react";
+import {
+  AudioWaveformIcon,
+  FilmIcon,
+  ImageIcon,
+  MusicIcon,
+} from "lucide-react";
 import packageJson from "../../package.json";
 import { motion, useReducedMotion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
 import { SmoothScrollTarget } from "@/components/smooth-scroll";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { ChairMark } from "./ChairMark";
 import { EditorLogo } from "./EditorLogo";
@@ -20,9 +24,10 @@ import {
 } from "./GridSizeSlider";
 import {
   EDITORS,
+  LIBRARY_ASSETS,
   PROJECTS,
-  type EditorInfo,
   type EditorStatus,
+  type LibraryAssetKind,
 } from "./data";
 import { HomeDock, type HomeTab } from "./HomeDock";
 import { ProjectCard } from "./ProjectCard";
@@ -41,20 +46,25 @@ const STATUS_LABEL: Record<EditorStatus, string> = {
   stopped: "Stopped",
 };
 
-const STATUS_VARIANT: Record<
-  EditorStatus,
-  "success" | "warning" | "secondary"
-> = {
-  inProject: "success",
-  idle: "warning",
-  stopped: "secondary",
-};
-
 const STATUS_DOT: Record<EditorStatus, string> = {
   inProject: "bg-success",
   idle: "bg-warning",
   stopped: "bg-neutral-500",
 };
+
+const ASSET_KIND_LABEL: Record<LibraryAssetKind, string> = {
+  music: "Music",
+  image: "Image",
+  video: "Video",
+  sfx: "SFX",
+};
+
+const ASSET_KIND_ICON = {
+  music: MusicIcon,
+  image: ImageIcon,
+  video: FilmIcon,
+  sfx: AudioWaveformIcon,
+} as const;
 
 export function HomeScreen({ onOpenProject }: HomeScreenProps) {
   const [tab, setTab] = useState<HomeTab>("projects");
@@ -72,12 +82,9 @@ export function HomeScreen({ onOpenProject }: HomeScreenProps) {
       >
         <div className="px-6 pt-6 pb-28">
           {tab === "projects" ? (
-            <ProjectsPane
-              onOpenProject={onOpenProject}
-              onOpenEditors={() => setTab("editors")}
-            />
+            <ProjectsPane onOpenProject={onOpenProject} />
           ) : null}
-          {tab === "editors" ? <EditorsPane /> : null}
+          {tab === "library" ? <LibraryPane /> : null}
           {tab === "pieces" ? (
             <PlaceholderPane
               title="Pieces"
@@ -115,7 +122,6 @@ export function HomeScreen({ onOpenProject }: HomeScreenProps) {
 
       <HomeDock
         tab={tab}
-        editors={EDITORS}
         onTab={setTab}
         onAccount={() => setTab("projects")}
         onSettings={() => setTab("projects")}
@@ -126,10 +132,8 @@ export function HomeScreen({ onOpenProject }: HomeScreenProps) {
 
 function ProjectsPane({
   onOpenProject,
-  onOpenEditors,
 }: {
   onOpenProject: (projectId: string) => void;
-  onOpenEditors: () => void;
 }) {
   const reduceMotion = useReducedMotion();
   const gridRef = useRef<HTMLUListElement>(null);
@@ -199,10 +203,7 @@ function ProjectsPane({
       animate={{ opacity: 1 }}
       transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
     >
-      <EditorsStrip
-        onSelect={() => onOpenEditors()}
-        onAdd={onOpenEditors}
-      />
+      <EditorsStrip />
       <div>
         <div className="mb-4 flex items-center justify-between gap-3">
           <h2 className="text-sm font-medium text-neutral-400">Recent projects</h2>
@@ -289,13 +290,8 @@ function ProjectsPane({
   );
 }
 
-function EditorsStrip({
-  onSelect,
-  onAdd,
-}: {
-  onSelect: (editor: EditorInfo) => void;
-  onAdd: () => void;
-}) {
+/** Host status, not a library — which editors are around, nothing to open. */
+function EditorsStrip() {
   return (
     <div
       className={cn(
@@ -306,17 +302,11 @@ function EditorsStrip({
       )}
     >
       {EDITORS.map((editor) => (
-        <Button
+        <span
           key={editor.id}
-          type="button"
-          size="icon-sm"
-          variant="ghost"
+          role="img"
           aria-label={`${editor.name}, ${STATUS_LABEL[editor.status]}`}
-          onClick={() => onSelect(editor)}
-          className={cn(
-            "relative size-7 rounded-full text-neutral-200",
-            "hover:bg-white/[0.06]",
-          )}
+          className="relative grid size-7 place-items-center rounded-full text-neutral-200"
         >
           <EditorLogo id={editor.id} className="size-3.5" />
           <span
@@ -326,50 +316,36 @@ function EditorsStrip({
               STATUS_DOT[editor.status],
             )}
           />
-        </Button>
+        </span>
       ))}
-      <span aria-hidden="true" className="mx-0.5 h-4 w-px bg-white/[0.1]" />
-      <Button
-        type="button"
-        size="icon-sm"
-        variant="ghost"
-        aria-label="Add editor"
-        onClick={onAdd}
-        className="size-7 rounded-full text-neutral-400 hover:bg-white/[0.06] hover:text-neutral-100"
-      >
-        <PlusIcon className="size-3.5" />
-      </Button>
     </div>
   );
 }
 
-function EditorsPane() {
+function LibraryPane() {
   return (
     <div className="mx-auto w-full max-w-2xl">
       <ul className="space-y-2">
-        {EDITORS.map((editor) => (
-          <li
-            key={editor.id}
-            className="flex items-center gap-3 rounded-2xl bg-white/[0.03] px-4 py-3 ring-1 ring-white/[0.06]"
-          >
-            <span className="grid size-9 place-items-center rounded-xl bg-white/[0.04] ring-1 ring-white/[0.06]">
-              <EditorLogo id={editor.id} title={editor.name} className="size-5" />
-            </span>
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-medium">{editor.name}</p>
-              <p className="text-xs text-neutral-500">
-                {editor.status === "inProject"
-                  ? "In current project — open to chat against this cut."
-                  : editor.status === "idle"
-                    ? "Installed, not talking to Chair yet."
-                    : "Editor stopped — start it to chat against this cut."}
-              </p>
-            </div>
-            <Badge variant={STATUS_VARIANT[editor.status]} size="sm">
-              {STATUS_LABEL[editor.status]}
-            </Badge>
-          </li>
-        ))}
+        {LIBRARY_ASSETS.map((asset) => {
+          const KindIcon = ASSET_KIND_ICON[asset.kind];
+          return (
+            <li
+              key={asset.id}
+              className="flex items-center gap-3 rounded-2xl bg-white/[0.03] px-4 py-3 ring-1 ring-white/[0.06]"
+            >
+              <span className="grid size-9 place-items-center rounded-xl bg-white/[0.04] text-neutral-300 ring-1 ring-white/[0.06]">
+                <KindIcon className="size-5" />
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-medium">{asset.name}</p>
+                <p className="text-xs text-neutral-500">{asset.detail}</p>
+              </div>
+              <Badge variant="secondary" size="sm">
+                {ASSET_KIND_LABEL[asset.kind]}
+              </Badge>
+            </li>
+          );
+        })}
       </ul>
     </div>
   );

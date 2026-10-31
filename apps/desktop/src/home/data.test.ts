@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { EDITORS, editorById, formatEditedAt } from "./data";
+import { EDITORS, LIBRARY_ASSETS, editorById, formatEditedAt } from "./data";
 
 describe("formatEditedAt", () => {
   const now = Date.parse("2026-10-27T12:00:00.000Z");
@@ -21,5 +21,12 @@ describe("EDITORS", () => {
   it("marks DaVinci Resolve as inProject", () => {
     expect(editorById("resolve").status).toBe("inProject");
     expect(EDITORS.some((editor) => editor.status === "inProject")).toBe(true);
+  });
+});
+
+describe("LIBRARY_ASSETS", () => {
+  it("covers every reusable kind with stand-ins", () => {
+    const kinds = new Set(LIBRARY_ASSETS.map((asset) => asset.kind));
+    expect(kinds).toEqual(new Set(["music", "image", "video", "sfx"]));
   });
 });
