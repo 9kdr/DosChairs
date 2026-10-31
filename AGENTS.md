@@ -29,7 +29,7 @@ Talk to the user in plain language. Say what you are doing, which issue it belon
 Read `.cursor/skills/chair-models/SKILL.md` before you hand work off. The same text is linked from `.agents/skills/` for harnesses that do not read `.cursor`.
 
 - Name the field, then the weight. The models skill has the order.
-- Quick work goes to Gemini 3.8 Flash high on Antigravity: one file, one error, a label, a question, and the check before a commit.
+- Quick work goes to Gemini 3.8 Flash high on Antigravity: one file, one error, a label, a question, and the check before a commit. Trivial one-file fixes may use lower effort or Muse Spark 1.3 contributor for speed.
 - A change that is moderately worth a review goes to that same Gemini before you commit. Moderate means a behavior change, a new file, or a diff that touches the cut, the window, a schema, an adapter, or a check. Gemini runs `mise run check` on what changed, then scores. It does not edit. Commit only after the check passes. A typo, a comment, or a one-line wording fix can skip the score.
 - A screen stays with Grok 4.7 high on Cursor (not fast, 256k). Several packages stay there too.
 - DeepSeek v4.1 on OpenCode is the free daily pool. Spend it only when the user names the screen or names the long bug. One of those a day is the idea.
