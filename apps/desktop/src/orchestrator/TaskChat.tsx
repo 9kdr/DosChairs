@@ -1,25 +1,13 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { ArrowLeft, Undo2 } from "lucide-react";
 import { ChatPrompt } from "@/components/chat-prompt";
 import { SmoothScrollTarget } from "@/components/smooth-scroll";
 import { Button } from "@/components/ui/button";
 import { canUndoTask, type RunningTask } from "./RunningTasks";
 import { TaskActivityPanel } from "./TaskActivity";
+import { useTaskThread } from "./taskThread";
 import { historyForTask } from "../project/store";
 import { opLabel } from "../project/ReviewBoard";
-
-type Turn = {
-  id: string;
-  role: "user" | "assistant";
-  text: string;
-};
-
-const OPENING: Record<string, string> = {
-  "task-1": "A-roll is lining up on V1. The face stays through the question.",
-  "task-2": "The highlight is sitting on the hook, not on the room.",
-  "task-3": "Pauses are marked. Nothing has been cut yet.",
-  "task-4": "Shot 04 is being balanced to the reference still.",
-};
 
 const LANE: Record<RunningTask["lane"], string> = {
   edit: "Edit",
@@ -48,8 +36,9 @@ function undoReply(task: RunningTask): string {
 }
 
 /**
- * A full thread for one running task. Stand-in replies only.
- * Sending does not change the timeline.
+ * A full thread for one running task. Turns run live on the agent; undo
+ * prompts answer locally from history until #75. Sending does not change
+ * the timeline.
  */
 export function TaskChat({
   task,
@@ -62,31 +51,13 @@ export function TaskChat({
   onClose: () => void;
   onSend: (text: string) => void;
 }) {
-  const [turns, setTurns] = useState<Turn[]>(() => [
-    {
-      id: "open",
-      role: "assistant",
-      text: `${OPENING[task.id] ?? task.status} This is a stand-in, not a live agent.`,
-    },
-  ]);
+  const resolveLocalReply = useCallback(
+    (text: string) => (text.toLowerCase().startsWith("undo") ? undoReply(task) : null),
+    [task],
+  );
+  const { turns, activity } = useTaskThread(task, note, resolveLocalReply);
   const endRef = useRef<HTMLDivElement>(null);
   const threadRef = useRef<HTMLDivElement>(null);
-  const seenNote = useRef<number | null>(null);
-
-  useEffect(() => {
-    if (!note || seenNote.current === note.id) return;
-    seenNote.current = note.id;
-    const text = note.text.trim();
-    if (!text) return;
-    const reply = text.toLowerCase().startsWith("undo")
-      ? undoReply(task)
-      : `Still on ${task.name}. I kept that note. The timeline is unchanged.`;
-    setTurns((current) => [
-      ...current,
-      { id: `user-${note.id}`, role: "user", text },
-      { id: `assistant-${note.id}`, role: "assistant", text: reply },
-    ]);
-  }, [note, task]);
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ block: "end" });
@@ -105,9 +76,7 @@ export function TaskChat({
           <ArrowLeft />
           Desk
         </Button>
-        <h2 className="min-w-0 truncate text-sm font-semibold tracking-wide">
-          {task.name}
-        </h2>
+        <h2 className="min-w-0 truncate text-sm font-semibold tracking-wide">{task.name}</h2>
         <span className="rounded-full bg-white/8 px-2 py-0.5 text-xs text-neutral-300">
           {LANE[task.lane]}
         </span>
@@ -137,7 +106,7 @@ export function TaskChat({
             <div ref={endRef} />
           </ol>
         </div>
-        <TaskActivityPanel task={task} />
+        <TaskActivityPanel task={task} activity={activity ?? undefined} />
       </div>
 
       <div className="flex shrink-0 gap-4 px-4 pt-2 pb-6">
