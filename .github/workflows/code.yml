@@ -1,0 +1,49 @@
+name: Cloud runner
+
+# Codes ONE grok-ready issue per run and opens a PR. Never merges.
+# Requires repo secrets MUSE_API_URL + MUSE_API_KEY (+ MUSE_MODEL).
+# Without them the script exits loudly so the gap is visible.
+
+on:
+  schedule:
+    # Weekdays 05:30 UTC: after groom triages (04:23), before humans wake.
+    - cron: "30 5 * * 1-5"
+  workflow_dispatch:
+    inputs:
+      issue:
+        description: "Issue number to run (default: oldest grok-ready pick)"
+        required: false
+      dry_run:
+        description: "Dry run (no writes)"
+        type: choice
+        options: ["true", "false"]
+        default: "true"
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: cloud-runner
+  cancel-in-progress: false
+
+jobs:
+  code:
+    name: code
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: jdx/mise-action@v4
+      - run: |
+          git config user.name "chair-runner"
+          git config user.email "chair-runner@users.noreply.github.com"
+      - run: node scripts/runner.mjs ${{ github.event.inputs.dry_run == 'true' && '--dry-run' || '' }} ${{ github.event.inputs.issue != '' && format('--issue {0}', github.event.inputs.issue) || '' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          MUSE_API_URL: ${{ secrets.MUSE_API_URL }}
+          MUSE_API_KEY: ${{ secrets.MUSE_API_KEY }}
+          MUSE_MODEL: ${{ secrets.MUSE_MODEL }}
