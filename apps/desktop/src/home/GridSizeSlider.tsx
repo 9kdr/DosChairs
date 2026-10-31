@@ -1,3 +1,4 @@
+import { cn } from "@/lib/utils";
 import {
   PillSnapSlider,
   type PillSnapApproach,
@@ -58,7 +59,7 @@ export function GridSizeSlider({
       min={0}
       max={max}
       step={1}
-      className={className}
+      className={cn("px-3", className)}
       onChange={(next) => onChange(next as GridSize)}
       onApproach={
         onApproach
