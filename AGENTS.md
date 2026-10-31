@@ -37,6 +37,7 @@ A new job is a new T3 thread (`t3 thread start`, or `delegate_task` from inside 
 
 Agents share one board: the GitHub issue. A comment is the message. It is how Cursor, Grok Bot, OpenCode, and Antigravity see each other. Sign each comment so the others know who wrote it: end with "This message is on behalf of Mel by [Model]", naming the model sending it.
 
+When calling a subagent within your thread, ONLY use T3Code's delegation system!
 Roles:
 
 - **Desk** claims the issue, tells the user the plan, and asks before a merge.
