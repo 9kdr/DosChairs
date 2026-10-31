@@ -6,29 +6,26 @@ const BRIEF =
 
 describe("skeletonGroupsForText", () => {
   it("returns one group per paragraph", () => {
-    const groups = skeletonGroupsForText(BRIEF);
-    expect(groups.map((group) => group.kind)).toEqual(["text", "text"]);
+    expect(skeletonGroupsForText(BRIEF)).toHaveLength(2);
   });
 
   it("varies bar counts and last widths with paragraph length", () => {
     const [first, second] = skeletonGroupsForText(BRIEF);
-    expect(first!.widths).toEqual(["100%", "100%", "30%"]);
-    expect(second!.widths).toEqual(["100%", "70%"]);
+    expect(first).toEqual(["100%", "100%", "30%"]);
+    expect(second).toEqual(["100%", "70%"]);
   });
 
-  it("marks headings distinct from body text", () => {
-    const groups = skeletonGroupsForText("# The hook\n\nTwo short lines here.");
-    expect(groups.map((group) => group.kind)).toEqual(["h1", "text"]);
-    expect(groups[0]!.widths).toHaveLength(1);
+  it("treats headings, lists, and quotes as plain groups", () => {
+    const groups = skeletonGroupsForText("# The hook\n\n- one\n- two\n\n> quoted");
+    expect(groups).toHaveLength(3);
+    expect(groups[1]).toHaveLength(2);
   });
 
-  it("groups list items and quotes like the renderer does", () => {
-    const groups = skeletonGroupsForText("- one\n- two\n\n> quoted");
-    expect(groups.map((group) => group.kind)).toEqual(["list", "quote"]);
-    expect(groups[0]!.widths).toHaveLength(2);
+  it("caps bars for very long lines", () => {
+    expect(skeletonGroupsForText("x".repeat(600))).toEqual([Array(6).fill("100%")]);
   });
 
   it("shows one short bar for an empty doc", () => {
-    expect(skeletonGroupsForText("  ")).toEqual([{ kind: "text", widths: ["38%"] }]);
+    expect(skeletonGroupsForText("  ")).toEqual([["38%"]]);
   });
 });

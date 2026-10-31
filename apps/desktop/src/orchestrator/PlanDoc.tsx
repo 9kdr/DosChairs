@@ -1611,25 +1611,13 @@ export function PlanDoc({ open, mode, onOpen, onClose, notice, className }: Plan
                 animate={{ opacity: 1 }}
                 transition={{ duration: 0.15, ease: "easeOut" }}
               >
-                {skeletonGroupsForText(texts[doc] ?? "").map((group, groupIndex) => (
-                  <div
-                    key={groupIndex}
-                    className={cn(
-                      "flex flex-col gap-2.5",
-                      group.kind === "quote" && "border-l-2 border-white/15 pl-3",
-                      group.kind === "list" && "pl-5",
-                    )}
-                  >
-                    {group.widths.map((width, barIndex) => (
+                {skeletonGroupsForText(texts[doc] ?? "").map((widths, groupIndex) => (
+                  <div key={groupIndex} className="flex flex-col gap-2.5">
+                    {widths.map((width, barIndex) => (
                       <div
                         key={barIndex}
                         style={{ width }}
-                        className={cn(
-                          "h-3.5 shrink-0 rounded-md bg-white/8",
-                          group.kind === "h1" && "h-5 bg-white/10",
-                          group.kind === "h2" && "h-4 bg-white/10",
-                          group.kind === "h3" && "bg-white/10",
-                        )}
+                        className="h-3.5 shrink-0 rounded-md bg-white/8"
                       />
                     ))}
                   </div>
