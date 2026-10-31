@@ -29,24 +29,34 @@ Chair is an agentic, non-destructive video editor. It keeps the cut in the NLE y
   - [x] Rust IR
   - [x] Pending items do not apply
   - [x] Project store and revisions
+  - [x] Per-effect plan schemas
 - Agent
   - [x] Non-destructive tool registry
   - [x] Health endpoint
   - [x] Model clients (Wonder / Spark)
-  - [Transcription and subtitles](https://github.com/9kdr/DosChairs/issues/6)
-  - [Shot index](https://github.com/9kdr/DosChairs/issues/7)
+  - [x] [Transcription and subtitles](https://github.com/9kdr/DosChairs/issues/6)
+  - [x] [Shot index](https://github.com/9kdr/DosChairs/issues/7)
   - [x] Edit operations
-  - [Planner / executor / verifier](https://github.com/9kdr/DosChairs/issues/9)
-  - [Story beat sheet](https://github.com/9kdr/DosChairs/issues/10)
-  - [Style profile](https://github.com/9kdr/DosChairs/issues/12)
+  - [x] [Planner / executor / verifier](https://github.com/9kdr/DosChairs/issues/9)
+  - [x] [Story beat sheet](https://github.com/9kdr/DosChairs/issues/10)
+  - [x] [Style profile](https://github.com/9kdr/DosChairs/issues/12)
+  - [x] Async job controller (queued, cancellable, webhooked)
+  - [x] Piece catalog
   - [Dialogue and music balance](https://github.com/9kdr/DosChairs/issues/15)
   - [Verifier gate](https://github.com/9kdr/DosChairs/issues/16)
+  - [Agent hands on the timeline](https://github.com/9kdr/DosChairs/issues/70)
+  - [Rollback history](https://github.com/9kdr/DosChairs/issues/75)
+  - [Rejection feedback loop](https://github.com/9kdr/DosChairs/issues/105)
+  - [Region locks](https://github.com/9kdr/DosChairs/issues/106)
   - [Image generation adapter](https://github.com/9kdr/DosChairs/issues/22)
 - Sidecar
   - [x] Health endpoint and job kinds
   - [x] Proxy, frame, and loudness
   - [x] SAM 3 mattes
-  - [SAM Audio stems](https://github.com/9kdr/DosChairs/issues/20)
+  - [x] [SAM Audio stems](https://github.com/9kdr/DosChairs/issues/20)
+  - [x] Beat, transient, and word markers
+  - [x] Scene-cut detection
+  - [x] Job persistence across restarts
   - [2D rigging](https://github.com/9kdr/DosChairs/issues/107)
 - Adapters
   - [x] Capability manifests (Resolve, Kdenlive, OTIO)
@@ -54,14 +64,27 @@ Chair is an agentic, non-destructive video editor. It keeps the cut in the NLE y
   - [x] OTIO export
   - [Reference grade](https://github.com/9kdr/DosChairs/issues/17)
   - [Motion template](https://github.com/9kdr/DosChairs/issues/18)
+  - [Fusion macro pipeline](https://github.com/9kdr/DosChairs/issues/65)
+  - [Web-render bridge](https://github.com/9kdr/DosChairs/issues/66)
   - [x] [Resolve Studio round-trip](https://github.com/9kdr/DosChairs/issues/23)
 - Desktop
-  - [x] Chat, timeline mirror, accept / reject (W.I.P)
+  - [x] Chat, timeline mirror, changeset review
+  - [x] Orchestrator bento (plan, todos, running tasks, assets)
+  - [x] Review polish (visual diffs, history bento)
   - [x] Open a project against a real timeline
+  - [Service link: app talks to agent and sidecar](https://github.com/9kdr/DosChairs/issues/131)
+  - [Live task-thread replies](https://github.com/9kdr/DosChairs/issues/61)
+  - [Accept mode: manual or auto-accept](https://github.com/9kdr/DosChairs/issues/112)
+  - [Project shell IA](https://github.com/9kdr/DosChairs/issues/39)
+  - [Asset library home dock](https://github.com/9kdr/DosChairs/issues/56)
+  - [Plan v2](https://github.com/9kdr/DosChairs/issues/68)
+  - [Timeline grammar](https://github.com/9kdr/DosChairs/issues/69)
+  - [Local project persistence](https://github.com/9kdr/DosChairs/issues/132)
+  - [Creation: assemble pieces](https://github.com/9kdr/DosChairs/issues/58)
 - Demo
   - [Rehearsal checklist](https://github.com/9kdr/DosChairs/issues/19)
 
-Checked items exist in this repo. Linked items are not started. Milestone order is [M0](https://github.com/9kdr/DosChairs/milestone/1) through [M3](https://github.com/9kdr/DosChairs/milestone/4), then [Stretch](https://github.com/9kdr/DosChairs/milestone/5).
+Checked items exist in this repo. Linked items are open issues. Milestone order is [M0](https://github.com/9kdr/DosChairs/milestone/1) through [M3](https://github.com/9kdr/DosChairs/milestone/4), then [Stretch](https://github.com/9kdr/DosChairs/milestone/5).
 
 ## Layout
 
