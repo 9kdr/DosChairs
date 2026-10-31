@@ -269,3 +269,16 @@ def test_restart_requeues_in_progress_jobs(tmp_path: Path) -> None:
     assert recovered.status == "queued"
     assert recovered.started_at is None
     assert restarted.claim_next() is not None
+
+
+def test_http_rejects_non_string_webhook_url(tmp_path: Path) -> None:
+    controller = _controller(tmp_path)
+    server, thread, base = _serve(controller)
+    try:
+        status, body = _post(base, "/jobs", {"task": "transcribe", "webhook_url": 123})
+        assert status == 400
+        assert body["error"]["code"] == "invalid_webhook_url"
+    finally:
+        server.shutdown()
+        thread.join(timeout=2)
+        server.server_close()

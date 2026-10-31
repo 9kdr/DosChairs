@@ -192,7 +192,9 @@ class JobController:
             raise JobInvalid("invalid_task", "task must be a non-empty string")
         if input is not None and not isinstance(input, dict):
             raise JobInvalid("invalid_input", "input must be an object")
-        if webhook_url is not None and not webhook_url.startswith("https://"):
+        if webhook_url is not None and (
+            not isinstance(webhook_url, str) or not webhook_url.startswith("https://")
+        ):
             raise JobInvalid("invalid_webhook_url", "webhook_url must be an https URL")
         key = idempotency_key or None
         with self._lock:
