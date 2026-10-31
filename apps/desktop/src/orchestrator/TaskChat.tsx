@@ -105,7 +105,9 @@ export function TaskChat({
           <ArrowLeft />
           Desk
         </Button>
-        <h2 className="min-w-0 truncate text-sm font-semibold tracking-wide">{task.name}</h2>
+        <h2 className="min-w-0 truncate text-sm font-semibold tracking-wide">
+          {task.name}
+        </h2>
         <span className="rounded-full bg-white/8 px-2 py-0.5 text-xs text-neutral-300">
           {LANE[task.lane]}
         </span>
