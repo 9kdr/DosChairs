@@ -1,10 +1,11 @@
-import { ChevronDownIcon, ClapperboardIcon, HistoryIcon, ListChecksIcon } from "lucide-react";
+import { ChevronDownIcon, ClapperboardIcon, ListChecksIcon } from "lucide-react";
 import { useState } from "react";
 import type { RationalTime } from "@chair/timeline-ir";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import type { HistoryEntry, ProjectStore } from "./store";
+import { OpDiff } from "./OpDiff";
+import type { ProjectStore } from "./store";
 import type { ChangesetItem } from "@chair/timeline-ir";
 
 const CARD = "rounded-[28px] bg-[#1a1a1a] text-neutral-100 shadow-raised ring-1 ring-white/8";
@@ -35,25 +36,14 @@ export function opLabel(op: string): string {
 }
 
 /**
- * Project review: the proposed edits against this cut, the timeline
- * mirror beside them, and the history of accepted edits below. Accept
- * or reject flips an item's status only; the mirror always shows the
- * cut as it stands.
+ * Project review: the proposed edits against this cut and the timeline
+ * mirror beside them. Accept or reject flips an item's status only; the
+ * mirror always shows the cut as it stands. Accepted edits land in the
+ * History card beside the running tasks.
  */
 export function ReviewBoard({ store }: { store: ProjectStore }) {
-  const { timeline, changeset, history, pendingCount } = store;
+  const { timeline, changeset, pendingCount } = store;
   const clipCount = timeline.tracks.reduce((sum, track) => sum + track.clips.length, 0);
-  const [flashId, setFlashId] = useState<string | null>(null);
-
-  const jumpToEntry = (itemId: string) => {
-    setFlashId(itemId);
-    document
-      .getElementById(`history-${itemId}`)
-      ?.scrollIntoView({ behavior: "smooth", block: "nearest" });
-    window.setTimeout(() => {
-      setFlashId((current) => (current === itemId ? null : current));
-    }, 1600);
-  };
 
   return (
     <div className="h-full overflow-y-auto p-4 pb-[9.5rem]">
@@ -89,10 +79,8 @@ export function ReviewBoard({ store }: { store: ProjectStore }) {
               <ChangesetItemRow
                 key={item.id}
                 item={item}
-                entry={history.find((row) => row.itemId === item.id)}
                 onAccept={() => store.acceptItem(item.id)}
                 onReject={() => store.rejectItem(item.id)}
-                onHistory={() => jumpToEntry(item.id)}
               />
             ))}
           </ul>
@@ -161,76 +149,19 @@ export function ReviewBoard({ store }: { store: ProjectStore }) {
         </section>
       </div>
 
-      <section aria-label="History" className={cn(CARD, "mt-3 flex min-h-0 flex-col gap-1 p-4")}>
-        <div className="flex shrink-0 items-center gap-2 px-1 pb-1">
-          <HistoryIcon className="size-4 text-neutral-400" aria-hidden="true" />
-          <h3 className="text-sm font-semibold tracking-wide text-neutral-100">History</h3>
-          <span className="text-xs tabular-nums text-neutral-500">
-            {history.length === 1 ? "1 entry" : `${history.length} entries`}
-          </span>
-          <p className="ml-auto text-xs text-neutral-500">Undo to here arrives with #75.</p>
-        </div>
-        {history.length === 0 ? (
-          <p className="px-1 py-2 text-xs text-neutral-500">
-            Nothing accepted yet — accepted edits land here with their undo point.
-          </p>
-        ) : (
-          <ol className="flex min-h-0 flex-col">
-            {history.map((entry, index) => (
-              <li
-                key={entry.itemId}
-                id={`history-${entry.itemId}`}
-                className={cn(
-                  "flex scroll-mt-4 items-center gap-3 border-t border-white/[0.06] px-1 py-3 first:border-t-0 first:pt-1 last:pb-1",
-                  flashId === entry.itemId && "rounded-lg bg-white/[0.05]",
-                )}
-              >
-                <span className="w-7 shrink-0 text-xs tabular-nums text-neutral-500">
-                  #{index + 1}
-                </span>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium text-neutral-100">
-                    {opLabel(entry.op)}
-                    {entry.targetId ? (
-                      <span className="ml-2 font-normal text-neutral-500">{entry.targetId}</span>
-                    ) : null}
-                  </p>
-                  <p className="mt-0.5 text-xs text-neutral-500">
-                    Accepted {clockTime(entry.acceptedAt)} by {entry.acceptedBy}
-                  </p>
-                </div>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="ghost"
-                  disabled
-                  title="Undo to here arrives with #75"
-                  className="shrink-0"
-                >
-                  Undo to here
-                </Button>
-              </li>
-            ))}
-          </ol>
-        )}
-      </section>
     </div>
   );
 }
 
-/** One proposed edit: its summary, its diff, and its decision. */
+/** One proposed edit: its summary, its visual diff, and its decision. */
 function ChangesetItemRow({
   item,
-  entry,
   onAccept,
   onReject,
-  onHistory,
 }: {
   item: ChangesetItem;
-  entry: HistoryEntry | undefined;
   onAccept: () => void;
   onReject: () => void;
-  onHistory: () => void;
 }) {
   const [diffOpen, setDiffOpen] = useState(false);
 
@@ -266,17 +197,6 @@ function ChangesetItemRow({
             <Badge variant={item.status === "accepted" ? "success" : "secondary"} size="sm">
               {item.status === "accepted" ? "Accepted" : "Rejected"}
             </Badge>
-            {item.status === "accepted" && entry ? (
-              <Button
-                type="button"
-                size="sm"
-                variant="ghost"
-                className="text-neutral-400 hover:text-neutral-100"
-                onClick={onHistory}
-              >
-                History
-              </Button>
-            ) : null}
           </div>
         )}
       </div>
@@ -295,44 +215,23 @@ function ChangesetItemRow({
         Diff
       </Button>
       {diffOpen ? (
-        <div className="mt-1 flex flex-col gap-2 rounded-xl bg-black/30 p-3 ring-1 ring-white/[0.06]">
-          <PatchBlock label="Forward patch" patch={item.patch} />
-          {entry ? (
-            <PatchBlock label="Inverse patch (stand-in)" patch={entry.inverse} />
-          ) : (
-            <p className="text-xs text-neutral-600">Inverse patch lands with the accept.</p>
-          )}
+        <div className="mt-1 rounded-xl bg-black/30 p-3 ring-1 ring-white/[0.06]">
+          <OpDiff item={item} />
+          {item.status === "pending" ? (
+            <p className="mt-2 text-xs text-neutral-600">The undo point lands with the accept.</p>
+          ) : item.status === "accepted" ? (
+            <p className="mt-2 text-xs text-neutral-600">
+              Undo point recorded — see History beside Running tasks.
+            </p>
+          ) : null}
         </div>
       ) : null}
     </li>
   );
 }
 
-/** One patch of a diff: pretty JSON, or a dash when there is nothing to show. */
-function PatchBlock({
-  label,
-  patch,
-}: {
-  label: string;
-  patch: Record<string, unknown> | undefined;
-}) {
-  const keys = patch ? Object.keys(patch) : [];
-  return (
-    <div>
-      <p className="text-xs font-medium text-neutral-400">{label}</p>
-      {keys.length === 0 ? (
-        <p className="mt-0.5 text-xs text-neutral-600">—</p>
-      ) : (
-        <pre className="mt-1 overflow-x-auto font-mono text-xs leading-5 text-neutral-300">
-          {JSON.stringify(patch, null, 2)}
-        </pre>
-      )}
-    </div>
-  );
-}
-
 /** HH:MM on the local clock for an accepted-at stamp. */
-function clockTime(iso: string): string {
+export function clockTime(iso: string): string {
   const date = new Date(iso);
   // taste-skill-ignore: clock fields are zero-padded by definition.
   const pad = (n: number) => `${n}`.padStart(2, "0");
