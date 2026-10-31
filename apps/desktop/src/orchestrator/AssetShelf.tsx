@@ -18,12 +18,14 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion, type Variants } from "motion/react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type {
   DragEvent,
+  KeyboardEvent as ReactKeyboardEvent,
   MouseEvent as ReactMouseEvent,
   PointerEvent as ReactPointerEvent,
   ReactNode,
+  Ref,
 } from "react";
 import { SmoothScrollTarget } from "@/components/smooth-scroll";
 import { Button } from "@/components/ui/button";
@@ -99,6 +101,9 @@ const VIEWS: { id: ViewStyle; label: string; icon: LucideIcon }[] = [
 ];
 
 const SHELF_VIEW_KEY = "chair.shelfView";
+
+/** Below this shelf width the search field collapses to an icon button. */
+const SEARCH_COLLAPSE_PX = 420;
 
 function loadShelfView(): ViewStyle {
   const saved = localStorage.getItem(SHELF_VIEW_KEY);
@@ -277,6 +282,45 @@ function setChairRefs(transfer: DataTransfer, refs: { id: string; label: string 
   transfer.effectAllowed = "copy";
 }
 
+type SearchFieldProps = {
+  value: string;
+  placeholder: string;
+  label: string;
+  inputRef?: Ref<HTMLInputElement>;
+  onChange: (value: string) => void;
+  onKeyDown?: (event: ReactKeyboardEvent<HTMLInputElement>) => void;
+  onBlur?: () => void;
+};
+
+/** The shelf search field, shared by the full-width row and the narrow overlay. */
+function SearchField({
+  value,
+  placeholder,
+  label,
+  inputRef,
+  onChange,
+  onKeyDown,
+  onBlur,
+}: SearchFieldProps) {
+  return (
+    <div className="relative min-w-0 flex-1">
+      <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-neutral-500" />
+      <Input
+        ref={inputRef}
+        type="search"
+        size="sm"
+        value={value}
+        placeholder={placeholder}
+        aria-label={label}
+        className="**:data-[slot=input]:pl-8"
+        onChange={(event) => onChange(event.target.value)}
+        onKeyDown={onKeyDown}
+        onBlur={onBlur}
+      />
+    </div>
+  );
+}
+
 type AssetShelfProps = {
   className?: string;
   /** Freeze item motion to the opacity-only variant while the board morphs. */
@@ -297,6 +341,39 @@ export function AssetShelf({ className, frozen = false, transitionLock = false }
     localStorage.setItem(SHELF_VIEW_KEY, view);
   }, [view]);
   const [query, setQuery] = useState("");
+  // Below SEARCH_COLLAPSE_PX the field collapses to an icon button; the
+  // expanded field overlays the toolbar row so the rows below never shift.
+  const [narrow, setNarrow] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const shelfRef = useRef<HTMLElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const searchToggleRef = useRef<HTMLButtonElement>(null);
+  // Escape sets this so focus returns to the toggle once it remounts.
+  const refocusToggle = useRef(false);
+  useLayoutEffect(() => {
+    const node = shelfRef.current;
+    if (!node) return;
+    const measure = () => {
+      const next = node.getBoundingClientRect().width < SEARCH_COLLAPSE_PX;
+      setNarrow((current) => (current === next ? current : next));
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, []);
+  useEffect(() => {
+    if (!narrow) setSearchOpen(false);
+  }, [narrow]);
+  useEffect(() => {
+    if (searchOpen) searchInputRef.current?.focus();
+  }, [searchOpen]);
+  useEffect(() => {
+    if (!searchOpen && refocusToggle.current) {
+      refocusToggle.current = false;
+      searchToggleRef.current?.focus();
+    }
+  }, [searchOpen]);
   const [openFolder, setOpenFolder] = useState<string | null>(null);
   const [shift, setShift] = useState<Shift>("fade");
   const [selectedIds, setSelectedIds] = useState<string[]>(() =>
@@ -646,6 +723,7 @@ export function AssetShelf({ className, frozen = false, transitionLock = false }
   };
 
   const filterLabel = TYPE_FILTERS.find((item) => item.id === typeFilter)?.label ?? "All";
+  const searchLabel = scope === "assets" ? "Search assets" : "Search pieces";
   const viewChoice = VIEWS.find((item) => item.id === view) ?? {
     id: "cards" as const,
     label: "Cards",
@@ -682,6 +760,7 @@ export function AssetShelf({ className, frozen = false, transitionLock = false }
 
   return (
     <section
+      ref={shelfRef}
       data-transition-lock={transitionLock ? "true" : undefined}
       className={cn(
         "flex min-h-0 min-w-0 flex-col gap-3 overflow-hidden rounded-[28px] bg-[#1a1a1a] p-5 text-neutral-100 shadow-raised ring-1 ring-white/8",
@@ -804,18 +883,48 @@ export function AssetShelf({ className, frozen = false, transitionLock = false }
             </MenuRadioGroup>
           </MenuPopup>
         </Menu>
-        <div className="relative min-w-0 flex-1">
-          <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-neutral-500" />
-          <Input
-            type="search"
-            size="sm"
+        {narrow && !searchOpen ? (
+          <Button
+            ref={searchToggleRef}
+            type="button"
+            size="icon-sm"
+            variant="ghost"
+            className={cn("ml-auto shrink-0 border-white/12", query !== "" && "bg-accent")}
+            aria-label={searchLabel}
+            onClick={() => setSearchOpen(true)}
+          >
+            <Search />
+          </Button>
+        ) : narrow ? (
+          <div className="ml-auto size-8 shrink-0 sm:size-7" aria-hidden="true" />
+        ) : (
+          <SearchField
             value={query}
-            placeholder={scope === "assets" ? "Search assets" : "Search pieces"}
-            aria-label={scope === "assets" ? "Search assets" : "Search pieces"}
-            className="**:data-[slot=input]:pl-8"
-            onChange={(event) => setQuery(event.target.value)}
+            placeholder={searchLabel}
+            label={searchLabel}
+            onChange={setQuery}
           />
-        </div>
+        )}
+        {narrow && searchOpen ? (
+          <div className="absolute inset-0 flex items-center bg-[#1a1a1a]">
+            <SearchField
+              value={query}
+              placeholder={searchLabel}
+              label={searchLabel}
+              inputRef={searchInputRef}
+              onChange={setQuery}
+              onKeyDown={(event) => {
+                if (event.key !== "Escape") return;
+                event.stopPropagation();
+                refocusToggle.current = true;
+                setSearchOpen(false);
+              }}
+              onBlur={() => {
+                if (query === "") setSearchOpen(false);
+              }}
+            />
+          </div>
+        ) : null}
       </div>
 
         <div className="relative min-h-0 flex-1 overflow-hidden">
