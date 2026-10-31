@@ -1,0 +1,51 @@
+{
+  "schemaVersion": "0.1.0",
+  "id": "story_dawn_bread",
+  "brief": "A sixty-second cut about dawn bread runs.",
+  "targetDurationSec": 60,
+  "status": "draft",
+  "beats": [
+    {
+      "id": "beat_hook",
+      "role": "hook",
+      "intent": "Open on the oven door and the first tray.",
+      "pacing": "fast",
+      "tone": "warm",
+      "startSec": 0,
+      "endSec": 6,
+      "candidateClipIds": ["clip_1"]
+    },
+    {
+      "id": "beat_setup",
+      "role": "setup",
+      "intent": "Meet the baker and the 4am routine.",
+      "startSec": 6,
+      "endSec": 24,
+      "candidateClipIds": []
+    },
+    {
+      "id": "beat_turn",
+      "role": "turn",
+      "intent": "The oven fails and the batch is at risk.",
+      "startSec": 24,
+      "endSec": 40,
+      "candidateClipIds": []
+    },
+    {
+      "id": "beat_payoff",
+      "role": "payoff",
+      "intent": "The fix works and the bread is saved.",
+      "startSec": 40,
+      "endSec": 54,
+      "candidateClipIds": []
+    },
+    {
+      "id": "beat_outro",
+      "role": "outro",
+      "intent": "First customer, first bite, shop opens.",
+      "startSec": 54,
+      "endSec": 60,
+      "candidateClipIds": []
+    }
+  ]
+}

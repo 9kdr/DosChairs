@@ -17,6 +17,7 @@ const pairs = [
   ["plan-sam-mask.schema.json", "plans/sam-mask.plan.json"],
   ["plan-grade.schema.json", "plans/grade.plan.json"],
   ["plan-motion.schema.json", "plans/motion.plan.json"],
+  ["story-plan.schema.json", "plans/story.plan.json"],
 ];
 
 const ajv = new Ajv2020({ allErrors: true, strict: true });
