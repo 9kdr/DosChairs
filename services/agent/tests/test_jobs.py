@@ -12,6 +12,7 @@ from chair_agent.jobs import (
     Job,
     JobConflict,
     JobController,
+    JobInvalid,
     JobNotFound,
     WebhookVerifyError,
     poll_delay_seconds,
@@ -342,3 +343,10 @@ def test_worker_survives_malformed_webhook_secret(tmp_path: Path) -> None:
     assert controller.get(first.request_id).status == "completed"
     assert controller.get(first.request_id).webhook_delivered is False
     assert controller.get(second.request_id).status == "completed"
+
+
+def test_submit_rejects_webhook_url_without_secret(tmp_path: Path) -> None:
+    controller = _controller(tmp_path)
+    with pytest.raises(JobInvalid) as excinfo:
+        controller.submit("transcribe", webhook_url="https://example.test/hook")
+    assert excinfo.value.code == "webhook_requires_secret"

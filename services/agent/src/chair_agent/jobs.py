@@ -196,6 +196,10 @@ class JobController:
             not isinstance(webhook_url, str) or not webhook_url.startswith("https://")
         ):
             raise JobInvalid("invalid_webhook_url", "webhook_url must be an https URL")
+        if webhook_url is not None and self._webhook_secret is None:
+            raise JobInvalid(
+                "webhook_requires_secret", "webhook_url requires a configured webhook secret"
+            )
         key = idempotency_key or None
         with self._lock:
             if key is not None and key in self._idempotency:
