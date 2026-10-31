@@ -1,6 +1,6 @@
 ---
 name: chair-desk
-description: Claim Chair issues, open one branch and one pull request, hand work to another agent, and ask the user before merging. Use when starting work, opening or updating a pull request, seeing a claim, avoiding duplicate work, or when the user mentions merge, handoff, desk, or another agent.
+description: "Claim Chair issues, open one branch and one pull request, hand work to another agent, and ask the user before merging. Use when starting work, committing, reviewing a moderate change, opening or updating a pull request, seeing a claim, avoiding duplicate work, or when the user mentions merge, handoff, desk, or another agent."
 ---
 
 # Desk
@@ -28,7 +28,7 @@ Need: <nothing, or which role you need>
 
 ## Calling another agent
 
-Pick the model with `.cursor/skills/chair-models/SKILL.md`. Open a new T3 thread for that one problem. From a shell, use `t3 thread start` on project `/var/home/mel/Arch/dc`. Inside a T3 thread, use `delegate_task`. Do not paste the parent chat in.
+Pick the model with `.cursor/skills/chair-models/SKILL.md`. Open a new T3 thread for that one problem. From a shell, use `t3 thread start` on project `/var/home/mel/Arch/dc`. Inside a T3 thread, use `delegate_task`. Do not paste the parent chat in. Do end an implementation task with the before-commit paragraph from that skill. A child does not inherit your chat.
 
 Post this on the issue, then stop that part of the work:
 
@@ -48,7 +48,9 @@ In Cursor, you may start one subagent with the issue number, the handoff text, a
 
 ## After the code
 
-Before you tell the user the work is ready, send it to Gemini 3.8 Flash high with the rubric in `.cursor/skills/chair-models/SKILL.md`. Wait for the score. Gemini does not edit the branch.
+A typo, a comment, or a one-line wording fix can be committed after you run `mise run check` yourself.
+
+Before you commit a change that is moderately worth a review, send it to Gemini 3.8 Flash high with the rubric in `.cursor/skills/chair-models/SKILL.md`. Moderate means a behavior change, a new file, or a diff that touches the cut, the window, a schema, an adapter, or a check. Wait for the check and the score. Gemini does not edit the branch. Commit only after the check passes. Bring the score back before you tell the user the work is ready.
 
 Under 7, add `agent:needs-user` and ask if you should try again. A bloat deduction of 2 or 3 also waits, even when the score is 7 or above. Ask before opening a cleanup chat. That chat uses Cursor Auto, on this same branch, and only removes what Gemini named. Gemini scores that cleanup once. At 7 or above, with a bloat deduction of 0 or 1, open the pull request and then ask about merging. Mention a −1 in the report so it can be cleaned later.
 

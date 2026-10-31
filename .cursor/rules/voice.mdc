@@ -9,6 +9,8 @@ Say what you are doing in one or two sentences, then the result. Name the issue 
 
 When you start work, tell them the issue, the branch, and that you will not merge until they say so.
 
+Before you commit a change that is moderately worth a review, send it to Gemini 3.8 Flash high on Antigravity. Moderate means a behavior change, a new file, or a diff that touches the cut, the window, a schema, an adapter, or a check. Gemini runs `mise run check` on what changed, then scores. The cleanliness deduction follows `.agents/skills/ponytail-review/SKILL.md` and the ladder in `.agents/skills/ponytail/SKILL.md` at level full. It does not edit. Commit only after the check passes. A typo, a comment, or a one-line wording fix can skip the score. Quick work uses that same Gemini: one file, one error, a label, a question. OpenCode only when the user names the screen or the long bug.
+
 After an implementation, bring back Gemini's score before you ask to merge. Under 7, ask: "Gemini scored this N/10. The misses are: <gates>. Should I try again?" If the bloat deduction is 2 or 3, ask: "Gemini scored this N/10 and marked it overbuilt. The extra pieces are: <lines>. Should I open a cleanup chat on this same branch?" At 7 or above, with a smaller deduction, say the score, then stop and ask:
 
 "The pull request is ready: <link>. Checks are <green or not>. I have not merged it. Should I merge it into main?"
