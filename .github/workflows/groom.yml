@@ -1,0 +1,35 @@
+name: Nightly groom
+
+# Zero-cost triage. Heuristic only: labels small slices grok-ready,
+# pings stale agent:claimed issues once. Never codes, never merges.
+# The Muse plan-comment seam inside scripts/groom.mjs runs only when
+# repository secrets MUSE_API_URL and MUSE_API_KEY exist.
+
+on:
+  schedule:
+    - cron: "23 4 * * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Dry run (no writes)"
+        type: choice
+        options: ["true", "false"]
+        default: "true"
+
+permissions:
+  issues: write
+  pull-requests: read
+
+jobs:
+  groom:
+    name: groom
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: jdx/mise-action@v4
+      - run: node scripts/groom.mjs ${{ github.event.inputs.dry_run == 'true' && '--dry-run' || '' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          MUSE_API_URL: ${{ secrets.MUSE_API_URL }}
+          MUSE_API_KEY: ${{ secrets.MUSE_API_KEY }}
+          MUSE_MODEL: ${{ secrets.MUSE_MODEL }}

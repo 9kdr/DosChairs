@@ -16,6 +16,7 @@ import {
   X,
 } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { motion, useReducedMotion } from "motion/react";
 import { SmoothScrollTarget } from "@/components/smooth-scroll";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -63,6 +64,10 @@ const OPENING_LINE: Line = {
   from: "expert",
   text: "Hold the face through the question. The turn is the suspense.",
 };
+
+// Placeholder line lengths behind the plan while it opens, in place of the
+// incoming text so the words never visibly reflow into their new layout.
+const SKELETON_WIDTHS = ["100%", "100%", "92%", "100%", "96%", "64%"];
 
 type PlanDocProps = {
   open: boolean;
@@ -568,6 +573,26 @@ export function PlanDoc({ open, mode, onOpen, onClose, notice, className }: Plan
   const [editingTab, setEditingTab] = useState<string | null>(null);
   const [editingLabel, setEditingLabel] = useState("");
   const areaRef = useRef<HTMLTextAreaElement>(null);
+
+  // Opening the plan grows its card over ~380ms (see OrchestratorBoard).
+  // The edit view opens behind skeleton placeholders for that window, then
+  // the real text fades in, so the words never reflow on screen. The
+  // skeleton never shows under reduced motion.
+  const reduce = useReducedMotion();
+  const [skeleton, setSkeleton] = useState(false);
+  const showingEdit = open && mode === "edit";
+  const wasShowingEdit = useRef(showingEdit);
+  useEffect(() => {
+    const was = wasShowingEdit.current;
+    wasShowingEdit.current = showingEdit;
+    if (!showingEdit || was || reduce) {
+      if (!showingEdit || reduce) setSkeleton(false);
+      return;
+    }
+    setSkeleton(true);
+    const timer = window.setTimeout(() => setSkeleton(false), 450);
+    return () => window.clearTimeout(timer);
+  }, [showingEdit, reduce]);
 
   // In preview, a block is edited in place: click it and its source lines
   // swap for a small textarea. Commit on blur or Cmd+Enter, cancel on
@@ -1273,12 +1298,15 @@ export function PlanDoc({ open, mode, onOpen, onClose, notice, className }: Plan
   }
 
   return (
-    <article
+    <motion.article
       aria-label="Plan"
       className={cn(
         "flex min-h-0 flex-1 flex-col gap-3 overflow-hidden rounded-[28px] bg-[#1a1a1a] p-4 text-neutral-100 shadow-raised ring-1 ring-white/8",
         className,
       )}
+      initial={reduce ? false : { opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ duration: 0.15, ease: "easeOut" }}
     >
       <div className="flex items-center gap-2">
         <h2 className="text-sm font-semibold tracking-wide">Plan</h2>
@@ -1596,8 +1624,18 @@ export function PlanDoc({ open, mode, onOpen, onClose, notice, className }: Plan
           <div
             ref={planScrollRef}
             aria-label={`Preview ${tabs.find((tab) => tab.id === doc)?.label ?? doc}`}
-            className="min-h-[20rem] flex-1 overflow-y-auto overscroll-contain"
+            className={cn(
+              "min-h-[20rem] flex-1 overflow-y-auto overscroll-contain",
+              skeleton && "relative",
+            )}
           >
+            <motion.div
+              aria-hidden={skeleton || undefined}
+              inert={skeleton}
+              initial={false}
+              animate={{ opacity: skeleton ? 0 : 1 }}
+              transition={{ duration: skeleton ? 0 : 0.22, ease: "easeOut" }}
+            >
               <MarkdownText
                 text={texts[doc] ?? ""}
                 editing={editingBlock}
@@ -1618,7 +1656,32 @@ export function PlanDoc({ open, mode, onOpen, onClose, notice, className }: Plan
                   blockAreaRef.current = el;
                 }}
               />
-            </div>
+            </motion.div>
+            {skeleton ? (
+              <motion.div
+                aria-hidden="true"
+                className="absolute inset-0 flex flex-col gap-2.5 overflow-hidden bg-[#1a1a1a]"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ duration: 0.15, ease: "easeOut" }}
+              >
+                {SKELETON_WIDTHS.map((width, index) => (
+                  <div
+                    key={index}
+                    style={{ width }}
+                    className="h-3.5 shrink-0 rounded-md bg-white/8"
+                  />
+                ))}
+                <motion.div
+                  aria-hidden="true"
+                  className="absolute inset-y-0 left-0 w-full bg-gradient-to-r from-transparent via-white/10 to-transparent"
+                  initial={{ x: "-100%" }}
+                  animate={{ x: "100%" }}
+                  transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
+                />
+              </motion.div>
+            ) : null}
+          </div>
           <SmoothScrollTarget target={planScrollRef} lerp={0.075} />
         </>
       ) : (
@@ -1659,6 +1722,6 @@ export function PlanDoc({ open, mode, onOpen, onClose, notice, className }: Plan
           </form>
         </>
       )}
-    </article>
+    </motion.article>
   );
 }

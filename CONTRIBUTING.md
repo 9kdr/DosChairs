@@ -21,6 +21,17 @@ chore/repo/ci-cache
 - Schema edits need `pnpm test:schemas` green and a fixture update.
 - Code owners default to `@9kdr`. Add yourself to `.github/CODEOWNERS` for the paths you will keep.
 
+## Nightly groom
+
+A scheduled workflow (`.github/workflows/groom.yml`, 04:23 UTC) triages issues while nobody is watching. It costs nothing by default: pure `gh` heuristics, no model calls.
+
+- Small slices gain `grok-ready`. That label is the only bot pick lane. Small means `type:task` + `p2-stretch`, one `area:`, no claim, no open PR.
+- Stale `agent:claimed` issues (over 2 days, no linked open PR) get one ping comment. Nothing is closed or unclaimed automatically.
+- Bots never merge and never claim outside `grok-ready`. A person still answers the merge question.
+- Dry run: `node scripts/groom.mjs --dry-run`. Manual run: Actions tab, `workflow_dispatch`.
+
+Muse seam (optional): set repository secrets `MUSE_API_URL`, `MUSE_API_KEY`, and optionally `MUSE_MODEL` to let the groom draft at most 3 short plan comments per run on fresh `grok-ready` picks. The script skips this silently when the secrets are missing. Never commit keys; `.env.example` rules apply.
+
 ## Cloud runner
 
 A scheduled workflow (`.github/workflows/code.yml`) codes one small issue per run and opens a PR. It never merges.

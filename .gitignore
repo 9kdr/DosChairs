@@ -84,3 +84,6 @@ coverage/
 **/*.onnx
 **/*.bin
 !schemas/**
+
+# taste-skill working files (dealt styles, local only)
+.taste-skill/

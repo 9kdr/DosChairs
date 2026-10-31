@@ -26,6 +26,10 @@ Need: <nothing, or which role you need>
 
 5. Branch from an up-to-date `main`.
 
+## Chats and branches
+
+A main chat usually holds one branch and works its related issues through in sequence. A piece that might conflict with the main line of work tends to belong in a subagent with a separate worktree. An issue that grows long or multi-step tends to work better as its own chat with its own branch, claimed and tracked like any other.
+
 ## Calling another agent
 
 Pick the model with `.cursor/skills/chair-models/SKILL.md`. Open a new T3 thread for that one problem. From a shell, use `t3 thread start` on project `/var/home/mel/Arch/dc`. Inside a T3 thread, use `delegate_task`. Do not paste the parent chat in. Do end an implementation task with the before-commit paragraph from that skill. A child does not inherit your chat.
