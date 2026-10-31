@@ -30,6 +30,7 @@ import {
 import { Tabs, TabsList, TabsTab } from "@/components/ui/tabs";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
+import { skeletonGroupsForText, splitMarkdownBlocks } from "./planSkeleton";
 
 type PlanMode = "edit" | "talk";
 
@@ -64,10 +65,6 @@ const OPENING_LINE: Line = {
   from: "expert",
   text: "Hold the face through the question. The turn is the suspense.",
 };
-
-// Placeholder line lengths behind the plan while it opens, in place of the
-// incoming text so the words never visibly reflow into their new layout.
-const SKELETON_WIDTHS = ["100%", "100%", "92%", "100%", "96%", "64%"];
 
 type PlanDocProps = {
   open: boolean;
@@ -225,57 +222,6 @@ const BLOCK_STYLES = [
 type BlockStyleId = (typeof BLOCK_STYLES)[number]["id"];
 
 type FormatId = (typeof FORMAT_ACTIONS)[number]["id"];
-
-type MdBlock = { start: number; end: number };
-
-/**
- * Line ranges of the document's blocks, in order, blank lines excluded.
- * The single source of truth for both rendering and keyboard navigation,
- * so the two can never disagree about where a block starts or ends.
- */
-function splitMarkdownBlocks(text: string): MdBlock[] {
-  const lines = text.split("\n");
-  const blocks: MdBlock[] = [];
-  const isBlank = (line: string) => line.trim() === "";
-  const isHeading = (line: string) => /^(#{1,3})\s+/.test(line);
-  const isQuote = (line: string) => /^\s*>\s?/.test(line);
-  const isBullet = (line: string) => /^\s*([-*])\s+/.test(line);
-  const isOrdered = (line: string) => /^\s*\d+\.\s+/.test(line);
-  let index = 0;
-  while (index < lines.length) {
-    if (isBlank(lines[index] ?? "")) {
-      index += 1;
-      continue;
-    }
-    const start = index;
-    const line = lines[index] ?? "";
-    if (isHeading(line)) {
-      index += 1;
-    } else if (isQuote(line)) {
-      while (index < lines.length && isQuote(lines[index] ?? "")) index += 1;
-    } else if (isBullet(line)) {
-      while (index < lines.length && isBullet(lines[index] ?? "")) index += 1;
-    } else if (isOrdered(line)) {
-      while (index < lines.length && isOrdered(lines[index] ?? "")) index += 1;
-    } else {
-      while (index < lines.length) {
-        const current = lines[index] ?? "";
-        if (
-          current.trim() === "" ||
-          isHeading(current) ||
-          isQuote(current) ||
-          isBullet(current) ||
-          isOrdered(current)
-        ) {
-          break;
-        }
-        index += 1;
-      }
-    }
-    blocks.push({ start, end: index });
-  }
-  return blocks;
-}
 
 /**
  * Renders exactly the markdown the toolbar can produce: headings, bold,
@@ -1660,17 +1606,21 @@ export function PlanDoc({ open, mode, onOpen, onClose, notice, className }: Plan
             {skeleton ? (
               <motion.div
                 aria-hidden="true"
-                className="absolute inset-0 flex flex-col gap-2.5 overflow-hidden bg-[#1a1a1a]"
+                className="absolute inset-0 flex flex-col gap-3 overflow-hidden bg-[#1a1a1a]"
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 transition={{ duration: 0.15, ease: "easeOut" }}
               >
-                {SKELETON_WIDTHS.map((width, index) => (
-                  <div
-                    key={index}
-                    style={{ width }}
-                    className="h-3.5 shrink-0 rounded-md bg-white/8"
-                  />
+                {skeletonGroupsForText(texts[doc] ?? "").map((widths, groupIndex) => (
+                  <div key={groupIndex} className="flex flex-col gap-2.5">
+                    {widths.map((width, barIndex) => (
+                      <div
+                        key={barIndex}
+                        style={{ width }}
+                        className="h-3.5 shrink-0 rounded-md bg-white/8"
+                      />
+                    ))}
+                  </div>
                 ))}
                 <motion.div
                   aria-hidden="true"
