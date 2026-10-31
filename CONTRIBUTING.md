@@ -21,6 +21,25 @@ chore/repo/ci-cache
 - Schema edits need `pnpm test:schemas` green and a fixture update.
 - Code owners default to `@9kdr`. Add yourself to `.github/CODEOWNERS` for the paths you will keep.
 
+## Cloud runner
+
+A scheduled workflow (`.github/workflows/code.yml`) codes one small issue per run and opens a PR. It never merges.
+
+- Picks the oldest open `grok-ready` issue with no `agent:claimed`, no `runner-attempted`, and no linked open PR. Marks everything it touches `runner-attempted` so a failure never retries itself into a loop.
+- Claims, branches `feat/<area>/<slug>`, runs a bounded Muse tool loop (25 steps, allowlisted commands, writes confined to the repo), then checks, pushes, and opens a PR. Red check means a failure comment and a released claim.
+- Requires repo secrets `MUSE_API_URL`, `MUSE_API_KEY` (and optional `MUSE_MODEL`, OpenAI-compatible). Missing secrets exit loudly before any write.
+- Dry run: `node scripts/runner.mjs --dry-run`. Manual run: Actions tab, `workflow_dispatch`, optional issue number.
+
+Three shifts, three jobs, no overlap:
+
+| Time (UTC) | Who | Job |
+| --- | --- | --- |
+| 04:23 daily | Groom job | Labels small slices `grok-ready`, pings stale claims |
+| 05:30 weekdays | Cloud runner | Codes one `grok-ready` issue, opens a PR |
+| 18:00 | Grok Bot | Reviews the tree, files new issues for groom to triage |
+
+Grok files issues, groom labels them, the runner codes them. Nobody merges but a person.
+
 ## Commits
 
 Short imperative subjects. The body should say why the change exists.
