@@ -6,11 +6,13 @@ import shutil
 import subprocess
 import threading
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
+from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
 PREVIEW_PRESET = "preview-640"
 PREVIEW_WIDTH = 640
@@ -32,6 +34,22 @@ FFMPEG_TOOLS: dict[str, JobKind] = {
 }
 
 
+# Model tools shell out to programs outside the repo; weights never live here.
+# sam3_mask protocol: `$CHAIR_SAM3_RUNNER --source <media> --prompt <json>
+# --output <matte.mp4>`. The prompt json is {"kind": "text", "prompt": "..."}
+# or {"kind": "point", "point": [x, y]} with x, y in 0..1. The runner writes
+# `progress=0..1` lines to stderr and exits 0 with a video file at --output.
+MODEL_TOOLS: dict[str, JobKind] = {
+    "sam3_mask": JobKind.SAM3_MASK,
+}
+
+
+def _checked_source(value: str) -> str:
+    if not value.strip():
+        raise ValueError("source is required")
+    return value
+
+
 class MediaRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -41,9 +59,7 @@ class MediaRequest(BaseModel):
     @field_validator("source")
     @classmethod
     def source_not_blank(cls, value: str) -> str:
-        if not value.strip():
-            raise ValueError("source is required")
-        return value
+        return _checked_source(value)
 
     @field_validator("time")
     @classmethod
@@ -51,6 +67,40 @@ class MediaRequest(BaseModel):
         if value is not None and value < 0:
             raise ValueError("time must be >= 0")
         return value
+
+
+class Sam3Request(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    source: str
+    prompt_kind: Literal["text", "point"] = "text"
+    prompt: str | None = None
+    point: tuple[float, float] | None = None
+
+    @field_validator("source")
+    @classmethod
+    def source_not_blank(cls, value: str) -> str:
+        return _checked_source(value)
+
+    @model_validator(mode="after")
+    def prompt_matches_kind(self) -> "Sam3Request":
+        if self.prompt_kind == "text":
+            if self.prompt is None or not self.prompt.strip():
+                raise ValueError("text prompts need prompt")
+        else:
+            if self.point is None:
+                raise ValueError("point prompts need point")
+            if any(not 0.0 <= axis <= 1.0 for axis in self.point):
+                raise ValueError("point must be within 0..1")
+        return self
+
+    def prompt_payload(self) -> dict:
+        payload: dict[str, object] = {"kind": self.prompt_kind}
+        if self.prompt is not None:
+            payload["prompt"] = self.prompt
+        if self.point is not None:
+            payload["point"] = list(self.point)
+        return payload
 
 
 @dataclass
@@ -93,6 +143,11 @@ def binary(name: str) -> str:
     return found
 
 
+def sam3_runner() -> str | None:
+    configured = os.environ.get("CHAIR_SAM3_RUNNER", "").strip()
+    return configured or None
+
+
 def parse_progress(line: str, duration: float) -> float | None:
     # out_time_ms is microseconds in ffmpeg. out_time_us is the clock.
     stripped = line.strip()
@@ -102,6 +157,17 @@ def parse_progress(line: str, duration: float) -> float | None:
     if raw == "N/A" or duration <= 0:
         return None
     fraction = int(raw) / (duration * 1_000_000)
+    return min(max(fraction, 0.0), 0.99)
+
+
+def parse_runner_progress(line: str) -> float | None:
+    stripped = line.strip()
+    if not stripped.startswith("progress="):
+        return None
+    try:
+        fraction = float(stripped.split("=", 1)[1])
+    except ValueError:
+        return None
     return min(max(fraction, 0.0), 0.99)
 
 
@@ -167,13 +233,23 @@ class JobStore:
         self._jobs: dict[str, JobRecord] = {}
         self._lock = threading.Lock()
 
-    def submit(self, tool: str, request: MediaRequest) -> dict:
-        try:
+    def submit(self, tool: str, request: MediaRequest | Sam3Request) -> dict:
+        if tool in FFMPEG_TOOLS:
+            if not isinstance(request, MediaRequest):
+                raise ValueError(f"{tool} needs source and time fields")
             kind = FFMPEG_TOOLS[tool]
-        except KeyError:
-            raise ValueError(f"unknown tool: {tool}") from None
-        if tool == "get_frame" and request.time is None:
-            raise ValueError("get_frame requires time")
+            if tool == "get_frame" and request.time is None:
+                raise ValueError("get_frame requires time")
+            time_s = request.time
+            prompt: dict | None = None
+        elif tool in MODEL_TOOLS:
+            if not isinstance(request, Sam3Request):
+                raise ValueError(f"{tool} needs source and prompt fields")
+            kind = MODEL_TOOLS[tool]
+            time_s = None
+            prompt = request.prompt_payload()
+        else:
+            raise ValueError(f"unknown tool: {tool}")
         source = Path(request.source).expanduser().resolve()
         if not source.is_file():
             raise ValueError(f"source is not a file: {source}")
@@ -189,7 +265,7 @@ class JobStore:
             snapshot = job.public()
         threading.Thread(
             target=self._run,
-            args=(job.id, tool, source, request.time),
+            args=(job.id, tool, source, time_s, prompt),
             daemon=True,
         ).start()
         return snapshot
@@ -205,7 +281,14 @@ class JobStore:
             for key, value in fields.items():
                 setattr(job, key, value)
 
-    def _run(self, job_id: str, tool: str, source: Path, time_s: float | None) -> None:
+    def _run(
+        self,
+        job_id: str,
+        tool: str,
+        source: Path,
+        time_s: float | None,
+        prompt: dict | None,
+    ) -> None:
         self._update(job_id, status="running")
         before = _fingerprint(source)
         try:
@@ -215,6 +298,10 @@ class JobStore:
                 if time_s is None:
                     raise RuntimeError("get_frame requires time")
                 result = self._get_frame(job_id, source, time_s)
+            elif tool == "sam3_mask":
+                if prompt is None:
+                    raise RuntimeError("sam3_mask requires a prompt")
+                result = self._track_matte(job_id, source, prompt)
             else:
                 result = self._measure_audio(job_id, source)
             if _fingerprint(source) != before:
@@ -340,6 +427,42 @@ class JobStore:
             "active": active_spans(silence, duration),
         }
 
+    def _track_matte(self, job_id: str, source: Path, prompt: dict) -> dict:
+        runner = sam3_runner()
+        if runner is None:
+            raise RuntimeError("CHAIR_SAM3_RUNNER is not set; SAM 3 weights run outside the repo")
+        info = self._probe(source)
+        if _video_size(info) is None:
+            raise RuntimeError("source has no video stream")
+        key = _cache_key(source, "sam3", json.dumps(prompt, sort_keys=True))
+        dest = self._output(source, f"matte-{key}.mp4")
+        cached = self._probe_if_ready(dest)
+        if cached is not None:
+            return _matte_result(
+                cached, source=str(source), prompt=prompt, matte=str(dest), cached=True
+            )
+        part = self._part(dest, job_id)
+        command = [
+            runner,
+            "--source",
+            str(source),
+            "--prompt",
+            json.dumps(prompt),
+            "--output",
+            str(part),
+        ]
+        try:
+            self._run_runner(job_id, command)
+            if _video_size(self._probe(part)) is None:
+                raise RuntimeError("sam3 runner output has no video stream")
+            os.replace(part, dest)
+        except Exception:
+            part.unlink(missing_ok=True)
+            raise
+        return _matte_result(
+            self._probe(dest), source=str(source), prompt=prompt, matte=str(dest), cached=False
+        )
+
     def _ffmpeg(self, job_id: str, args: list[str], duration: float) -> str:
         command = [
             binary("ffmpeg"),
@@ -350,24 +473,42 @@ class JobStore:
             "pipe:2",
             *args,
         ]
-        process = subprocess.Popen(
-            command,
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.PIPE,
-            text=True,
+        return self._run_command(
+            job_id, command, lambda line: parse_progress(line, duration), what="ffmpeg"
         )
+
+    def _run_runner(self, job_id: str, command: list[str]) -> str:
+        return self._run_command(job_id, command, parse_runner_progress, what="sam3 runner")
+
+    def _run_command(
+        self,
+        job_id: str,
+        command: list[str],
+        parse: Callable[[str], float | None],
+        *,
+        what: str,
+    ) -> str:
+        try:
+            process = subprocess.Popen(
+                command,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+        except OSError as exc:
+            raise RuntimeError(f"{what} failed to start: {exc}") from exc
         lines: list[str] = []
         assert process.stderr is not None
         for line in process.stderr:
             lines.append(line)
-            fraction = parse_progress(line, duration)
+            fraction = parse(line)
             if fraction is not None:
                 self._update(job_id, progress=round(fraction, 4))
         code = process.wait()
         log = "".join(lines)
         if code != 0:
-            raise RuntimeError(_tail(log) or f"ffmpeg exited {code}")
+            raise RuntimeError(_tail(log) or f"{what} exited {code}")
         return log
 
     def _probe(self, path: Path) -> dict:
@@ -436,6 +577,21 @@ def _picture_result(info: dict, *, proxy: str, preset: str, cached: bool) -> dic
     return {
         "proxy": proxy,
         "preset": preset,
+        "width": width,
+        "height": height,
+        "duration": _duration(info),
+        "cached": cached,
+    }
+
+
+def _matte_result(
+    info: dict, *, source: str, prompt: dict, matte: str, cached: bool
+) -> dict:
+    width, height = _video_size(info) or (0, 0)
+    return {
+        "matte": matte,
+        "source": source,
+        "prompt_kind": prompt.get("kind"),
         "width": width,
         "height": height,
         "duration": _duration(info),

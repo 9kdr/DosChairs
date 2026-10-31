@@ -12,12 +12,15 @@ from chair_sidecar.__main__ import SidecarServer
 from chair_sidecar.jobs import (
     JobKind,
     JobStore,
+    Sam3Request,
     active_spans,
     default_proxy_dir,
     parse_ebur128,
     parse_progress,
+    parse_runner_progress,
     parse_silence,
 )
+from pydantic import ValidationError
 
 
 def test_job_kinds() -> None:
@@ -28,6 +31,34 @@ def test_progress_uses_out_time_us() -> None:
     assert parse_progress("out_time_us=500000\n", 1.0) == 0.5
     assert parse_progress("out_time_ms=500000\n", 1.0) is None
     assert parse_progress("out_time_us=2000000\n", 1.0) == 0.99
+
+
+def test_runner_progress_lines_move_the_job() -> None:
+    assert parse_runner_progress("progress=0.5\n") == 0.5
+    assert parse_runner_progress("frame=12\n") is None
+    assert parse_runner_progress("progress=2\n") == 0.99
+    assert parse_runner_progress("progress=banana\n") is None
+
+
+def test_sam3_request_needs_a_prompt_matching_its_kind() -> None:
+    with pytest.raises(ValidationError, match="source is required"):
+        Sam3Request.model_validate({"source": "  ", "prompt": "the speaker"})
+    with pytest.raises(ValidationError, match="text prompts need prompt"):
+        Sam3Request.model_validate({"source": "clip.mp4", "prompt_kind": "text"})
+    with pytest.raises(ValidationError, match="point prompts need point"):
+        Sam3Request.model_validate({"source": "clip.mp4", "prompt_kind": "point"})
+    with pytest.raises(ValidationError, match="within 0..1"):
+        Sam3Request.model_validate(
+            {"source": "clip.mp4", "prompt_kind": "point", "point": [1.5, 0.5]}
+        )
+    text = Sam3Request.model_validate(
+        {"source": "clip.mp4", "prompt_kind": "text", "prompt": "the speaker"}
+    )
+    assert text.prompt_payload() == {"kind": "text", "prompt": "the speaker"}
+    point = Sam3Request.model_validate(
+        {"source": "clip.mp4", "prompt_kind": "point", "point": [0.5, 0.4]}
+    )
+    assert point.prompt_payload() == {"kind": "point", "point": [0.5, 0.4]}
 
 
 def test_loudness_parser_uses_the_summary() -> None:
@@ -138,6 +169,33 @@ def server(store: _RecordingStore):
     httpd.server_close()
 
 
+@pytest.fixture
+def fake_runner(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> str:
+    script = tmp_path / "fake-sam3"
+    script.write_text(
+        "#!/usr/bin/env python3\n"
+        "import argparse, json, subprocess, sys\n"
+        "parser = argparse.ArgumentParser()\n"
+        "parser.add_argument('--source')\n"
+        "parser.add_argument('--prompt')\n"
+        "parser.add_argument('--output')\n"
+        "args = parser.parse_args()\n"
+        "prompt = json.loads(args.prompt)\n"
+        "assert prompt['kind'] in ('text', 'point'), prompt\n"
+        "print('progress=0.2', file=sys.stderr, flush=True)\n"
+        "subprocess.run(\n"
+        "    ['ffmpeg', '-y', '-hide_banner', '-loglevel', 'error',\n"
+        "     '-i', args.source, '-vf', 'format=gray', '-c:v', 'libx264',\n"
+        "     '-pix_fmt', 'yuv420p', '-an', args.output],\n"
+        "    check=True,\n"
+        ")\n"
+        "print('progress=0.9', file=sys.stderr, flush=True)\n"
+    )
+    script.chmod(0o755)
+    monkeypatch.setenv("CHAIR_SAM3_RUNNER", str(script))
+    return str(script)
+
+
 def _request(method: str, url: str, payload: dict | None = None) -> tuple[int, dict]:
     data = None if payload is None else json.dumps(payload).encode()
     headers = {} if data is None else {"content-type": "application/json"}
@@ -185,6 +243,8 @@ def test_health_lists_job_kinds(server: str) -> None:
     assert status == 200
     assert body["ok"] is True
     assert "measure_audio" in body["jobs"]
+    assert "sam3_mask" in body["jobs"]
+    assert isinstance(body["sam3_runner"], bool)
 
 
 def test_render_preview_writes_a_cached_proxy(
@@ -308,7 +368,91 @@ def test_bad_requests_never_start(server: str, tmp_path: Path) -> None:
     )
     assert needs_time == 400
     assert "requires time" in needs_time_body["error"]
-    unknown, _unknown_body = _request("POST", f"{server}/jobs/sam3_mask", {"source": "x"})
+    no_prompt, no_prompt_body = _request(
+        "POST",
+        f"{server}/jobs/sam3_mask",
+        {"source": "clip.mp4"},
+    )
+    assert no_prompt == 400
+    assert "prompt" in no_prompt_body["error"]
+    unknown, _unknown_body = _request("POST", f"{server}/jobs/not_a_tool", {"source": "x"})
     assert unknown == 404
     absent, _absent_body = _request("GET", f"{server}/jobs/does-not-exist")
     assert absent == 404
+
+
+def test_sam3_mask_tracks_a_matte_as_a_separate_file(
+    server: str,
+    store: _RecordingStore,
+    proxy_dir: Path,
+    source_media: Path,
+    fake_runner: str,
+) -> None:
+    digest = _sha256(source_media)
+    status, queued = _request(
+        "POST",
+        f"{server}/jobs/sam3_mask",
+        {"source": str(source_media), "prompt_kind": "text", "prompt": "the speaker"},
+    )
+    assert status == 202
+    assert queued["tool"] == "sam3_mask"
+    assert queued["kind"] == "sam3_mask"
+    job = _wait(server, queued["id"])
+    assert job["status"] == "done", job["error"]
+    assert job["progress"] == 1.0
+    assert any(0 < seen < 1 for seen in store.seen)
+    result = job["result"]
+    matte = Path(result["matte"])
+    assert result["source"] == str(source_media)
+    assert result["prompt_kind"] == "text"
+    assert result["width"] == 320
+    assert result["height"] == 240
+    assert result["cached"] is False
+    assert matte.suffix == ".mp4"
+    assert matte.is_relative_to(proxy_dir)
+    assert matte != source_media
+    assert _streams(matte)[0]["codec_type"] == "video"
+    assert _sha256(source_media) == digest
+    again = _wait(
+        server,
+        _request(
+            "POST",
+            f"{server}/jobs/sam3_mask",
+            {"source": str(source_media), "prompt_kind": "text", "prompt": "the speaker"},
+        )[1]["id"],
+    )
+    assert again["result"]["cached"] is True
+    assert again["result"]["matte"] == str(matte)
+    assert _sha256(source_media) == digest
+
+
+def test_sam3_mask_accepts_a_point_prompt(
+    server: str, source_media: Path, fake_runner: str
+) -> None:
+    digest = _sha256(source_media)
+    status, queued = _request(
+        "POST",
+        f"{server}/jobs/sam3_mask",
+        {"source": str(source_media), "prompt_kind": "point", "point": [0.5, 0.4]},
+    )
+    assert status == 202
+    job = _wait(server, queued["id"])
+    assert job["status"] == "done", job["error"]
+    assert job["result"]["prompt_kind"] == "point"
+    assert Path(job["result"]["matte"]).is_file()
+    assert _sha256(source_media) == digest
+
+
+def test_sam3_mask_fails_with_a_clear_error_when_no_runner(
+    server: str, source_media: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("CHAIR_SAM3_RUNNER", raising=False)
+    status, queued = _request(
+        "POST",
+        f"{server}/jobs/sam3_mask",
+        {"source": str(source_media), "prompt_kind": "text", "prompt": "the speaker"},
+    )
+    assert status == 202
+    job = _wait(server, queued["id"])
+    assert job["status"] == "failed"
+    assert "CHAIR_SAM3_RUNNER" in job["error"]
