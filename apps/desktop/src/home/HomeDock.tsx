@@ -89,7 +89,10 @@ export function HomeDock({
             <MonitorPlayIcon />
           </DockButton>
 
-          <span aria-hidden="true" className="mx-1 h-5 w-px bg-line" />
+          <span
+            aria-hidden="true"
+            className="mx-1 h-5 border-l border-white/[0.08] border-r border-black/50"
+          />
 
           <DockButton label="Account" onClick={onAccount}>
             <UserRoundIcon />
