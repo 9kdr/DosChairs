@@ -7,9 +7,11 @@ from pydantic import ValidationError
 from chair_sidecar.jobs import (
     FFMPEG_TOOLS,
     MODEL_TOOLS,
+    MUSIC_TOOLS,
     JobKind,
     JobStore,
     MediaRequest,
+    MusicRequest,
     Sam3Request,
     default_proxy_dir,
     sam3_runner,
@@ -55,10 +57,15 @@ class Handler(BaseHTTPRequestHandler):
             self.send_error(404)
             return
         tool = self.path.removeprefix(prefix)
-        if tool not in FFMPEG_TOOLS and tool not in MODEL_TOOLS:
+        if tool not in FFMPEG_TOOLS and tool not in MODEL_TOOLS and tool not in MUSIC_TOOLS:
             self._json(404, {"error": "unknown tool"})
             return
-        model = Sam3Request if tool in MODEL_TOOLS else MediaRequest
+        if tool in MODEL_TOOLS:
+            model = Sam3Request
+        elif tool in MUSIC_TOOLS:
+            model = MusicRequest
+        else:
+            model = MediaRequest
         try:
             request = model.model_validate(self._payload())
             job = self._store().submit(tool, request)

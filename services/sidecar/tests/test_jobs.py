@@ -1,18 +1,24 @@
+import array
 import hashlib
 import json
+import math
 import subprocess
+import sys
 import threading
 import time
+import wave
 from pathlib import Path
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 import pytest
+from chair_sidecar import music
 from chair_sidecar.__main__ import SidecarServer
 from chair_sidecar.jobs import (
     JobKind,
     JobStore,
     MediaRequest,
+    MusicRequest,
     Sam3Request,
     active_spans,
     default_proxy_dir,
@@ -245,6 +251,7 @@ def test_health_lists_job_kinds(server: str) -> None:
     assert body["ok"] is True
     assert "measure_audio" in body["jobs"]
     assert "sam3_mask" in body["jobs"]
+    assert "analyze_music" in body["jobs"]
     assert isinstance(body["sam3_runner"], bool)
 
 
@@ -516,3 +523,162 @@ def test_corrupt_job_file_starts_empty(proxy_dir: Path) -> None:
     (proxy_dir / "jobs.json").write_text("not json{")
     restarted = JobStore(proxy_dir)
     assert restarted.get("anything") is None
+
+
+def _click_samples(bpm: float, seconds: float = 4.0) -> array.array[int]:
+    rate = music.SAMPLE_RATE
+    frames: array.array[int] = array.array("h", [0]) * int(seconds * rate)
+    beat = 0.0
+    while beat < seconds:
+        start = int(beat * rate)
+        for i in range(300):
+            if start + i < len(frames):
+                frames[start + i] = int(16000 * math.exp(-i / 60))
+        beat += 60.0 / bpm
+    return frames
+
+
+def _write_click_wav(path: Path, bpm: float) -> Path:
+    frames = _click_samples(bpm)
+    if sys.byteorder != "little":
+        frames.byteswap()
+    with wave.open(str(path), "wb") as wav:
+        wav.setnchannels(1)
+        wav.setsampwidth(2)
+        wav.setframerate(music.SAMPLE_RATE)
+        wav.writeframes(frames.tobytes())
+    return path
+
+
+def test_click_tracks_measure_their_tempo() -> None:
+    for bpm in (90.0, 120.0, 150.0):
+        found = music.analyze(_click_samples(bpm), duration=4.0)
+        assert found["tempo_bpm"] == pytest.approx(bpm, abs=0.2)
+        assert found["tempo_confidence"] == 1.0
+        step = 60.0 / bpm
+        assert len(found["beats"]) == round(4.0 / step)
+        for beat in found["beats"]:
+            nearest = round(beat / step) * step
+            assert abs(beat - nearest) < 0.01
+
+
+def test_steady_audio_has_no_tempo() -> None:
+    rate = music.SAMPLE_RATE
+    sine = array.array(
+        "h", (int(8000 * math.sin(2 * math.pi * 440 * i / rate)) for i in range(rate))
+    )
+    assert music.analyze(sine, duration=1.0) == {
+        "tempo_bpm": None,
+        "tempo_confidence": 0.0,
+        "transients": [],
+        "beats": [],
+    }
+    silence: array.array[int] = array.array("h", [0]) * rate * 2
+    assert music.analyze(silence, duration=2.0)["beats"] == []
+
+
+def test_markers_carry_resolve_fields() -> None:
+    markers = music.build_markers(
+        beats=[0.5, 1.0],
+        transients=[0.25],
+        words=[{"word": "hey", "start": 0.1, "end": 0.4}],
+        tempo_bpm=120.0,
+        fps=25,
+    )
+    assert [marker["time"] for marker in markers] == [0.1, 0.25, 0.5, 1.0]
+    assert [marker["kind"] for marker in markers] == ["word", "transient", "beat", "beat"]
+    assert [marker["color"] for marker in markers] == ["Green", "Yellow", "Blue", "Blue"]
+    assert [marker["frame"] for marker in markers] == [2, 6, 12, 25]
+    assert markers[0]["name"] == "hey"
+    assert markers[2]["name"] == "Beat 1"
+    assert markers[2]["note"] == "120.0 BPM"
+    assert "frame" not in music.build_markers(
+        beats=[0.5], transients=[], words=[], tempo_bpm=None, fps=None
+    )[0]
+
+
+def test_music_request_validates_words_and_fps() -> None:
+    with pytest.raises(ValidationError, match="end must be"):
+        MusicRequest.model_validate(
+            {"source": "song.wav", "words": [{"word": "hey", "start": 0.5, "end": 0.2}]}
+        )
+    with pytest.raises(ValidationError, match="fps must be"):
+        MusicRequest.model_validate({"source": "song.wav", "fps": 0})
+    request = MusicRequest.model_validate({"source": "song.wav"})
+    assert request.fps is None
+    assert request.words == []
+
+
+def test_analyze_music_caches_markers_per_asset(
+    server: str,
+    store: _RecordingStore,
+    proxy_dir: Path,
+    tmp_path: Path,
+) -> None:
+    clicks = _write_click_wav(tmp_path / "clicks.wav", 120.0)
+    digest = _sha256(clicks)
+    status, queued = _request(
+        "POST", f"{server}/jobs/analyze_music", {"source": str(clicks), "fps": 25}
+    )
+    assert status == 202
+    assert queued["tool"] == "analyze_music"
+    assert queued["kind"] == "analyze_music"
+    job = _wait(server, queued["id"])
+    assert job["status"] == "done", job["error"]
+    assert job["progress"] == 1.0
+    assert any(0 < seen < 1 for seen in store.seen)
+    result = job["result"]
+    assert result["tempo_bpm"] == pytest.approx(120.0, abs=0.5)
+    assert len(result["beats"]) == 8
+    assert result["cached"] is False
+    markers_file = Path(result["markers_file"])
+    assert markers_file.is_relative_to(proxy_dir)
+    assert markers_file.name.startswith("music-")
+    stored = json.loads(markers_file.read_text(encoding="utf-8"))
+    assert stored["markers"] == result["markers"]
+    assert stored["tempo_bpm"] == result["tempo_bpm"]
+    assert {marker["kind"] for marker in result["markers"]} <= {"beat", "transient", "word"}
+    assert all(marker["frame"] == round(marker["time"] * 25) for marker in result["markers"])
+    assert _sha256(clicks) == digest
+    again = _wait(
+        server,
+        _request(
+            "POST", f"{server}/jobs/analyze_music", {"source": str(clicks), "fps": 25}
+        )[1]["id"],
+    )
+    assert again["result"]["cached"] is True
+    assert again["result"]["markers_file"] == str(markers_file)
+    assert again["result"]["markers"] == result["markers"]
+    assert _sha256(clicks) == digest
+
+
+def test_analyze_music_words_become_markers(server: str, tmp_path: Path) -> None:
+    clicks = _write_click_wav(tmp_path / "clicks.wav", 120.0)
+    words = [
+        {"word": "hello", "start": 0.1, "end": 0.4},
+        {"word": "world", "start": 0.5, "end": 0.9},
+    ]
+    _, queued = _request(
+        "POST", f"{server}/jobs/analyze_music", {"source": str(clicks), "words": words}
+    )
+    job = _wait(server, queued["id"])
+    assert job["status"] == "done", job["error"]
+    word_markers = [m for m in job["result"]["markers"] if m["kind"] == "word"]
+    assert [(m["name"], m["time"]) for m in word_markers] == [("hello", 0.1), ("world", 0.5)]
+    assert all(m["color"] == "Green" for m in word_markers)
+
+
+def test_analyze_music_rejects_bad_words(server: str, tmp_path: Path) -> None:
+    clicks = _write_click_wav(tmp_path / "clicks.wav", 120.0)
+    bad_end, bad_end_body = _request(
+        "POST",
+        f"{server}/jobs/analyze_music",
+        {"source": str(clicks), "words": [{"word": "hey", "start": 0.5, "end": 0.2}]},
+    )
+    assert bad_end == 400
+    assert "end must be" in bad_end_body["error"]
+    bad_fps, bad_fps_body = _request(
+        "POST", f"{server}/jobs/analyze_music", {"source": str(clicks), "fps": -1}
+    )
+    assert bad_fps == 400
+    assert "fps must be" in bad_fps_body["error"]
