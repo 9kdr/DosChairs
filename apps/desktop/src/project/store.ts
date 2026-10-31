@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { Changeset, ChangesetItem, Timeline } from "@chair/timeline-ir";
+import type { Changeset, ChangesetItem, EditOp, Timeline } from "@chair/timeline-ir";
 
 /**
  * The project store: one open timeline plus one proposed changeset.
@@ -168,24 +168,197 @@ export function reviewItem(changeset: Changeset, id: string, decision: Decision)
   return found ? { ...changeset, items } : changeset;
 }
 
+/**
+ * One accepted edit's undo point, shaped like the history entry in #75:
+ * `{ taskId, changesetId, itemId, op, targetId, baseRevision, forward,
+ * inverse, acceptedAt, acceptedBy }`. Stand-in data until #75 lands: the
+ * task id is fixed, the inverse patch is a marker, and nothing here can
+ * roll back — the "Undo to here" buttons stay disabled until then.
+ */
+export type HistoryEntry = {
+  taskId: string;
+  changesetId: string;
+  itemId: string;
+  op: EditOp;
+  targetId?: string;
+  baseRevision: string;
+  forward: Record<string, unknown>;
+  inverse: Record<string, unknown>;
+  acceptedAt: string;
+  acceptedBy: string;
+};
+
+/** Stand-in provenance until live agent output (#61) and rollback (#75) land. */
+export const STAND_IN_TASK_ID = "task-stand-in";
+export const STAND_IN_ACCEPTED_BY = "you";
+
+/** Build the history entry for one accepted item. Rejected items never call this. */
+export function historyEntryForItem(
+  changeset: Changeset,
+  item: Pick<ChangesetItem, "id" | "op" | "targetId" | "patch">,
+  acceptedBy: string,
+  acceptedAt: string,
+  taskId: string = STAND_IN_TASK_ID,
+): HistoryEntry {
+  return {
+    taskId,
+    changesetId: changeset.id,
+    itemId: item.id,
+    op: item.op,
+    targetId: item.targetId,
+    baseRevision: changeset.baseRevision,
+    forward: item.patch ?? {},
+    inverse: { op: item.op, standIn: true },
+    acceptedAt,
+    acceptedBy,
+  };
+}
+
+type TaskHistorySpec = Pick<ChangesetItem, "id" | "op" | "targetId" | "patch"> & {
+  acceptedAt: string;
+};
+
+/**
+ * Stand-in accepted history per running task (ids from STANDIN_TASKS),
+ * oldest first. Real entries arrive with #61/#75; unknown tasks have none.
+ */
+const TASK_HISTORY: Record<string, TaskHistorySpec[]> = {
+  "task-1": [
+    {
+      id: "item-task-1-a",
+      op: "add_clip",
+      targetId: "v1",
+      patch: { clipId: "clip-a-roll" },
+      acceptedAt: "2026-10-31T16:30:00.000Z",
+    },
+    {
+      id: "item-task-1-b",
+      op: "trim",
+      targetId: "clip-interview",
+      patch: { edge: "head", frames: 12 },
+      acceptedAt: "2026-10-31T16:38:00.000Z",
+    },
+  ],
+  "task-2": [
+    {
+      id: "item-task-2-a",
+      op: "add_effect",
+      targetId: "clip-interview",
+      patch: { presetName: "Halation" },
+      acceptedAt: "2026-10-31T16:35:00.000Z",
+    },
+  ],
+  "task-3": [
+    {
+      id: "item-task-3-a",
+      op: "add_marker",
+      patch: {
+        marker: {
+          id: "mark-pause-1",
+          name: "Pause",
+          time: { value: 86448, rate: 24 },
+          kind: "user",
+        },
+      },
+      acceptedAt: "2026-10-31T16:36:00.000Z",
+    },
+  ],
+  "task-4": [
+    {
+      id: "item-task-4-a",
+      op: "add_effect",
+      targetId: "clip-scene-04",
+      patch: { presetName: "Match reference" },
+      acceptedAt: "2026-10-31T16:37:00.000Z",
+    },
+  ],
+};
+
+/** Stand-in history for one running task, shaped like the entries in #75. */
+export function historyForTask(taskId: string): HistoryEntry[] {
+  const specs = TASK_HISTORY[taskId] ?? [];
+  const changeset: Changeset = {
+    schemaVersion: "0.1.0",
+    id: `cs-${taskId}-1`,
+    baseRevision: "r0",
+    items: [],
+  };
+  return specs.map((spec) =>
+    historyEntryForItem(changeset, spec, STAND_IN_ACCEPTED_BY, spec.acceptedAt, taskId),
+  );
+}
+
+/**
+ * Accept every pending item at once. Already decided items keep their
+ * status. Returns the new changeset plus the items this call accepted.
+ */
+export function acceptAllPending(changeset: Changeset): {
+  changeset: Changeset;
+  accepted: ChangesetItem[];
+} {
+  const accepted = changeset.items.filter((item) => item.status === "pending");
+  if (accepted.length === 0) return { changeset, accepted };
+  return {
+    changeset: {
+      ...changeset,
+      items: changeset.items.map((item) =>
+        item.status === "pending" ? { ...item, status: "accepted" as const } : item,
+      ),
+    },
+    accepted,
+  };
+}
+
 export type ProjectStore = {
   timeline: Timeline;
   changeset: Changeset;
+  history: HistoryEntry[];
   pendingCount: number;
   acceptItem: (id: string) => void;
   rejectItem: (id: string) => void;
+  acceptAll: () => void;
 };
 
 /** Open a project: its timeline mirror plus its pending proposals. */
 export function useProject(projectId: string, projectName: string): ProjectStore {
   const [timeline] = useState<Timeline>(() => sampleTimeline(projectId, projectName));
   const [changeset, setChangeset] = useState<Changeset>(sampleChangeset);
+  const [history, setHistory] = useState<HistoryEntry[]>([]);
+
+  const appendHistory = (decided: ChangesetItem[], stamp: string) => {
+    if (decided.length === 0) return;
+    setHistory((current) => {
+      const known = new Set(current.map((entry) => entry.itemId));
+      const fresh = decided.filter((item) => !known.has(item.id));
+      if (fresh.length === 0) return current;
+      return [
+        ...current,
+        ...fresh.map((item) => historyEntryForItem(changeset, item, STAND_IN_ACCEPTED_BY, stamp)),
+      ];
+    });
+  };
+
+  const acceptItem = (id: string) => {
+    const item = changeset.items.find((entry) => entry.id === id);
+    if (!item || item.status !== "pending") return;
+    setChangeset(reviewItem(changeset, id, "accepted"));
+    appendHistory([item], new Date().toISOString());
+  };
+
+  const acceptAll = () => {
+    const { changeset: next, accepted } = acceptAllPending(changeset);
+    if (accepted.length === 0) return;
+    setChangeset(next);
+    appendHistory(accepted, new Date().toISOString());
+  };
 
   return {
     timeline,
     changeset,
+    history,
     pendingCount: changeset.items.filter((item) => item.status === "pending").length,
-    acceptItem: (id) => setChangeset((current) => reviewItem(current, id, "accepted")),
+    acceptItem,
     rejectItem: (id) => setChangeset((current) => reviewItem(current, id, "rejected")),
+    acceptAll,
   };
 }

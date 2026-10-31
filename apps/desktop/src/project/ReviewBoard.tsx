@@ -1,9 +1,12 @@
-import { ClapperboardIcon, ListChecksIcon } from "lucide-react";
+import { ChevronDownIcon, ClapperboardIcon, ListChecksIcon } from "lucide-react";
+import { useState } from "react";
 import type { RationalTime } from "@chair/timeline-ir";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { OpDiff } from "./OpDiff";
 import type { ProjectStore } from "./store";
+import type { ChangesetItem } from "@chair/timeline-ir";
 
 const CARD = "rounded-[28px] bg-[#1a1a1a] text-neutral-100 shadow-raised ring-1 ring-white/8";
 
@@ -25,7 +28,7 @@ function seconds(time: RationalTime): string {
   return `${Number.isInteger(value) ? value : value.toFixed(1)}s`;
 }
 
-function opLabel(op: string): string {
+export function opLabel(op: string): string {
   return op
     .split("_")
     .map((word) => word[0]!.toUpperCase() + word.slice(1))
@@ -33,9 +36,10 @@ function opLabel(op: string): string {
 }
 
 /**
- * Project review: the proposed edits against this cut, and the timeline
+ * Project review: the proposed edits against this cut and the timeline
  * mirror beside them. Accept or reject flips an item's status only; the
- * mirror always shows the cut as it stands.
+ * mirror always shows the cut as it stands. Accepted edits land in the
+ * History card beside the running tasks.
  */
 export function ReviewBoard({ store }: { store: ProjectStore }) {
   const { timeline, changeset, pendingCount } = store;
@@ -61,53 +65,23 @@ export function ReviewBoard({ store }: { store: ProjectStore }) {
         >
           <div className="flex shrink-0 items-center gap-2 px-1 pb-1">
             <h3 className="text-sm font-semibold tracking-wide text-neutral-100">Proposed edits</h3>
+            {pendingCount > 0 ? (
+              <Button type="button" size="sm" onClick={() => store.acceptAll()}>
+                Accept all ({pendingCount})
+              </Button>
+            ) : null}
             <span className="ml-auto text-xs tabular-nums text-neutral-500">
               {changeset.items.length} items
             </span>
           </div>
           <ul className="flex min-h-0 flex-col">
             {changeset.items.map((item) => (
-              <li
+              <ChangesetItemRow
                 key={item.id}
-                className="flex items-center gap-3 border-t border-white/[0.06] px-1 py-3 first:border-t-0 first:pt-1 last:pb-1"
-              >
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium text-neutral-100">
-                    {opLabel(item.op)}
-                    {item.targetId ? (
-                      <span className="ml-2 font-normal text-neutral-500">{item.targetId}</span>
-                    ) : null}
-                  </p>
-                  <p className="mt-0.5 line-clamp-2 text-xs leading-5 text-neutral-400">
-                    {item.rationale}
-                  </p>
-                </div>
-                {item.status === "pending" ? (
-                  <div className="flex shrink-0 items-center gap-1.5">
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      onClick={() => store.acceptItem(item.id)}
-                    >
-                      Accept
-                    </Button>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="ghost"
-                      className="text-neutral-400 hover:text-neutral-100"
-                      onClick={() => store.rejectItem(item.id)}
-                    >
-                      Reject
-                    </Button>
-                  </div>
-                ) : (
-                  <Badge variant={item.status === "accepted" ? "success" : "secondary"} size="sm">
-                    {item.status === "accepted" ? "Accepted" : "Rejected"}
-                  </Badge>
-                )}
-              </li>
+                item={item}
+                onAccept={() => store.acceptItem(item.id)}
+                onReject={() => store.rejectItem(item.id)}
+              />
             ))}
           </ul>
         </section>
@@ -174,6 +148,92 @@ export function ReviewBoard({ store }: { store: ProjectStore }) {
           </p>
         </section>
       </div>
+
     </div>
   );
+}
+
+/** One proposed edit: its summary, its visual diff, and its decision. */
+function ChangesetItemRow({
+  item,
+  onAccept,
+  onReject,
+}: {
+  item: ChangesetItem;
+  onAccept: () => void;
+  onReject: () => void;
+}) {
+  const [diffOpen, setDiffOpen] = useState(false);
+
+  return (
+    <li className="border-t border-white/[0.06] px-1 py-3 first:border-t-0 first:pt-1 last:pb-1">
+      <div className="flex items-center gap-3">
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-medium text-neutral-100">
+            {opLabel(item.op)}
+            {item.targetId ? (
+              <span className="ml-2 font-normal text-neutral-500">{item.targetId}</span>
+            ) : null}
+          </p>
+          <p className="mt-0.5 line-clamp-2 text-xs leading-5 text-neutral-400">{item.rationale}</p>
+        </div>
+        {item.status === "pending" ? (
+          <div className="flex shrink-0 items-center gap-1.5">
+            <Button type="button" size="sm" variant="outline" onClick={onAccept}>
+              Accept
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              className="text-neutral-400 hover:text-neutral-100"
+              onClick={onReject}
+            >
+              Reject
+            </Button>
+          </div>
+        ) : (
+          <div className="flex shrink-0 items-center gap-1.5">
+            <Badge variant={item.status === "accepted" ? "success" : "secondary"} size="sm">
+              {item.status === "accepted" ? "Accepted" : "Rejected"}
+            </Badge>
+          </div>
+        )}
+      </div>
+      <Button
+        type="button"
+        size="sm"
+        variant="ghost"
+        aria-expanded={diffOpen}
+        onClick={() => setDiffOpen((open) => !open)}
+        className="mt-1 h-7 px-1 text-xs text-neutral-400 hover:text-neutral-100"
+      >
+        <ChevronDownIcon
+          className={cn("size-3.5 transition-transform", diffOpen && "rotate-180")}
+          aria-hidden="true"
+        />
+        Diff
+      </Button>
+      {diffOpen ? (
+        <div className="mt-1 rounded-xl bg-black/30 p-3 ring-1 ring-white/[0.06]">
+          <OpDiff item={item} />
+          {item.status === "pending" ? (
+            <p className="mt-2 text-xs text-neutral-600">The undo point lands with the accept.</p>
+          ) : item.status === "accepted" ? (
+            <p className="mt-2 text-xs text-neutral-600">
+              Undo point recorded — see History beside Running tasks.
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+    </li>
+  );
+}
+
+/** HH:MM on the local clock for an accepted-at stamp. */
+export function clockTime(iso: string): string {
+  const date = new Date(iso);
+  // taste-skill-ignore: clock fields are zero-padded by definition.
+  const pad = (n: number) => `${n}`.padStart(2, "0");
+  return `${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }

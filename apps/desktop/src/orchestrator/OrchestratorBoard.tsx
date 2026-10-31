@@ -6,6 +6,8 @@ import { AssetShelf } from "./AssetShelf";
 import { parseAction } from "./actions";
 import { PlanDoc } from "./PlanDoc";
 import { RunningTasks, type RunningTask } from "./RunningTasks";
+import { HistoryCard } from "../project/HistoryCard";
+import type { HistoryEntry } from "../project/store";
 
 /**
  * Three small independent motions, each cheap: columns ease widths on a
@@ -22,7 +24,10 @@ type PlanMode = "edit" | "talk";
 
 type OrchestratorBoardProps = {
   command?: { id: number; text: string } | null;
+  /** Accepted edits, shown in the History card under the running tasks. */
+  history: HistoryEntry[];
   onOpenTask?: (task: RunningTask) => void;
+  onUndoTask?: (task: RunningTask) => void;
 };
 
 function columnWidths(available: number, editing: boolean) {
@@ -37,7 +42,9 @@ function columnWidths(available: number, editing: boolean) {
 
 export function OrchestratorBoard({
   command = null,
+  history,
   onOpenTask,
+  onUndoTask,
 }: OrchestratorBoardProps) {
   const [planOpen, setPlanOpen] = useState(false);
   const [planMode, setPlanMode] = useState<PlanMode>("edit");
@@ -241,13 +248,19 @@ export function OrchestratorBoard({
         ? null
         : createPortal(
             <div
+              className="flex flex-col gap-4"
               style={{
                 display: side === "none" ? "none" : "",
                 opacity: lit ? 1 : 0,
                 transition: reduce ? "none" : "opacity 160ms cubic-bezier(0.22, 1, 0.36, 1)",
               }}
             >
-              <RunningTasks onOpen={onOpenTask} frozen={planTweening} />
+              <RunningTasks
+                onOpen={onOpenTask}
+                onUndo={onUndoTask}
+                frozen={planTweening}
+              />
+              <HistoryCard entries={history} />
             </div>,
             slotContainer,
           )}
