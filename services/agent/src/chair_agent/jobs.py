@@ -337,6 +337,10 @@ class JobController:
             idempotency = dict(raw.get("idempotency", {}))
         except (OSError, ValueError, KeyError):
             return
+        for job in jobs.values():
+            if job.status == "in_progress":
+                job.status = "queued"
+                job.started_at = None
         self._jobs = jobs
         self._idempotency = idempotency
 

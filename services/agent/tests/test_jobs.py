@@ -255,3 +255,17 @@ def test_http_submit_status_and_cancel(tmp_path: Path) -> None:
         server.shutdown()
         thread.join(timeout=2)
         server.server_close()
+
+
+def test_restart_requeues_in_progress_jobs(tmp_path: Path) -> None:
+    path = tmp_path / "jobs.json"
+    controller = JobController(path, deliver=lambda url, body, headers: None)
+    job = controller.submit("transcribe")
+    controller.claim_next()
+    assert controller.get(job.request_id).status == "in_progress"
+
+    restarted = JobController(path, deliver=lambda url, body, headers: None)
+    recovered = restarted.get(job.request_id)
+    assert recovered.status == "queued"
+    assert recovered.started_at is None
+    assert restarted.claim_next() is not None
