@@ -12,6 +12,7 @@ Talk to the user in plain language. Say what you are doing, which issue it belon
 - On a change that is moderately worth a review, Gemini 3.8 Flash high on Antigravity runs `mise run check` before you commit, then scores. Moderate means a behavior change, a new file, or a diff that touches the cut, the window, a schema, an adapter, or a check. Commit only after that check passes. A typo, a comment, or a one-line wording fix can skip the score; run `mise run check` yourself. Do not download model weights unless the user asks. Boot the desktop app only for the Gemini review screenshot, and only when the change has a screen.
 - Never merge, and never turn on auto-merge, until the user answers a direct question. See the desk skill for the wording.
 - A pending proposed edit does not change the timeline. Do not overwrite source video or audio. Name the editor's presets. If an adapter cannot do something, use the fallback in its capability manifest.
+- When you add a feature on the user's behalf, name the model you are in your reply (e.g. built with Muse Spark). The user tracks which model built what.
 
 ## Which model
 
@@ -22,6 +23,7 @@ Read `.cursor/skills/chair-models/SKILL.md` before you hand work off. The same t
 - A change that is moderately worth a review goes to that same Gemini before you commit. Moderate means a behavior change, a new file, or a diff that touches the cut, the window, a schema, an adapter, or a check. Gemini runs `mise run check` on what changed, then scores. It does not edit. Commit only after the check passes. A typo, a comment, or a one-line wording fix can skip the score.
 - A screen stays with Grok 4.7 high on Cursor (not fast, 256k). Several packages stay there too.
 - DeepSeek v4.1 on OpenCode is the free daily pool. Spend it only when the user names the screen or names the long bug. One of those a day is the idea.
+- Muse Spark 1.3 is the fallback when Grok 4.7 or DeepSeek v4.1 is unavailable.
 - If the job is small and you cannot tell the field, use Gemini. If it spans several packages, use Grok 4.7 high.
 - Gemini 4 Argon is not on this account. Claude and Codex stay switched off.
 
@@ -33,7 +35,7 @@ A new job is a new T3 thread (`t3 thread start`, or `delegate_task` from inside 
 
 ## Calling another agent
 
-Agents share one board: the GitHub issue. A comment is the message. It is how Cursor, Grok Bot, OpenCode, and Antigravity see each other.
+Agents share one board: the GitHub issue. A comment is the message. It is how Cursor, Grok Bot, OpenCode, and Antigravity see each other. Sign each comment so the others know who wrote it: end with "This message is on behalf of Mel by [Model]", naming the model sending it.
 
 Roles:
 

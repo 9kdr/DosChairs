@@ -66,7 +66,7 @@ Checked items exist in this repo. Linked items are not started. Milestone order 
 ## Layout
 
 ```text
-apps/desktop          Tauri shell, home, and a blank project view (coss, lenis — docs/adr/0002-desktop-ui-kit.md, docs/adr/0003-decoration-and-motion.md)
+apps/desktop          Tauri shell, home, and the Orchestrator bento (plan, todos, running tasks, assets — coss, lenis — docs/adr/0002-desktop-ui-kit.md, docs/adr/0003-decoration-and-motion.md)
 packages/             TypeScript IR, tool protocol, shared tokens
 crates/chair-ir       Rust timeline
 crates/chair-core     Revisions and accepted changesets

@@ -1,6 +1,6 @@
 # 0003 — Decoration, motion, and the desktop shell palette
 
-The window should feel like an app. Neutral surfaces and scoped smooth scroll stayed. Issue #30 removed the stand-in project chat, including its dither field and composer, so an open project is a blank shell.
+The window should feel like an app. Neutral surfaces and scoped smooth scroll stayed. Issue #30 removed the stand-in project chat, including its dither field. An open project is the Orchestrator bento, not a chat transcript.
 
 ## Palette
 
@@ -8,11 +8,20 @@ Stepped neutrals keep the shell quiet. The tokens in `app.css` are cool neutrals
 
 ## Smooth scroll is lenis, on the home gallery
 
-Home uses `src/components/smooth-scroll.tsx`: lenis on one scroll viewport, `autoRaf`, `allowNestedScroll`, skipped under reduced motion, destroyed on unmount. The project shell does not scroll.
+Home uses `src/components/smooth-scroll.tsx`: lenis on one scroll viewport, `autoRaf`, `allowNestedScroll`, skipped under reduced motion, destroyed on unmount. The project shell does not use lenis. The Orchestrator’s right column scrolls on its own when the cards overflow.
 
 ## The stand-in chat is gone
 
-The project view no longer has a thread list, a transcript, a composer, or a dither backdrop. The vendored dither engine (`src/lib/dither`) and the composer document model left with it. Do not put that scaffolding back. An open project is a header — home, the Chair mark, the project name — and an empty center.
+The project view no longer has a thread list, a transcript, or a dither backdrop. The vendored dither engine (`src/lib/dither`) left with it. Do not put that scaffolding back.
+
+The header is Home, the project name, and that project's editor logo. The Chair mark sits at the bottom left, the same place as on home. A prompt bar sits just above an icon dock (Orchestrator, Edit, Effects, Colour).
+
+Orchestrator is a two-column bento (`src/orchestrator/`):
+
+- Left, wider: the Plan doc, then a short todo list under it.
+- Right: running tasks, then assets, then inspiration and references.
+
+Edit, Effects, and Colour are still empty. The running-tasks card is stand-in rows (a name and a short status), not a live agent.
 
 Consequences:
 

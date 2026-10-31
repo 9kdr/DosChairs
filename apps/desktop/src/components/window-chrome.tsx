@@ -1,7 +1,6 @@
 "use client";
 
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { MinusIcon, SquareIcon, XIcon } from "lucide-react";
 import {
   useCallback,
   useEffect,
@@ -28,7 +27,7 @@ function setMaximizedAttr(maximized: boolean) {
 
 /**
  * Overlay chrome for undecorated windows: transparent drag strip, and
- * min/max/close tucked into the top-right corner. Also toggles
+ * Apple traffic lights tucked into the top-right corner. Also toggles
  * `data-window-maximized` so `.chair-shell` can drop its border-radius.
  */
 export function WindowChrome() {
@@ -86,35 +85,72 @@ export function WindowChrome() {
 
       <div
         className={cn(
-          "pointer-events-auto absolute top-1 right-1 flex items-center",
+          "group pointer-events-auto absolute top-1 right-1 flex items-center gap-2 p-2",
         )}
       >
-        <ChromeButton label="Minimize" onClick={() => void minimize()}>
-          <MinusIcon className="size-3.5" strokeWidth={1.75} />
-        </ChromeButton>
-        <ChromeButton
+        <TrafficLight
+          label="Close"
+          color="bg-[#ff5f57]"
+          onClick={() => void close()}
+        >
+          <svg
+            aria-hidden="true"
+            className="size-full p-[2.5px]"
+            viewBox="0 0 12 12"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.6"
+            strokeLinecap="round"
+          >
+            <path d="M3.5 3.5l5 5M8.5 3.5l-5 5" />
+          </svg>
+        </TrafficLight>
+        <TrafficLight
+          label="Minimize"
+          color="bg-[#febc2e]"
+          onClick={() => void minimize()}
+        >
+          <svg
+            aria-hidden="true"
+            className="size-full p-[2.5px]"
+            viewBox="0 0 12 12"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.6"
+            strokeLinecap="round"
+          >
+            <path d="M2.5 6h7" />
+          </svg>
+        </TrafficLight>
+        <TrafficLight
           label={maximized ? "Restore" : "Maximize"}
+          color="bg-[#28c840]"
           onClick={() => void toggleMaximize()}
         >
-          <SquareIcon className="size-3" strokeWidth={1.75} />
-        </ChromeButton>
-        <ChromeButton label="Close" danger onClick={() => void close()}>
-          <XIcon className="size-3.5" strokeWidth={1.75} />
-        </ChromeButton>
+          <svg
+            aria-hidden="true"
+            className="size-full p-[2.5px]"
+            viewBox="0 0 12 12"
+            fill="currentColor"
+          >
+            <polygon points="5.5,1.5 10.5,1.5 10.5,6.5" />
+            <polygon points="6.5,10.5 1.5,10.5 1.5,5.5" />
+          </svg>
+        </TrafficLight>
       </div>
     </div>
   );
 }
 
-function ChromeButton({
+function TrafficLight({
   label,
+  color,
   onClick,
-  danger,
   children,
 }: {
   label: string;
+  color: string;
   onClick: () => void;
-  danger?: boolean;
   children: ReactNode;
 }) {
   return (
@@ -123,14 +159,14 @@ function ChromeButton({
       aria-label={label}
       onClick={onClick}
       className={cn(
-        "flex size-8 items-center justify-center rounded-full text-muted-foreground outline-none",
-        "transition-colors hover:bg-foreground/[0.06] hover:text-foreground",
-        "focus-visible:bg-foreground/[0.08] focus-visible:text-foreground",
-        danger &&
-          "hover:bg-destructive hover:text-white focus-visible:bg-destructive focus-visible:text-white",
+        "group/btn relative flex size-3 items-center justify-center rounded-full border border-black/15 outline-none transition-transform active:brightness-90",
+        "focus-visible:ring-2 focus-visible:ring-foreground/40",
+        color,
       )}
     >
-      {children}
+      <span className="flex size-full items-center justify-center text-black/70 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 group-hover/btn:opacity-100 group-focus-visible/btn:opacity-100">
+        {children}
+      </span>
     </button>
   );
 }
