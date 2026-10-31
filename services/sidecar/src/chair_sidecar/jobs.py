@@ -43,8 +43,15 @@ FFMPEG_TOOLS: dict[str, JobKind] = {
 # --output <matte.mp4>`. The prompt json is {"kind": "text", "prompt": "..."}
 # or {"kind": "point", "point": [x, y]} with x, y in 0..1. The runner writes
 # `progress=0..1` lines to stderr and exits 0 with a video file at --output.
+# sam_audio protocol: `$CHAIR_SAM_AUDIO_RUNNER --source <media> --prompt <json>
+# --output <stem.wav>`. The prompt json is {"kind": "text", "prompt": "...",
+# "mode": ...} or {"kind": "span", "span": [start, end], "mode": ...} with
+# start/end in seconds naming an example of the target sound. Mode is
+# "isolate" or "remove". The runner writes `progress=0..1` lines to stderr
+# and exits 0 with an audio file at --output.
 MODEL_TOOLS: dict[str, JobKind] = {
     "sam3_mask": JobKind.SAM3_MASK,
+    "sam_audio": JobKind.SAM_AUDIO,
 }
 
 
@@ -123,6 +130,40 @@ class Sam3Request(BaseModel):
         return payload
 
 
+class SamAudioRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    source: str
+    prompt_kind: Literal["text", "span"] = "text"
+    prompt: str | None = None
+    span: tuple[float, float] | None = None
+    mode: Literal["isolate", "remove"] = "isolate"
+
+    @field_validator("source")
+    @classmethod
+    def source_not_blank(cls, value: str) -> str:
+        return _checked_source(value)
+
+    @model_validator(mode="after")
+    def prompt_matches_kind(self) -> "SamAudioRequest":
+        if self.prompt_kind == "text":
+            if self.prompt is None or not self.prompt.strip():
+                raise ValueError("text prompts need prompt")
+        elif self.span is None:
+            raise ValueError("span prompts need span")
+        elif not 0 <= self.span[0] < self.span[1]:
+            raise ValueError("span must run forward from a time >= 0")
+        return self
+
+    def prompt_payload(self) -> dict:
+        payload: dict[str, object] = {"kind": self.prompt_kind, "mode": self.mode}
+        if self.prompt is not None:
+            payload["prompt"] = self.prompt
+        if self.span is not None:
+            payload["span"] = list(self.span)
+        return payload
+
+
 @dataclass
 class JobRecord:
     id: str
@@ -165,6 +206,11 @@ def binary(name: str) -> str:
 
 def sam3_runner() -> str | None:
     configured = os.environ.get("CHAIR_SAM3_RUNNER", "").strip()
+    return configured or None
+
+
+def sam_audio_runner() -> str | None:
+    configured = os.environ.get("CHAIR_SAM_AUDIO_RUNNER", "").strip()
     return configured or None
 
 
@@ -267,7 +313,9 @@ class JobStore:
         self._lock = threading.Lock()
         self._load()
 
-    def submit(self, tool: str, request: MediaRequest | Sam3Request) -> dict:
+    def submit(
+        self, tool: str, request: MediaRequest | Sam3Request | SamAudioRequest
+    ) -> dict:
         if tool in FFMPEG_TOOLS:
             if not isinstance(request, MediaRequest):
                 raise ValueError(f"{tool} needs source and time fields")
@@ -281,7 +329,8 @@ class JobStore:
             min_shot = request.min_shot if request.min_shot is not None else DEFAULT_MIN_SHOT
             prompt: dict | None = None
         elif tool in MODEL_TOOLS:
-            if not isinstance(request, Sam3Request):
+            expected = SamAudioRequest if tool == "sam_audio" else Sam3Request
+            if not isinstance(request, expected):
                 raise ValueError(f"{tool} needs source and prompt fields")
             kind = MODEL_TOOLS[tool]
             time_s = None
@@ -366,6 +415,10 @@ class JobStore:
                 if prompt is None:
                     raise RuntimeError("sam3_mask requires a prompt")
                 result = self._track_matte(job_id, source, prompt)
+            elif tool == "sam_audio":
+                if prompt is None:
+                    raise RuntimeError("sam_audio requires a prompt")
+                result = self._separate_stem(job_id, source, prompt)
             else:
                 result = self._measure_audio(job_id, source)
             if _fingerprint(source) != before:
@@ -556,6 +609,44 @@ class JobStore:
             self._probe(dest), source=str(source), prompt=prompt, matte=str(dest), cached=False
         )
 
+    def _separate_stem(self, job_id: str, source: Path, prompt: dict) -> dict:
+        runner = sam_audio_runner()
+        if runner is None:
+            raise RuntimeError(
+                "CHAIR_SAM_AUDIO_RUNNER is not set; SAM Audio weights run outside the repo"
+            )
+        info = self._probe(source)
+        if not _has_stream(info, "audio"):
+            raise RuntimeError("source has no audio stream")
+        key = _cache_key(source, "sam_audio", json.dumps(prompt, sort_keys=True))
+        dest = self._output(source, f"stem-{key}.wav")
+        cached = self._probe_if_ready(dest)
+        if cached is not None:
+            return _stem_result(
+                cached, source=str(source), prompt=prompt, stem=str(dest), cached=True
+            )
+        part = self._part(dest, job_id)
+        command = [
+            runner,
+            "--source",
+            str(source),
+            "--prompt",
+            json.dumps(prompt),
+            "--output",
+            str(part),
+        ]
+        try:
+            self._run_runner(job_id, command, what="sam audio runner")
+            if not _has_stream(self._probe(part), "audio"):
+                raise RuntimeError("sam audio runner output has no audio stream")
+            os.replace(part, dest)
+        except Exception:
+            part.unlink(missing_ok=True)
+            raise
+        return _stem_result(
+            self._probe(dest), source=str(source), prompt=prompt, stem=str(dest), cached=False
+        )
+
     def _ffmpeg(self, job_id: str, args: list[str], duration: float) -> str:
         command = [
             binary("ffmpeg"),
@@ -570,8 +661,8 @@ class JobStore:
             job_id, command, lambda line: parse_progress(line, duration), what="ffmpeg"
         )
 
-    def _run_runner(self, job_id: str, command: list[str]) -> str:
-        return self._run_command(job_id, command, parse_runner_progress, what="sam3 runner")
+    def _run_runner(self, job_id: str, command: list[str], what: str = "sam3 runner") -> str:
+        return self._run_command(job_id, command, parse_runner_progress, what=what)
 
     def _run_command(
         self,
@@ -687,6 +778,19 @@ def _matte_result(
         "prompt_kind": prompt.get("kind"),
         "width": width,
         "height": height,
+        "duration": _duration(info),
+        "cached": cached,
+    }
+
+
+def _stem_result(
+    info: dict, *, source: str, prompt: dict, stem: str, cached: bool
+) -> dict:
+    return {
+        "stem": stem,
+        "source": source,
+        "prompt_kind": prompt.get("kind"),
+        "mode": prompt.get("mode"),
         "duration": _duration(info),
         "cached": cached,
     }

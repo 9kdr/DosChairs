@@ -14,6 +14,7 @@ from chair_sidecar.jobs import (
     JobStore,
     MediaRequest,
     Sam3Request,
+    SamAudioRequest,
     active_spans,
     default_proxy_dir,
     parse_ebur128,
@@ -61,6 +62,44 @@ def test_sam3_request_needs_a_prompt_matching_its_kind() -> None:
         {"source": "clip.mp4", "prompt_kind": "point", "point": [0.5, 0.4]}
     )
     assert point.prompt_payload() == {"kind": "point", "point": [0.5, 0.4]}
+
+
+def test_sam_audio_request_needs_a_prompt_matching_its_kind() -> None:
+    with pytest.raises(ValidationError, match="source is required"):
+        SamAudioRequest.model_validate({"source": "  ", "prompt": "the speaker"})
+    with pytest.raises(ValidationError, match="text prompts need prompt"):
+        SamAudioRequest.model_validate({"source": "clip.mp4", "prompt_kind": "text"})
+    with pytest.raises(ValidationError, match="span prompts need span"):
+        SamAudioRequest.model_validate({"source": "clip.mp4", "prompt_kind": "span"})
+    with pytest.raises(ValidationError, match="span must run forward"):
+        SamAudioRequest.model_validate(
+            {"source": "clip.mp4", "prompt_kind": "span", "span": [1.0, 0.5]}
+        )
+    with pytest.raises(ValidationError, match="span must run forward"):
+        SamAudioRequest.model_validate(
+            {"source": "clip.mp4", "prompt_kind": "span", "span": [-0.5, 0.5]}
+        )
+    text = SamAudioRequest.model_validate(
+        {"source": "clip.mp4", "prompt_kind": "text", "prompt": "the speaker"}
+    )
+    assert text.prompt_payload() == {
+        "kind": "text",
+        "prompt": "the speaker",
+        "mode": "isolate",
+    }
+    span = SamAudioRequest.model_validate(
+        {
+            "source": "clip.mp4",
+            "prompt_kind": "span",
+            "span": [0.2, 0.8],
+            "mode": "remove",
+        }
+    )
+    assert span.prompt_payload() == {
+        "kind": "span",
+        "span": [0.2, 0.8],
+        "mode": "remove",
+    }
 
 
 def test_loudness_parser_uses_the_summary() -> None:
@@ -256,6 +295,34 @@ def fake_runner(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> str:
     return str(script)
 
 
+@pytest.fixture
+def fake_audio_runner(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> str:
+    script = tmp_path / "fake-sam-audio"
+    script.write_text(
+        "#!/usr/bin/env python3\n"
+        "import argparse, json, subprocess, sys\n"
+        "parser = argparse.ArgumentParser()\n"
+        "parser.add_argument('--source')\n"
+        "parser.add_argument('--prompt')\n"
+        "parser.add_argument('--output')\n"
+        "args = parser.parse_args()\n"
+        "prompt = json.loads(args.prompt)\n"
+        "assert prompt['kind'] in ('text', 'span'), prompt\n"
+        "assert prompt['mode'] in ('isolate', 'remove'), prompt\n"
+        "print('progress=0.2', file=sys.stderr, flush=True)\n"
+        "subprocess.run(\n"
+        "    ['ffmpeg', '-y', '-hide_banner', '-loglevel', 'error',\n"
+        "     '-i', args.source, '-map', '0:a:0', '-c:a', 'pcm_s16le',\n"
+        "     args.output],\n"
+        "    check=True,\n"
+        ")\n"
+        "print('progress=0.9', file=sys.stderr, flush=True)\n"
+    )
+    script.chmod(0o755)
+    monkeypatch.setenv("CHAIR_SAM_AUDIO_RUNNER", str(script))
+    return str(script)
+
+
 def _request(method: str, url: str, payload: dict | None = None) -> tuple[int, dict]:
     data = None if payload is None else json.dumps(payload).encode()
     headers = {} if data is None else {"content-type": "application/json"}
@@ -304,8 +371,10 @@ def test_health_lists_job_kinds(server: str) -> None:
     assert body["ok"] is True
     assert "measure_audio" in body["jobs"]
     assert "sam3_mask" in body["jobs"]
+    assert "sam_audio" in body["jobs"]
     assert "scene_cuts" in body["jobs"]
     assert isinstance(body["sam3_runner"], bool)
+    assert isinstance(body["sam_audio_runner"], bool)
 
 
 def test_render_preview_writes_a_cached_proxy(
@@ -487,6 +556,13 @@ def test_bad_requests_never_start(server: str, tmp_path: Path) -> None:
     )
     assert no_prompt == 400
     assert "prompt" in no_prompt_body["error"]
+    no_span, no_span_body = _request(
+        "POST",
+        f"{server}/jobs/sam_audio",
+        {"source": "clip.mp4", "prompt_kind": "span"},
+    )
+    assert no_span == 400
+    assert "span" in no_span_body["error"]
     unknown, _unknown_body = _request("POST", f"{server}/jobs/not_a_tool", {"source": "x"})
     assert unknown == 404
     absent, _absent_body = _request("GET", f"{server}/jobs/does-not-exist")
@@ -568,6 +644,89 @@ def test_sam3_mask_fails_with_a_clear_error_when_no_runner(
     job = _wait(server, queued["id"])
     assert job["status"] == "failed"
     assert "CHAIR_SAM3_RUNNER" in job["error"]
+
+
+def test_sam_audio_separates_a_stem_as_a_separate_file(
+    server: str,
+    store: _RecordingStore,
+    proxy_dir: Path,
+    source_media: Path,
+    fake_audio_runner: str,
+) -> None:
+    digest = _sha256(source_media)
+    status, queued = _request(
+        "POST",
+        f"{server}/jobs/sam_audio",
+        {"source": str(source_media), "prompt_kind": "text", "prompt": "the speaker"},
+    )
+    assert status == 202
+    assert queued["tool"] == "sam_audio"
+    assert queued["kind"] == "sam_audio"
+    job = _wait(server, queued["id"])
+    assert job["status"] == "done", job["error"]
+    assert job["progress"] == 1.0
+    assert any(0 < seen < 1 for seen in store.seen)
+    result = job["result"]
+    stem = Path(result["stem"])
+    assert result["source"] == str(source_media)
+    assert result["prompt_kind"] == "text"
+    assert result["mode"] == "isolate"
+    assert result["duration"] == pytest.approx(1.0, abs=0.05)
+    assert result["cached"] is False
+    assert stem.suffix == ".wav"
+    assert stem.is_relative_to(proxy_dir)
+    assert stem != source_media
+    assert _streams(stem)[0]["codec_type"] == "audio"
+    assert _sha256(source_media) == digest
+    again = _wait(
+        server,
+        _request(
+            "POST",
+            f"{server}/jobs/sam_audio",
+            {"source": str(source_media), "prompt_kind": "text", "prompt": "the speaker"},
+        )[1]["id"],
+    )
+    assert again["result"]["cached"] is True
+    assert again["result"]["stem"] == str(stem)
+    assert _sha256(source_media) == digest
+
+
+def test_sam_audio_accepts_a_span_prompt(
+    server: str, source_media: Path, fake_audio_runner: str
+) -> None:
+    digest = _sha256(source_media)
+    status, queued = _request(
+        "POST",
+        f"{server}/jobs/sam_audio",
+        {
+            "source": str(source_media),
+            "prompt_kind": "span",
+            "span": [0.2, 0.8],
+            "mode": "remove",
+        },
+    )
+    assert status == 202
+    job = _wait(server, queued["id"])
+    assert job["status"] == "done", job["error"]
+    assert job["result"]["prompt_kind"] == "span"
+    assert job["result"]["mode"] == "remove"
+    assert Path(job["result"]["stem"]).is_file()
+    assert _sha256(source_media) == digest
+
+
+def test_sam_audio_fails_with_a_clear_error_when_no_runner(
+    server: str, source_media: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("CHAIR_SAM_AUDIO_RUNNER", raising=False)
+    status, queued = _request(
+        "POST",
+        f"{server}/jobs/sam_audio",
+        {"source": str(source_media), "prompt_kind": "text", "prompt": "the speaker"},
+    )
+    assert status == 202
+    job = _wait(server, queued["id"])
+    assert job["status"] == "failed"
+    assert "CHAIR_SAM_AUDIO_RUNNER" in job["error"]
 
 
 def _wait_store(store: JobStore, job_id: str) -> dict:
