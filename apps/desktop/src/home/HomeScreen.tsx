@@ -189,6 +189,7 @@ function ProjectsPane({
       : { duration: 0 };
 
   const [hoveredId, setHoveredId] = useState<string | null>(null);
+  const cardRefs = useRef<Record<string, HTMLDivElement | null>>({});
   // Long ease-out so emphasis and neighbor dim settle as one glide.
   const hoverEase = {
     type: "tween" as const,
@@ -237,7 +238,6 @@ function ProjectsPane({
               >
                 {/* Visual only — scale must not enlarge the hit target. */}
                 <motion.div
-                  aria-hidden="true"
                   animate={
                     reduceMotion
                       ? undefined
@@ -250,9 +250,16 @@ function ProjectsPane({
                         }
                   }
                   style={{ transformOrigin: "50% 50%" }}
-                  className="pointer-events-none will-change-transform"
+                  className="pointer-events-none will-change-transform relative z-20"
                 >
-                  <ProjectCard project={project} emphasized={emphasized} />
+                  <ProjectCard
+                    project={project}
+                    emphasized={emphasized}
+                    onOpen={() => onOpenProject(project.id)}
+                    cardRef={(node) => {
+                      cardRefs.current[project.id] = node;
+                    }}
+                  />
                 </motion.div>
 
                 {/*
@@ -263,6 +270,20 @@ function ProjectsPane({
                   type="button"
                   aria-label={`Open ${project.name}`}
                   onClick={() => onOpenProject(project.id)}
+                  onContextMenu={(e) => {
+                    const card = cardRefs.current[project.id];
+                    if (card) {
+                      card.dispatchEvent(
+                        new MouseEvent("contextmenu", {
+                          bubbles: true,
+                          cancelable: true,
+                          clientX: e.clientX,
+                          clientY: e.clientY,
+                          button: 2,
+                        }),
+                      );
+                    }
+                  }}
                   onPointerEnter={() => setHoveredId(project.id)}
                   onPointerLeave={() =>
                     setHoveredId((current) =>
