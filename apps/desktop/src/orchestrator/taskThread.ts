@@ -14,8 +14,9 @@ import { agentBaseUrl } from "../lib/services/config";
 import { isAgentTerminal } from "../lib/services/types";
 import type { AgentJob } from "../lib/services/types";
 import { useServicesClient } from "../lib/services/useServices";
-import type { RunningTask } from "./RunningTasks";
+import type { RunningTask, TaskLane } from "./RunningTasks";
 import type { TaskActivity } from "./TaskActivity";
+import { gatedAgentText, spawnSubagents } from "./taskSetup";
 
 export type Turn = {
   id: string;
@@ -57,6 +58,22 @@ export function openingKey(taskId: string): string {
 /** One turn per note, scoped to its task. */
 export function noteKey(taskId: string, noteId: number): string {
   return `${IDEMPOTENCY_PREFIX}:${taskId}:${noteId}`;
+}
+
+/**
+ * Identity for one subagent's opening turn. The primary lane keeps the
+ * original key and changeset so reopening still resumes its turn.
+ */
+export function openTurnScope(
+  taskId: string,
+  lane: TaskLane,
+  primary: boolean,
+): { id: string; key: string; changesetId: string } {
+  return {
+    id: `open-${lane}`,
+    key: primary ? openingKey(taskId) : `${openingKey(taskId)}:${lane}`,
+    changesetId: primary ? `cs-${taskId}-open` : `cs-${taskId}-open-${lane}`,
+  };
 }
 
 export function briefForOpening(task: RunningTask): string {
@@ -243,9 +260,10 @@ function firstLine(text: string): string {
 
 /**
  * One task's thread: turns plus the activity rail's live state (null while the
- * demo flag owns the rail). Notes the local resolver answers (undo summaries)
- * stay local; every other note starts a live turn. Sending never changes the
- * timeline.
+ * demo flag owns the rail). Opening the task spawns one turn per lane
+ * subagent; lanes with no connected tools report honestly instead of
+ * submitting. Notes the local resolver answers (undo summaries) stay local;
+ * every other note starts a live turn. Sending never changes the timeline.
  */
 export function useTaskThread(
   task: RunningTask,
@@ -254,15 +272,22 @@ export function useTaskThread(
 ): { turns: Turn[]; activity: TaskActivity | null } {
   const client = useServicesClient();
   const demo = useMemo(() => isThreadDemo(), []);
-  const [turns, setTurns] = useState<Turn[]>(() => [
-    {
-      id: "open",
-      role: "assistant",
-      text: demo
-        ? `${DEMO_OPENING[task.id] ?? task.status} This is a stand-in, not a live agent.`
-        : SENDING,
-    },
-  ]);
+  const agents = useMemo(() => spawnSubagents(task), [task]);
+  const [turns, setTurns] = useState<Turn[]>(() =>
+    demo
+      ? [
+          {
+            id: "open",
+            role: "assistant",
+            text: `${DEMO_OPENING[task.id] ?? task.status} This is a stand-in, not a live agent.`,
+          },
+        ]
+      : agents.map((agent, index) => ({
+          id: openTurnScope(task.id, agent.lane, index === 0).id,
+          role: "assistant",
+          text: agent.runnable ? SENDING : gatedAgentText(agent),
+        })),
+  );
   const [activity, setActivity] = useState<TaskActivity | null>(() =>
     demo ? null : activityForLivePending(),
   );
@@ -279,39 +304,42 @@ export function useTaskThread(
     const live = (apply: () => void) => {
       if (taskRef.current.id === id) apply();
     };
-    void runTurn(client, {
-      task,
-      brief: briefForOpening(task),
-      key: openingKey(id),
-      changesetId: `cs-${id}-open`,
-      onUpdate: (job) => {
-        if (isAgentTerminal(job.status)) return;
-        live(() => {
-          setTurns((current) =>
-            current.map((turn) => (turn.id === "open" ? { ...turn, text: textForJob(job) } : turn)),
-          );
-          setActivity(activityForLiveJob(job));
-        });
-      },
-    }).then(
-      (job) =>
-        live(() => {
-          setTurns((current) =>
-            current.map((turn) => (turn.id === "open" ? { ...turn, text: textForJob(job) } : turn)),
-          );
-          setActivity(activityForLiveJob(job));
-        }),
-      (error: unknown) =>
-        live(() => {
-          setTurns((current) =>
-            current.map((turn) =>
-              turn.id === "open" ? { ...turn, text: replyForSubmitError(error) } : turn,
-            ),
-          );
-          setActivity(activityForLiveError(headlineForSubmitError(error)));
-        }),
-    );
-  }, [task, client, demo]);
+    const multi = agents.length > 1;
+    agents.forEach((agent, index) => {
+      if (!agent.runnable) return;
+      const primary = index === 0;
+      const scope = openTurnScope(id, agent.lane, primary);
+      const say = (text: string) => (multi ? `${agent.label}: ${text}` : text);
+      const paint = (text: string) =>
+        setTurns((current) =>
+          current.map((turn) => (turn.id === scope.id ? { ...turn, text } : turn)),
+        );
+      void runTurn(client, {
+        task,
+        brief: briefForOpening(task),
+        key: scope.key,
+        changesetId: scope.changesetId,
+        onUpdate: (job) => {
+          if (isAgentTerminal(job.status)) return;
+          live(() => {
+            paint(say(textForJob(job)));
+            if (primary) setActivity(activityForLiveJob(job));
+          });
+        },
+      }).then(
+        (job) =>
+          live(() => {
+            paint(say(textForJob(job)));
+            if (primary) setActivity(activityForLiveJob(job));
+          }),
+        (error: unknown) =>
+          live(() => {
+            paint(say(replyForSubmitError(error)));
+            if (primary) setActivity(activityForLiveError(headlineForSubmitError(error)));
+          }),
+      );
+    });
+  }, [task, client, demo, agents]);
 
   useEffect(() => {
     if (!note || seenNote.current === note.id) return;
