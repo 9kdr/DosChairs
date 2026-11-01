@@ -1,5 +1,7 @@
 /** Editor-neutral timeline. Mirrors schemas/timeline.schema.json. */
 export * from "./plans";
+export * from "./rollback";
+import { applyChangesetItem } from "./rollback";
 
 export interface RationalTime {
   value: number;
@@ -69,9 +71,13 @@ export type EditOp =
   | "move"
   | "set_speed"
   | "add_transition"
+  | "remove_transition"
   | "add_marker"
+  | "remove_marker"
   | "add_effect"
+  | "remove_effect"
   | "add_track"
+  | "remove_track"
   | "set_gain"
   | "mute_clip";
 
@@ -113,9 +119,7 @@ export function applyAccepted(timeline: Timeline, changeset: Changeset): Timelin
   const next: Timeline = structuredClone(timeline);
   for (const item of changeset.items) {
     if (item.status !== "accepted") continue;
-    if (item.op === "add_marker" && item.patch && "marker" in item.patch) {
-      next.markers.push(item.patch.marker as Marker);
-    }
+    applyChangesetItem(next, item);
   }
   return next;
 }
