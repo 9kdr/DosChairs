@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import unquote, urlsplit
 
-from chair_agent.client import configured_models
+from chair_agent.client import configured_models, key_configured
 from chair_agent.jobs import (
     Job,
     JobConflict,
@@ -97,6 +97,10 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(status)
         self.send_header("content-type", "application/json")
         self.send_header("content-length", str(len(raw)))
+        # The desktop window is a different origin; without this the
+        # browser blocks health reads and the service always looks down.
+        # Responses here never carry secrets (see the health test).
+        self.send_header("access-control-allow-origin", "*")
         self.end_headers()
         self.wfile.write(raw)
 
@@ -131,6 +135,7 @@ def _health() -> dict[str, Any]:
         "ok": True,
         "tools": [tool.model_dump() for tool in TOOLS],
         "models": configured_models(),
+        "key_configured": key_configured(),
     }
 
 

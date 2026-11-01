@@ -80,6 +80,11 @@ def configured_models(env: Mapping[str, str] | None = None) -> dict[str, str | N
     return load_settings(env).models.model_dump()
 
 
+def key_configured(env: Mapping[str, str] | None = None) -> bool:
+    """Whether the agent sees a Meta key in its environment. Presence only."""
+    return load_settings(env).api_key is not None
+
+
 class HttpxTransport:
     def __init__(self, base_url: str, *, client: httpx.Client | None = None) -> None:
         self.base_url = base_url.rstrip("/")

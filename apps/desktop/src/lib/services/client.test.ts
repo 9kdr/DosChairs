@@ -29,6 +29,7 @@ const AGENT_HEALTH = {
   ok: true,
   tools: [{ name: "sam3_mask", summary: "mattes", destructive: false }],
   models: { edit: "test-model" },
+  key_configured: true,
 };
 
 const SIDECAR_HEALTH = {

@@ -31,6 +31,7 @@ import {
 } from "./data";
 import { HomeDock, type HomeTab } from "./HomeDock";
 import { ProjectCard } from "./ProjectCard";
+import { SettingsScreen } from "../settings/SettingsScreen";
 import { useElementWidth } from "./use-element-width";
 
 /** Halfway between Tailwind neutral-900 (#171717) and 950 (#0a0a0a). */
@@ -68,6 +69,7 @@ const ASSET_KIND_ICON = {
 
 export function HomeScreen({ onOpenProject }: HomeScreenProps) {
   const [tab, setTab] = useState<HomeTab>("projects");
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   return (
@@ -81,22 +83,28 @@ export function HomeScreen({ onOpenProject }: HomeScreenProps) {
         className="relative min-h-0 flex-1 overflow-y-auto overscroll-contain"
       >
         <div className="px-6 pt-6 pb-28">
-          {tab === "projects" ? (
-            <ProjectsPane onOpenProject={onOpenProject} />
-          ) : null}
-          {tab === "library" ? <LibraryPane /> : null}
-          {tab === "pieces" ? (
-            <PlaceholderPane
-              title="Pieces"
-              body="Named presets and templates the agent can call — captions, motion, grade looks. Empty for now; this is the shelf."
-            />
-          ) : null}
-          {tab === "marketplace" ? (
-            <PlaceholderPane
-              title="Marketplace"
-              body="Download pieces other people publish. Wired later — the dock slot is here so the home layout stays honest."
-            />
-          ) : null}
+          {settingsOpen ? (
+            <SettingsScreen onBack={() => setSettingsOpen(false)} />
+          ) : (
+            <>
+              {tab === "projects" ? (
+                <ProjectsPane onOpenProject={onOpenProject} />
+              ) : null}
+              {tab === "library" ? <LibraryPane /> : null}
+              {tab === "pieces" ? (
+                <PlaceholderPane
+                  title="Pieces"
+                  body="Named presets and templates the agent can call — captions, motion, grade looks. Empty for now; this is the shelf."
+                />
+              ) : null}
+              {tab === "marketplace" ? (
+                <PlaceholderPane
+                  title="Marketplace"
+                  body="Download pieces other people publish. Wired later — the dock slot is here so the home layout stays honest."
+                />
+              ) : null}
+            </>
+          )}
         </div>
       </div>
       <SmoothScrollTarget target={scrollRef} lerp={0.075} />
@@ -122,9 +130,15 @@ export function HomeScreen({ onOpenProject }: HomeScreenProps) {
 
       <HomeDock
         tab={tab}
-        onTab={setTab}
-        onAccount={() => setTab("projects")}
-        onSettings={() => setTab("projects")}
+        onTab={(next) => {
+          setTab(next);
+          setSettingsOpen(false);
+        }}
+        onAccount={() => {
+          setTab("projects");
+          setSettingsOpen(false);
+        }}
+        onSettings={() => setSettingsOpen(true)}
       />
     </section>
   );
