@@ -50,6 +50,8 @@ An agent that receives a worktree for an issue stays free for chat. It sets up s
 
 In practice, a main chat usually holds one branch and works its related issues through in sequence, which keeps context warm and the history readable. Pieces that might conflict tend to live in subagents with separate worktrees. An issue that grows long or multi-step tends to work better with its own chat and branch, following these same rules.
 
+Grouping is flexible: one subagent may carry several issues on one branch, and several subagents may share one branch. Separate branches are only needed when the work might conflict.
+
 When using muse models, only use their contributor version!
 ## Calling another agent
 
