@@ -952,3 +952,11 @@ def test_analyze_music_rejects_bad_words(server: str, tmp_path: Path) -> None:
     )
     assert bad_fps == 400
     assert "fps must be" in bad_fps_body["error"]
+
+
+def test_health_is_readable_from_the_desktop_origin(server: str) -> None:
+    from urllib.request import urlopen
+
+    with urlopen(f"{server}/health") as response:
+        assert response.status == 200
+        assert response.headers["access-control-allow-origin"] == "*"
