@@ -108,6 +108,9 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(status)
         self.send_header("content-type", "application/json")
         self.send_header("content-length", str(len(body)))
+        # The desktop window is another origin; without this the browser
+        # blocks the read and the sidecar always looks down.
+        self.send_header("access-control-allow-origin", "*")
         self.end_headers()
         self.wfile.write(body)
 
