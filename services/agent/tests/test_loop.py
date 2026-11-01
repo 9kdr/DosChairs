@@ -259,3 +259,46 @@ def test_handler_rejects_and_validates_input() -> None:
         handle_edit(_job({**base, "preview_urls": []}))
     with pytest.raises(ValueError):
         handle_edit(_job({**base, "preview_urls": data["artifact_urls"], "brief": "  "}))
+
+
+def _canned_input() -> dict:
+    data = GOLDEN["input"]
+    return {
+        **data["context"],
+        "brief": data["brief"],
+        "spans": data["spans"],
+        "preview_urls": data["artifact_urls"],
+    }
+
+
+def test_handler_carries_the_turn_model_and_files() -> None:
+    """The composer's pick and attachments ride on the job and still complete."""
+    job_input = {
+        **_canned_input(),
+        "model": "muse-spark-1 (Meta)",
+        "files": ["interview-proxy.mp4", "voice-note-120301.webm"],
+    }
+    result = handle_edit(_job(job_input))
+    assert isinstance(result, HandlerResult)
+    assert result.ops
+    assert all(op["status"] == "pending" for op in result.ops)
+
+
+def test_handler_accepts_a_chair_preset_model() -> None:
+    result = handle_edit(_job({**_canned_input(), "model": "Chair fast"}))
+    assert isinstance(result, HandlerResult)
+    assert result.ops
+
+
+@pytest.mark.parametrize("model", ["", "   ", None, 123, ["Chair"]])
+def test_handler_rejects_a_bad_model(model: object) -> None:
+    with pytest.raises(ValueError, match="model"):
+        handle_edit(_job({**_canned_input(), "model": model}))
+
+
+@pytest.mark.parametrize(
+    "files", ["interview.mp4", [123], [""], ["  "], [{"name": "a.mp4"}]]
+)
+def test_handler_rejects_bad_files(files: object) -> None:
+    with pytest.raises(ValueError, match="files"):
+        handle_edit(_job({**_canned_input(), "files": files}))

@@ -29,7 +29,41 @@ export type Turn = {
 export type TaskNote = {
   id: number;
   text: string;
+  /** Attachment names from the composer draft that sent this note. */
+  files?: readonly string[];
+  /** The orchestrator model picked for this note's turn. */
+  model?: string;
 };
+
+export type DraftSelection = {
+  files: readonly string[];
+  model: string;
+};
+
+/**
+ * Pair a composer draft with the note it sent: the parent shell owns the
+ * note channel and only carries text, so the thread matches the pending
+ * draft by its text. Anything else (the Undo chip, a row button) sends
+ * without a draft and runs unadorned.
+ */
+export function selectionForNote(
+  note: TaskNote,
+  pending: { text: string; files: readonly string[]; model: string } | null,
+): DraftSelection | null {
+  if (pending === null || pending.text !== note.text) return null;
+  return { files: [...pending.files], model: pending.model };
+}
+
+/**
+ * One note's turn text and agent brief: trimmed words plus attachment
+ * names, or the attachment names alone when no words were sent.
+ */
+export function noteTurnText(note: TaskNote): string {
+  const text = note.text.trim();
+  const files = note.files ?? [];
+  if (!text) return files.length > 0 ? `Attached files: ${files.join(", ")}` : "";
+  return files.length > 0 ? `${text}\nAttached files: ${files.join(", ")}` : text;
+}
 
 /** Offline demos keep the old stand-in thread behind this flag. Default is live. */
 export function isThreadDemo(env?: Record<string, string | undefined>): boolean {
@@ -150,6 +184,7 @@ export function inputForTurn(
   task: RunningTask,
   brief: string,
   changesetId: string,
+  selection: DraftSelection = { files: [], model: "" },
 ): Record<string, unknown> {
   return {
     brief,
@@ -160,6 +195,10 @@ export function inputForTurn(
     ...mediaForTurn(task),
     spans: [],
     preview_urls: [],
+    // Note turns carry the composer's pick and attachments; opening
+    // turns leave both off so their idempotent resubmit stays stable.
+    ...(selection.model ? { model: selection.model } : {}),
+    ...(selection.files.length > 0 ? { files: [...selection.files] } : {}),
   };
 }
 
@@ -171,13 +210,18 @@ export async function runTurn(
     brief: string;
     key: string;
     changesetId: string;
+    model?: string;
+    files?: readonly string[];
     onUpdate?: (job: AgentJob) => void;
     delayForAttempt?: (attempt: number) => number;
   },
 ): Promise<AgentJob> {
   const handle = await client.submitAgentJob(
     EDIT_TASK,
-    inputForTurn(turn.task, turn.brief, turn.changesetId),
+    inputForTurn(turn.task, turn.brief, turn.changesetId, {
+      files: turn.files ?? [],
+      model: turn.model ?? "",
+    }),
     { idempotencyKey: turn.key },
   );
   recordLiveJob(handle.request_id, turn.task);
@@ -355,18 +399,25 @@ export function shortRequestId(requestId: string): string {
   return requestId.length > 13 ? `${requestId.slice(0, 13)}…` : requestId;
 }
 
+/** The turn's model, as the job record carries it — empty when none was sent. */
+function modelSuffix(job: AgentJob): string {
+  const model = job.input.model;
+  return typeof model === "string" && model.trim() ? ` Model: ${model.trim()}.` : "";
+}
+
 /** The thread line for a live job: running status, or the real terminal reply. */
 export function textForJob(job: AgentJob): string {
   const id = shortRequestId(job.request_id);
-  if (job.status === "queued") return `Turn sent — queued on the agent (${id}).`;
-  if (job.status === "in_progress") return `The agent is working on it (${id}).`;
+  const model = modelSuffix(job);
+  if (job.status === "queued") return `Turn sent — queued on the agent (${id}).${model}`;
+  if (job.status === "in_progress") return `The agent is working on it (${id}).${model}`;
   if (job.status === "failed") {
-    return `The agent couldn't finish this turn (${id}): ${job.error ?? "it failed without a reason"}. Nothing changed.`;
+    return `The agent couldn't finish this turn (${id}): ${job.error ?? "it failed without a reason"}. Nothing changed.${model}`;
   }
   if (job.status === "moderated") {
-    return `The agent stopped this turn (${id}): ${job.error ?? "moderated"}. Nothing changed.`;
+    return `The agent stopped this turn (${id}): ${job.error ?? "moderated"}. Nothing changed.${model}`;
   }
-  if (job.status === "canceled") return `This turn was canceled (${id}). Nothing changed.`;
+  if (job.status === "canceled") return `This turn was canceled (${id}). Nothing changed.${model}`;
   const previews = job.artifacts.length;
   const ops = job.changeset?.ops.length ?? 0;
   const previewBit =
@@ -379,7 +430,7 @@ export function textForJob(job: AgentJob): string {
   if (previews > 0) {
     text += ` Preview files: ${job.artifacts.map((artifact) => artifact.url).join(", ")}.`;
   }
-  return text;
+  return text + model;
 }
 
 /** Honest submit failure: down (with the fix) versus refused (with the reason). */
@@ -490,7 +541,8 @@ function firstLine(text: string): string {
  * demo flag owns the rail). Opening the task spawns one turn per lane
  * subagent; lanes with no connected tools report honestly instead of
  * submitting. Notes the local resolver answers (undo summaries) stay local;
- * every other note starts a live turn. Sending never changes the timeline.
+ * every other note starts a live turn carrying its model pick and
+ * attachments. Sending never changes the timeline.
  * Turns persist per task and restore on reopen, surviving restarts; the
  * demo stand-in stays out of the store either way.
  */
@@ -581,9 +633,10 @@ export function useTaskThread(
     if (!note || seenNote.current === note.id) return;
     seenNote.current = note.id;
     const text = note.text.trim();
-    if (!text) return;
-    const local = resolveLocalReply?.(text) ?? null;
-    const userTurn: Turn = { id: `user-${note.id}`, role: "user", text };
+    const files = note.files ?? [];
+    if (!text && files.length === 0) return;
+    const local = text ? (resolveLocalReply?.(text) ?? null) : null;
+    const userTurn: Turn = { id: `user-${note.id}`, role: "user", text: noteTurnText(note) };
     if (demo || local) {
       const reply = local ?? DEMO_NOTE_REPLY(task.name);
       setTurns((current) => [
@@ -602,9 +655,11 @@ export function useTaskThread(
     setActivity(activityForLivePending());
     void runTurn(client, {
       task,
-      brief: text,
+      brief: noteTurnText(note),
       key: noteKey(id, note.id),
       changesetId: `cs-${id}-${note.id}`,
+      model: note.model,
+      files,
       onUpdate: (job) => {
         if (isAgentTerminal(job.status)) return;
         live(() => {
