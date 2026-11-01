@@ -54,7 +54,7 @@ In Cursor, you may start one subagent with the issue number, the handoff text, a
 
 A typo, a comment, or a one-line wording fix can be committed after you run `mise run check` yourself.
 
-Before you commit a change that is moderately worth a review, send it to Gemini 3.8 Flash high with the rubric in `.cursor/skills/chair-models/SKILL.md`. Moderate means a behavior change, a new file, or a diff that touches the cut, the window, a schema, an adapter, or a check. Wait for the check and the score. Gemini does not edit the branch. Commit only after the check passes. Bring the score back before you tell the user the work is ready.
+Before you open a pull request for a change that is moderately worth a review, send it to Gemini 3.8 Flash high with the rubric in `.cursor/skills/chair-models/SKILL.md`. Moderate means a behavior change, a new file, or a diff that touches the cut, the window, a schema, an adapter, or a check. Wait for the check and the score. Gemini does not edit the branch. Open the pull request only after the check passes. Bring the score back before you tell the user the work is ready.
 
 Under 7, add `agent:needs-user` and ask if you should try again. A bloat deduction of 2 or 3 also waits, even when the score is 7 or above. Ask before opening a cleanup chat. That chat uses Cursor Auto, on this same branch, and only removes what Gemini named. Gemini scores that cleanup once. At 7 or above, with a bloat deduction of 0 or 1, open the pull request and then ask about merging. Mention a −1 in the report so it can be cleaned later.
 

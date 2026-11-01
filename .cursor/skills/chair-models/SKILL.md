@@ -9,7 +9,7 @@ Spend the scarce models on a named problem. Do not open a second chat to keep th
 
 | When | Who | How to start it |
 | --- | --- | --- |
-| Quick work. One file, one error, a label, a question, the check before a commit | Gemini 3.8 Flash, high, on Antigravity. This is the $20 plan you can spend often. | `delegate_task` to `antigravity` / `gemini-3.8-flash-high`. From a shell: `--provider antigravity --model gemini-3.8-flash-high` |
+| Quick work. One file, one error, a label, a question, the check before a pull request | Gemini 3.8 Flash, high, on Antigravity. This is the $20 plan you can spend often. | `delegate_task` to `antigravity` / `gemini-3.8-flash-high`. From a shell: `--provider antigravity --model gemini-3.8-flash-high` |
 | A moderate change, before the commit. The check, then the score | Gemini 3.8 Flash, high, on Antigravity. It runs the check and scores. It does not edit. | Same Gemini slug as a quick task. Role: `review` |
 | A screen the user named, or a long bug the user named | DeepSeek v4.1 on OpenCode. The free daily pool is small. One of these a day is the idea. | `--provider opencode --model opencode/deepseek-v4.1-flash-free` |
 | A screen, or several packages | Grok 4.7, high, on Cursor. The $20 workhorse. Always high effort, never fast, always 256k (not 500k). | `delegate_task` / Cursor: model `grok-4.7` with options `reasoning_effort=high`, `fastMode=false`, `contextWindow=256k` |
@@ -31,30 +31,30 @@ On that WebDev snapshot, the models we can call sit in this order: DeepSeek V4.1
 Then pick the weight from the plan:
 
 - The Cursor and Antigravity plans are $20. OpenCode is the free daily pool.
-- Cheap weight is Gemini 3.8 Flash high. Use it for a short fix, for the check before a commit, and for every moderate review.
+- Cheap weight is Gemini 3.8 Flash high. Use it for a short fix, for the check before a pull request, and for every moderate review.
 - A screen goes to Grok 4.7 high (not fast, 256k). DeepSeek v4.1 only when the user named that screen, or named the long bug.
 - Heavy repo weight is Grok 4.7 high on Cursor (not fast, 256k).
 - Never set Grok `fastMode` true. Never set `contextWindow` to `500k`. Pass `reasoning_effort=high`, `fastMode=false`, and `contextWindow=256k` in `target.options`.
 - A −1 bloat warning stays on the report. A −2 or −3 cleanup chat stays on Cursor Auto.
 
-## Before you commit
+## Before you open the pull request
 
 A typo, a comment, or a one-line wording fix can go in after the builder runs `mise run check`.
 
 Anything moderately worth a review waits for Gemini 3.8 Flash high on Antigravity. Moderate means a behavior change, a new file, or a diff that touches the cut, the window, a schema, an adapter, or a check.
 
-Give it the issue, the branch, and the changed files. Ask it to read this skill and follow "Score the implementation". It runs `mise run check` on what changed, then scores. It does not edit, commit, or open a pull request. Commit only after the check passes.
+Give it the issue, the branch, and the changed files. Ask it to read this skill and follow "Score the implementation". It runs `mise run check` on what changed, then scores. It does not edit, commit, or open a pull request. Open the pull request only after the check passes.
 
 Every implementation task you delegate ends with this paragraph. A child does not inherit your chat, and an Antigravity thread does not load `AGENTS.md`:
 
-"Before you commit a change that is moderately worth a review, delegate the check and the score to Gemini 3.8 Flash high on Antigravity (model `gemini-3.8-flash-high`). Read `.agents/skills/chair-models/SKILL.md` and follow Score the implementation. Also read `.agents/skills/ponytail-review/SKILL.md` and the ladder in `.agents/skills/ponytail/SKILL.md` at level full. The bloat deduction follows that lean pass. Gemini runs `mise run check` on what changed, scores, and does not edit. Commit only after the check passes. Quick work uses that same Gemini. OpenCode only if the user named the screen or the long bug. Never merge or enable auto-merge; report the PR back instead."
+"Before you open a pull request for a change that is moderately worth a review, delegate the check and the score to Gemini 3.8 Flash high on Antigravity (model `gemini-3.8-flash-high`). Read `.agents/skills/chair-models/SKILL.md` and follow Score the implementation. Also read `.agents/skills/ponytail-review/SKILL.md` and the ladder in `.agents/skills/ponytail/SKILL.md` at level full. The bloat deduction follows that lean pass. Gemini runs `mise run check` on what changed, scores, and does not edit. Open the pull request only after the check passes. Quick work uses that same Gemini. OpenCode only if the user named the screen or the long bug. Never merge or enable auto-merge; report the PR back instead."
 
 ## What to ask
 
 Give the child one issue, the paragraph above, and nothing else from the parent chat.
 
 - Gemini, for a small fix: the error or the file, and the sentence that means done. Ask for the patch, not a redesign.
-- Gemini, before a moderate commit: the rubric below. It runs the check, scores, and does not edit.
+- Gemini, before a moderate pull request: the rubric below. It runs the check, scores, and does not edit.
 - DeepSeek, only when the user named the screen or the long bug: the issue number, the files it may touch, the check to run, and what it must not change. Do not spend it on a ping, a status reply, or a quick task.
 - Grok 4.7: the goal, the constraints, and what to leave alone. Ask it to decide and then do the work. For a screen, name the window a person will look at. Pass `reasoning_effort=high`, `fastMode=false`, and `contextWindow=256k` in `target.options`, not only in the prompt.
 - Auto: the cleanup chat after a bloat deduction of 2 or 3. It may only delete or shrink what Gemini named.
@@ -63,7 +63,7 @@ A mid-task review is one question the builder cannot settle, for example "Does t
 
 ## Score the implementation
 
-Before you commit a change that is moderately worth a review, open one review on Antigravity with model `gemini-3.8-flash-high`. Role: `review`. Give it the issue number, the branch, and the changed files. Tell it to read `.agents/skills/chair-models/SKILL.md`, then `.agents/skills/ponytail-review/SKILL.md`, then the ladder in `.agents/skills/ponytail/SKILL.md` at level full. Those two ponytail files are the cleanliness standard. It runs `mise run check`, then scores. It does not edit, commit, or open a pull request. Commit only after the check passes. Bring the score back before you tell the user the work is ready.
+Before you open a pull request for a change that is moderately worth a review, open one review on Antigravity with model `gemini-3.8-flash-high`. Role: `review`. Give it the issue number, the branch, and the changed files. Tell it to read `.agents/skills/chair-models/SKILL.md`, then `.agents/skills/ponytail-review/SKILL.md`, then the ladder in `.agents/skills/ponytail/SKILL.md` at level full. Those two ponytail files are the cleanliness standard. It runs `mise run check`, then scores. It does not edit, commit, or open a pull request. Open the pull request only after the check passes. Bring the score back before you tell the user the work is ready.
 
 Be strict. A high score must be earned. Praise without line evidence is invalid. Do not default to −0 bloat because the issue works.
 

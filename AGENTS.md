@@ -9,10 +9,10 @@ Talk to the user in plain language. Say what you are doing, which issue it belon
 - Start by looking at open issues and pull requests. If someone already claimed the issue, do not start a second branch. Read `.cursor/skills/chair-desk/SKILL.md`.
 - One issue, one branch, one pull request. Branch from `main` as `feat/<area>/<slug>`. Areas: `desktop`, `ir`, `agent`, `sidecar`, `adapters`, `docs`.
 - Do the smallest change that does the job. Do not tidy unrelated files.
-- On a change that is moderately worth a review, Gemini 3.8 Flash high on Antigravity runs `mise run check` before you commit, then scores. Moderate means a behavior change, a new file, or a diff that touches the cut, the window, a schema, an adapter, or a check. Commit only after that check passes. A typo, a comment, or a one-line wording fix can skip the score; run `mise run check` yourself. Do not download model weights unless the user asks. Boot the desktop app only for the Gemini review screenshot, and only when the change has a screen.
+- On a change that is moderately worth a review, Gemini 3.8 Flash high on Antigravity runs `mise run check` before you open the pull request, then scores. Moderate means a behavior change, a new file, or a diff that touches the cut, the window, a schema, an adapter, or a check. Open the pull request only after that check passes. A typo, a comment, or a one-line wording fix can skip the score; run `mise run check` yourself. Do not download model weights unless the user asks. Boot the desktop app only for the Gemini review screenshot, and only when the change has a screen.
 - **Always give proof to the user on the changes; this is mainly what you must remember from this.** Proof scales with the change (see Working with Mel): a screenshot for a screen, pasted command output or status numbers for backend work, the check plus the score for pure code. If the harness cannot take a screenshot, give the exact click path plus what each step should show, in words.
 - Never merge, and never turn on auto-merge, until the user answers a direct question. See the desk skill for the wording.
-- Commit early and often on the branch while work lands. The check-and-score review happens when the task (or a finished part of it) is done, not on every commit. Nothing merges until that review passes and the user answers.
+- Commit early and often on the branch while work lands; checkpoint commits need no review. The check-and-score review happens once, when you want to open the pull request. Nothing merges until that review passes and the user answers.
 - A pending proposed edit does not change the timeline. Do not overwrite source video or audio. Name the editor's presets. If an adapter cannot do something, use the fallback in its capability manifest.
 - When you add a feature on the user's behalf, name the model you are in your reply (e.g. built with Muse Spark). The user tracks which model built what.
 
@@ -23,7 +23,7 @@ Talk to the user in plain language. Say what you are doing, which issue it belon
 - Every pull request carries its proof: a visual (screenshot, clip, or other capture) when there is a screen, the Gemini score, and a short explanation of the change. It never merges until Mel says so. The main agent reports back per issue: what the issue was, what got fixed, and the proof.
 - When the user wants another round on an already-open PR, comment on the PR first: one line saying the user is reiterating, so the next push doesn't land unexplained.
 - Visual or behavior-changing work comes back with what a person can check: where to look or click, what to expect, and a screenshot when there is a screen. It never merges until Mel has looked and said so.
-- Pure code work still reports its check and score. It needs no eyes-on before commit.
+- Pure code work still reports its check and score. It needs no eyes-on before the pull request.
 - When backend work needs checking, make it checkable. Expose counts, timings, or status on the service's health or status endpoint: jobs queued, jobs done, last error, render time. Point at the numbers in the report so Mel can verify without reading code.
 
 ## Which model
@@ -31,8 +31,8 @@ Talk to the user in plain language. Say what you are doing, which issue it belon
 Read `.cursor/skills/chair-models/SKILL.md` before you hand work off. The same text is linked from `.agents/skills/` for harnesses that do not read `.cursor`.
 
 - Name the field, then the weight. The models skill has the order.
-- Quick work goes to Gemini 3.8 Flash high on Antigravity: one file, one error, a label, a question, and the check before a commit. Trivial one-file fixes may use lower effort or Muse Spark 1.3 contributor for speed.
-- A change that is moderately worth a review goes to that same Gemini before you commit. Moderate means a behavior change, a new file, or a diff that touches the cut, the window, a schema, an adapter, or a check. Gemini runs `mise run check` on what changed, then scores. It does not edit. Commit only after the check passes. A typo, a comment, or a one-line wording fix can skip the score.
+- Quick work goes to Gemini 3.8 Flash high on Antigravity: one file, one error, a label, a question, and the check before a pull request. Trivial one-file fixes may use lower effort or Muse Spark 1.3 contributor for speed.
+- A change that is moderately worth a review goes to that same Gemini before you open the pull request. Moderate means a behavior change, a new file, or a diff that touches the cut, the window, a schema, an adapter, or a check. Gemini runs `mise run check` on what changed, then scores. It does not edit. Open the pull request only after the check passes. A typo, a comment, or a one-line wording fix can skip the score.
 - A screen stays with Grok 4.7 high on Cursor (not fast, 256k). Several packages stay there too.
 - DeepSeek v4.1 on OpenCode is the free daily pool. Spend it only when the user names the screen or names the long bug. One of those a day is the idea.
 - Muse Spark 1.3 is the fallback when Grok 4.7 or DeepSeek v4.1 is unavailable.
@@ -41,7 +41,7 @@ Read `.cursor/skills/chair-models/SKILL.md` before you hand work off. The same t
 
 When you delegate implementation, end the task with this paragraph. A child does not inherit the parent chat, and an Antigravity thread does not load this file:
 
-"Before you commit a change that is moderately worth a review, delegate the check and the score to Gemini 3.8 Flash high on Antigravity (model `gemini-3.8-flash-high`). Read `.agents/skills/chair-models/SKILL.md` and follow Score the implementation. Also read `.agents/skills/ponytail-review/SKILL.md` and the ladder in `.agents/skills/ponytail/SKILL.md` at level full. The bloat deduction follows that lean pass. Gemini runs `mise run check` on what changed, scores, and does not edit. Commit only after the check passes. Quick work uses that same Gemini. OpenCode only if the user named the screen or the long bug. Never merge or enable auto-merge; report the PR back instead."
+"Before you open a pull request for a change that is moderately worth a review, delegate the check and the score to Gemini 3.8 Flash high on Antigravity (model `gemini-3.8-flash-high`). Read `.agents/skills/chair-models/SKILL.md` and follow Score the implementation. Also read `.agents/skills/ponytail-review/SKILL.md` and the ladder in `.agents/skills/ponytail/SKILL.md` at level full. The bloat deduction follows that lean pass. Gemini runs `mise run check` on what changed, scores, and does not edit. Open the pull request only after the check passes. Quick work uses that same Gemini. OpenCode only if the user named the screen or the long bug. Never merge or enable auto-merge; report the PR back instead."
 
 A new job is a new T3 thread (`t3 thread start`, or `delegate_task` from inside a thread). The child gets that issue and the paragraph above. Two models run at the same time only when they are fixing different problems and will not edit the same files.
 Any chat may spawn separate sub-chats with no callback to the parent when the task is long, spans multiple issues, or Mel will follow that chat directly.
@@ -67,7 +67,7 @@ If you need another role, post a handoff comment and stop that part of the work.
 Read the matching skill before editing that area:
 
 - `.cursor/skills/chair-models/SKILL.md` for which model to ask, and how to open its thread. Same file: `.agents/skills/chair-models/SKILL.md`
-- `.agents/skills/chair-review/SKILL.md` before you commit a change that is moderately worth a review
+- `.agents/skills/chair-review/SKILL.md` before you open a pull request for a change that is moderately worth a review
 - `.agents/skills/ponytail-review/SKILL.md` and `.agents/skills/ponytail/SKILL.md` when scoring. The ladder is level full. Do not replace those files with a summary.
 - `.cursor/skills/chair-desk/SKILL.md` for issues, branches, pull requests, and handoffs. Same file: `.agents/skills/chair-desk/SKILL.md`
 - `.agents/skills/chair-modernize/SKILL.md` when asked to rebase a PR or modernize. Same file: `.cursor/skills/chair-modernize/SKILL.md`
