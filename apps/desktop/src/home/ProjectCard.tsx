@@ -14,7 +14,7 @@ import {
 } from "@/components/ui/menu";
 import { cn } from "@/lib/utils";
 import { EditorLogo } from "./EditorLogo";
-import { editorById, formatEditedAt, type Project } from "./data";
+import { editorShort, formatEditedAt, type Project } from "./data";
 
 export type ProjectCardProps = {
   project: Project;
@@ -47,7 +47,7 @@ export function ProjectCard({
   onOpen,
   cardRef,
 }: ProjectCardProps) {
-  const editor = editorById(project.editorId);
+  const editorId = project.editorId;
 
   return (
     <ContextMenu>
@@ -114,8 +114,8 @@ export function ProjectCard({
         <div className="min-w-0 px-0.5">
           <p className="truncate text-sm font-medium text-neutral-100">{project.name}</p>
           <p className="flex items-center gap-1.5 text-xs text-neutral-500">
-            <EditorLogo id={editor.id} className="size-3.5" />
-            <span className="sr-only">{editor.short}</span>
+            <EditorLogo id={editorId} className="size-3.5" />
+            <span className="sr-only">{editorShort(editorId)}</span>
             <span aria-hidden="true">·</span>
             <time dateTime={project.editedAt}>{formatEditedAt(project.editedAt)}</time>
           </p>

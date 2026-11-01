@@ -18,6 +18,7 @@ from chair_agent.jobs import (
 )
 from chair_agent.loop import handle_edit
 from chair_agent.models import TOOLS
+from chair_agent.projects import detect_projects
 from chair_agent.review import ReviewUnavailable, build_review
 from chair_agent.transcribe import handle_transcribe
 
@@ -30,6 +31,9 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:
         if self.path == "/health":
             self._send(200, _health())
+            return
+        if urlsplit(self.path).path == "/projects":
+            self._send(200, detect_projects())
             return
         project_id = _review_path(self.path)
         if project_id is not None:
