@@ -78,16 +78,24 @@ def write_timeline(
         )
     media_pool = project.GetMediaPool()
 
+    timeline_obj = media_pool.CreateEmptyTimeline(plan["timeline_name"])
+    if not timeline_obj:
+        raise RuntimeError(
+            f"Studio could not create timeline {plan['timeline_name']!r}: "
+            "a timeline with that name already exists."
+        )
+    if not project.SetCurrentTimeline(timeline_obj):
+        raise RuntimeError(
+            f"Studio could not set current timeline to {plan['timeline_name']!r}."
+        )
+    timeline_obj.SetSettings({"timelineFrameRate": plan["frame_rate"]})
+
     items_by_path: dict[str, Any] = {}
     for path in dict.fromkeys(clip["media_path"] for clip in plan["clips"]):
         imported = media_pool.ImportMedia([{"FilePath": path}])
         if not imported or imported[0] is None:
             raise RuntimeError(f"Studio could not import media {path!r}.")
         items_by_path[path] = imported[0]
-
-    timeline_obj = media_pool.CreateEmptyTimeline(plan["timeline_name"])
-    project.SetCurrentTimeline(timeline_obj)
-    timeline_obj.SetSettings({"timelineFrameRate": plan["frame_rate"]})
     for track in plan["tracks"]:
         while timeline_obj.GetTrackCount(track["track_type"]) < track["index"]:
             timeline_obj.AddTrack(track["track_type"])
