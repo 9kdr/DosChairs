@@ -46,7 +46,7 @@ import { Tabs, TabsList, TabsTab } from "@/components/ui/tabs";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "@/components/ui/tooltip";
 import { pressStartsDrag, writeChairRefs } from "@/lib/chair-ref";
 import { cn } from "@/lib/utils";
-import { useProjectAssets } from "@/project/assets";
+import { fileToBase64, importProjectAsset, useProjectAssets } from "@/project/assets";
 
 type AssetKind = "video" | "image" | "audio";
 type Scope = "assets" | "pieces";
@@ -412,8 +412,8 @@ export function AssetShelf({
 }: AssetShelfProps) {
   const reduce = useReducedMotion();
   const listing = useProjectAssets(projectId);
-  // Files the user imports this session ride above the listing. They are
-  // session-local: the shelf never writes them into the project.
+  // Files the user imports with no linked editor ride above the listing.
+  // They are session-local: the shelf never writes them into the project.
   const [imports, setImports] = useState<AssetItem[]>([]);
   const [scope, setScope] = useState<Scope>("assets");
   const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");
@@ -574,26 +574,40 @@ export function AssetShelf({
 
   const importFiles = (list: FileList | null) => {
     if (!list || list.length === 0) return;
-    const next: AssetItem[] = [];
-    for (const file of list) {
-      const kind = kindFor(file.name);
-      next.push({
-        id: `import-${file.name}-${file.size}-${file.lastModified}`,
-        scope: "assets",
-        name: file.name,
-        kind,
-        previewUrl: kind === "image" ? URL.createObjectURL(file) : undefined,
-        proxy: "missing",
-      });
-    }
+    const picked = [...list];
     setShift(openFolder ? "out" : "fade");
-    setImports((current) => [...next, ...current]);
     setScope("assets");
     setOpenFolder(null);
     setTypeFilter("all");
     setQuery("");
-    const first = next[0];
-    if (first) setSelectedIds([first.id]);
+    // Linked editors take the file through the agent and the shelf
+    // re-reads the listing; anything that fails keeps today's
+    // session-local staging above the listing instead.
+    void (async () => {
+      const staged: AssetItem[] = [];
+      let landed = 0;
+      for (const file of picked) {
+        try {
+          await importProjectAsset(projectId, file.name, await fileToBase64(file));
+          landed += 1;
+        } catch {
+          const kind = kindFor(file.name);
+          staged.push({
+            id: `import-${file.name}-${file.size}-${file.lastModified}`,
+            scope: "assets",
+            name: file.name,
+            kind,
+            previewUrl: kind === "image" ? URL.createObjectURL(file) : undefined,
+            proxy: "missing",
+          });
+        }
+      }
+      if (landed > 0) listing.retry();
+      if (staged.length === 0) return;
+      setImports((current) => [...staged, ...current]);
+      const first = staged[0];
+      if (first) setSelectedIds([first.id]);
+    })();
   };
 
   const contentPoint = (clientX: number, clientY: number) => {

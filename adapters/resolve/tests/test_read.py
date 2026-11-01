@@ -8,6 +8,7 @@ import pytest
 from chair_resolve import read as resolve_read
 from chair_resolve.read import (
     ResolveClosedError,
+    media_pool_files,
     read_current_timeline,
     resolve_app,
     scripting_module_paths,
@@ -357,3 +358,45 @@ def test_resolve_app_finds_scripting_without_pythonpath(
 def test_scripting_module_paths_only_lists_installed_dirs() -> None:
     for path in scripting_module_paths():
         assert Path(path).is_dir()
+
+
+def _pool_clip(path: str):
+    return types.SimpleNamespace(GetClipProperty=lambda key: {"File Path": path}.get(key, ""))
+
+
+def _pool_folder(clips, subs=()):
+    return types.SimpleNamespace(
+        GetClipList=lambda: list(clips), GetSubFolderList=lambda: list(subs)
+    )
+
+
+def _pool_app(root, name="Demo"):
+    pool = types.SimpleNamespace(GetRootFolder=lambda: root)
+    project = types.SimpleNamespace(GetName=lambda: name, GetMediaPool=lambda: pool)
+    return types.SimpleNamespace(
+        GetProjectManager=lambda: types.SimpleNamespace(GetCurrentProject=lambda: project)
+    )
+
+
+def test_media_pool_files_lists_clips_in_root_and_bins() -> None:
+    sub = _pool_folder([_pool_clip("/media/b.mov")])
+    root = _pool_folder([_pool_clip("/media/a.mov"), _pool_clip("")], [sub])
+
+    assert media_pool_files(_pool_app(root)) == ["/media/a.mov", "/media/b.mov"]
+
+
+def test_media_pool_files_dedupes_and_sorts() -> None:
+    root = _pool_folder(
+        [_pool_clip("/media/b.mov"), _pool_clip("/media/a.mov"), _pool_clip("/media/a.mov")]
+    )
+
+    assert media_pool_files(_pool_app(root)) == ["/media/a.mov", "/media/b.mov"]
+
+
+def test_media_pool_files_without_a_project_errors_clearly() -> None:
+    empty = types.SimpleNamespace(
+        GetProjectManager=lambda: types.SimpleNamespace(GetCurrentProject=lambda: None)
+    )
+
+    with pytest.raises(ResolveClosedError, match="no project open"):
+        media_pool_files(empty)

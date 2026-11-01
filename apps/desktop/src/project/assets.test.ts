@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { ServiceError, type FetchFn } from "@/lib/services/client";
-import { assetsFromJson, fetchProjectAssets } from "./assets";
+import {
+  assetsFromJson,
+  bytesToBase64,
+  fetchProjectAssets,
+  fileToBase64,
+  importProjectAsset,
+} from "./assets";
 
 type StubResponse = { ok: boolean; status: number; payload: unknown };
 
@@ -135,5 +141,64 @@ describe("assetsFromJson", () => {
     expect(() => assetsFromJson({ ...LISTING, pieces: [{ id: "p1" }] })).toThrowError(
       /piece needs id and name/,
     );
+  });
+});
+
+describe("importProjectAsset", () => {
+  it("posts the file and maps the returned asset", async () => {
+    const seen: { url: string; init?: RequestInit }[] = [];
+    const fetchFn = (async (input: string, init?: RequestInit) => {
+      seen.push({ url: input, init });
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          project_id: "kdenlive:film",
+          asset: { id: "editor/up.mov", name: "up.mov", kind: "video", proxy: "missing" },
+        }),
+      };
+    }) as FetchFn;
+    const asset = await importProjectAsset("kdenlive:film", "up.mov", "aGk=", { fetchFn });
+
+    expect(asset).toEqual({ id: "editor/up.mov", name: "up.mov", kind: "video", proxy: "missing" });
+    expect(seen[0]?.url).toBe("http://127.0.0.1:8787/projects/kdenlive%3Afilm/assets");
+    expect(seen[0]?.init?.method).toBe("POST");
+    expect(JSON.parse(seen[0]?.init?.body as string)).toEqual({ name: "up.mov", data: "aGk=" });
+  });
+
+  it("throws the agent's 409 code when no editor is linked", async () => {
+    const fetchFn = stubFetch([
+      {
+        ok: false,
+        status: 409,
+        payload: { error: { code: "editor_unlinked", message: "no link" } },
+      },
+    ]);
+
+    await expect(importProjectAsset("kdenlive:gone", "up.mov", "aGk=", { fetchFn })).rejects.toMatchObject(
+      {
+        name: "ServiceError",
+        service: "agent",
+        status: 409,
+        code: "editor_unlinked",
+      },
+    );
+  });
+
+  it("rejects a 200 without an asset instead of rendering fakes", async () => {
+    const fetchFn = stubFetch([{ ok: true, status: 200, payload: { project_id: "x" } }]);
+
+    await expect(importProjectAsset("kdenlive:film", "up.mov", "aGk=", { fetchFn })).rejects.toThrow(
+      /import needs an asset/,
+    );
+  });
+});
+
+describe("fileToBase64", () => {
+  it("encodes bytes as base64", async () => {
+    expect(bytesToBase64(new Uint8Array([104, 105]))).toBe("aGk=");
+    await expect(
+      fileToBase64({ arrayBuffer: async () => new Uint8Array([104, 105]).buffer }),
+    ).resolves.toBe("aGk=");
   });
 });

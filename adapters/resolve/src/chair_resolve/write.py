@@ -32,6 +32,26 @@ SKIP_FALLBACK = {"subtitle": "subtitles", "effect": "adjustmentLayers"}
 _RATE_LABELS = {rate: label for label, rate in FRAME_RATES.items()}
 
 
+def import_media(path: str, resolve: Any = None) -> Any:
+    """Import one file into the open Studio project's media pool.
+
+    The one editor write the asset shelf may make, on the explicit user
+    Import action. Returns the pool item Studio created for the file.
+    """
+    app = resolve if resolve is not None else resolve_app()
+    manager = app.GetProjectManager()
+    project = manager.GetCurrentProject() if manager is not None else None
+    if project is None:
+        raise ResolveClosedError(
+            "Resolve Studio has no project open. Open a project and try again."
+        )
+    # Plain paths: the {"FilePath": ...} dict form answers None on Studio 21.
+    imported = project.GetMediaPool().ImportMedia([path])
+    if not imported or imported[0] is None:
+        raise RuntimeError(f"Studio could not import media {path!r}.")
+    return imported[0]
+
+
 def plan_from_timeline(
     timeline: dict[str, Any], manifest: Manifest = MANIFEST
 ) -> dict[str, Any]:
@@ -92,10 +112,7 @@ def write_timeline(
 
     items_by_path: dict[str, Any] = {}
     for path in dict.fromkeys(clip["media_path"] for clip in plan["clips"]):
-        imported = media_pool.ImportMedia([{"FilePath": path}])
-        if not imported or imported[0] is None:
-            raise RuntimeError(f"Studio could not import media {path!r}.")
-        items_by_path[path] = imported[0]
+        items_by_path[path] = import_media(path, app)
     for track in plan["tracks"]:
         while timeline_obj.GetTrackCount(track["track_type"]) < track["index"]:
             timeline_obj.AddTrack(track["track_type"])
