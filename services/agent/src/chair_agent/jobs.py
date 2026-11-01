@@ -297,6 +297,33 @@ class JobController:
         self._notify(request_id)
         return self.get(request_id)
 
+    def latest_proposal(self, project_id: str, timeline: Mapping[str, Any]) -> Job | None:
+        """Latest completed proposal linked to this project, if any.
+
+        A job links to the project when its input names the project id, or
+        when its target is the mirrored timeline. Not a listing: this
+        returns the one job the review endpoint needs.
+        """
+        refs = {
+            value
+            for value in (project_id, timeline.get("id"), timeline.get("name"))
+            if isinstance(value, str)
+        }
+        with self._lock:
+            candidates = [
+                job
+                for job in self._jobs.values()
+                if job.status == "completed"
+                and job.changeset is not None
+                and any(
+                    isinstance(job.input.get(key), str) and job.input.get(key) in refs
+                    for key in ("project_id", "target_id")
+                )
+            ]
+        if not candidates:
+            return None
+        return max(candidates, key=lambda job: job.finished_at or job.created_at)
+
     def prune_expired(self, now: datetime | None = None) -> int:
         """Drop artifacts past the 7-day retention window; records stay."""
         now = now or _now()
