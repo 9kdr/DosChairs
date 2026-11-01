@@ -9,7 +9,7 @@ Talk to the user in plain language. Say what you are doing, which issue it belon
 - Start by looking at open issues and pull requests. If someone already claimed the issue, do not start a second branch. Read `.cursor/skills/chair-desk/SKILL.md`.
 - One issue, one branch, one pull request. Branch from `main` as `feat/<area>/<slug>`. Areas: `desktop`, `ir`, `agent`, `sidecar`, `adapters`, `docs`.
 - Do the smallest change that does the job. Do not tidy unrelated files.
-- On a change that is moderately worth a review, Gemini 3.8 Flash high on Antigravity runs `mise run check` before you open the pull request, then scores. Moderate means a behavior change, a new file, or a diff that touches the cut, the window, a schema, an adapter, or a check. Open the pull request only after that check passes. A typo, a comment, or a one-line wording fix can skip the score; run `mise run check` yourself. Do not download model weights unless the user asks. Boot the desktop app only for the Gemini review screenshot, and only when the change has a screen.
+- On a change that is moderately worth a review, Muse Spark 1.2 contributor runs `mise run check` before you open the pull request, then scores. Moderate means a behavior change, a new file, or a diff that touches the cut, the window, a schema, an adapter, or a check. Open the pull request only after that check passes. A typo, a comment, or a one-line wording fix can skip the score; run `mise run check` yourself. Do not download model weights unless the user asks. Boot the desktop app only for the review screenshot, and only when the change has a screen.
 - **Always give proof to the user on the changes; this is mainly what you must remember from this.** Proof scales with the change (see Working with Mel): a screenshot for a screen, pasted command output or status numbers for backend work, the check plus the score for pure code. If the harness cannot take a screenshot, give the exact click path plus what each step should show, in words.
 - Never merge, and never turn on auto-merge, until the user answers a direct question. See the desk skill for the wording.
 - Commit early and often on the branch while work lands; checkpoint commits need no review. The check-and-score review happens once, when you want to open the pull request. Nothing merges until that review passes and the user answers.
@@ -20,7 +20,7 @@ Talk to the user in plain language. Say what you are doing, which issue it belon
 
 - Mel is semi-technical and acts as the client. They judge what they can see and run. Agents get trusted on code they cannot see.
 - Report what the implementation actually did, never just the plan. Name what changed in the app, the check that ran, and the review score.
-- Every pull request carries its proof: a visual (screenshot, clip, or other capture) when there is a screen, the Gemini score, and a short explanation of the change. It never merges until Mel says so. The main agent reports back per issue: what the issue was, what got fixed, and the proof.
+- Every pull request carries its proof: a visual (screenshot, clip, or other capture) when there is a screen, the review score, and a short explanation of the change. It never merges until Mel says so. The main agent reports back per issue: what the issue was, what got fixed, and the proof.
 - When the user wants another round on an already-open PR, comment on the PR first: one line saying the user is reiterating, so the next push doesn't land unexplained.
 - Visual or behavior-changing work comes back with what a person can check: where to look or click, what to expect, and a screenshot when there is a screen. It never merges until Mel has looked and said so.
 - Pure code work still reports its check and score. It needs no eyes-on before the pull request.
@@ -31,8 +31,8 @@ Talk to the user in plain language. Say what you are doing, which issue it belon
 Read `.cursor/skills/chair-models/SKILL.md` before you hand work off. The same text is linked from `.agents/skills/` for harnesses that do not read `.cursor`.
 
 - Name the field, then the weight. The models skill has the order.
-- Quick work goes to Gemini 3.8 Flash high on Antigravity: one file, one error, a label, a question, and the check before a pull request. Trivial one-file fixes may use lower effort or Muse Spark 1.3 contributor for speed.
-- A change that is moderately worth a review goes to that same Gemini before you open the pull request. Moderate means a behavior change, a new file, or a diff that touches the cut, the window, a schema, an adapter, or a check. Gemini runs `mise run check` on what changed, then scores. It does not edit. Open the pull request only after the check passes. A typo, a comment, or a one-line wording fix can skip the score.
+- Quick work goes to Gemini 3.8 Flash high on Antigravity: one file, one error, a label, a question. Trivial one-file fixes may use lower effort or Muse Spark 1.3 contributor for speed.
+- A change that is moderately worth a review goes to Muse Spark 1.2 contributor before you open the pull request. Moderate means a behavior change, a new file, or a diff that touches the cut, the window, a schema, an adapter, or a check. It runs `mise run check` on what changed, then scores. It does not edit. Open the pull request only after the check passes. A typo, a comment, or a one-line wording fix can skip the score.
 - A screen stays with Grok 4.7 high on Cursor (not fast, 256k). Several packages stay there too.
 - DeepSeek v4.1 on OpenCode is the free daily pool. Spend it only when the user names the screen or names the long bug. One of those a day is the idea.
 - Muse Spark 1.3 is the fallback when Grok 4.7 or DeepSeek v4.1 is unavailable.
@@ -41,7 +41,7 @@ Read `.cursor/skills/chair-models/SKILL.md` before you hand work off. The same t
 
 When you delegate implementation, end the task with this paragraph. A child does not inherit the parent chat, and an Antigravity thread does not load this file:
 
-"Before you open a pull request for a change that is moderately worth a review, delegate the check and the score to Gemini 3.8 Flash high on Antigravity (model `gemini-3.8-flash-high`). Read `.agents/skills/chair-models/SKILL.md` and follow Score the implementation. Also read `.agents/skills/ponytail-review/SKILL.md` and the ladder in `.agents/skills/ponytail/SKILL.md` at level full. The bloat deduction follows that lean pass. Gemini runs `mise run check` on what changed, scores, and does not edit. Open the pull request only after the check passes. Quick work uses that same Gemini. OpenCode only if the user named the screen or the long bug. Never merge or enable auto-merge; report the PR back instead."
+"Before you open a pull request for a change that is moderately worth a review, delegate the check and the score to Muse Spark 1.2 contributor (model `muse-spark-1.2-contributor`). Read `.agents/skills/chair-models/SKILL.md` and follow Score the implementation. Also read `.agents/skills/ponytail-review/SKILL.md` and the ladder in `.agents/skills/ponytail/SKILL.md` at level full. The bloat deduction follows that lean pass. It runs `mise run check` on what changed, scores, and does not edit. Open the pull request only after the check passes. Quick work uses Gemini 3.8 Flash high on Antigravity. OpenCode only if the user named the screen or the long bug. Never merge or enable auto-merge; report the PR back instead."
 
 A new job is a new T3 thread (`t3 thread start`, or `delegate_task` from inside a thread). The child gets that issue and the paragraph above. Two models run at the same time only when they are fixing different problems and will not edit the same files.
 Any chat may spawn separate sub-chats with no callback to the parent when the task is long, spans multiple issues, or Mel will follow that chat directly.
@@ -62,7 +62,7 @@ Roles:
 
 - **Desk** claims the issue, tells the user the plan, and asks before a merge.
 - **Builder** writes the code on that branch.
-- **Reviewer** is Gemini 3.8 Flash high. Before a moderate change is committed, it runs `mise run check` on what changed, then scores with the rubric in the models skill. The bloat deduction follows `.agents/skills/ponytail-review/SKILL.md` and the ladder in `.agents/skills/ponytail/SKILL.md` at level full (prefer −1 over −0 when unsure). It does not edit. Come back to the user with that score before asking to merge. A heavy bloat deduction gets a cleanup chat on the same branch, from a different model, only after the user says yes.
+- **Reviewer** is Muse Spark 1.2 contributor. Before a moderate change is committed, it runs `mise run check` on what changed, then scores with the rubric in the models skill. The bloat deduction follows `.agents/skills/ponytail-review/SKILL.md` and the ladder in `.agents/skills/ponytail/SKILL.md` at level full (prefer −1 over −0 when unsure). It does not edit. Come back to the user with that score before asking to merge. A heavy bloat deduction gets a cleanup chat on the same branch, from a different model, only after the user says yes.
 
 If you need another role, post a handoff comment and stop that part of the work. In Cursor, you may also start one subagent with a short prompt and the issue number. Do not hand it the whole chat. Do not start a second agent on an issue that already has a claim.
 
