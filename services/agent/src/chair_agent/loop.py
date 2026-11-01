@@ -216,7 +216,8 @@ def handle_edit(
         changeset_id=changeset_id,
         total_frames=total_frames,
     )
-    planned = plan_brief(brief, client=client)
+    model_spec = job.input.get("model") if isinstance(job.input.get("model"), str) else None
+    planned = plan_brief(brief, client=client, model=model_spec)
     if "spans" in job.input:
         spans = [Span.model_validate(item) for item in job.input.get("spans", [])]
     else:

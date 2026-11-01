@@ -101,6 +101,10 @@ function sidecarErrorMessage(payload: unknown, status: number): string {
 
 export type ServicesClient = {
   agentHealth: (options?: { signal?: AbortSignal }) => Promise<AgentHealth>;
+  setAgentKeys: (
+    keys: Record<string, string | null>,
+    options?: { signal?: AbortSignal },
+  ) => Promise<{ ok: boolean; keys_configured?: Record<string, boolean> }>;
   submitAgentJob: (
     task: string,
     input?: Record<string, unknown>,
@@ -177,6 +181,15 @@ export function createServicesClient(options: ClientOptions = {}): ServicesClien
   const client: ServicesClient = {
     async agentHealth({ signal } = {}) {
       return (await request("agent", `${agent}/health`, { signal })) as AgentHealth;
+    },
+
+    async setAgentKeys(keys, { signal } = {}) {
+      return (await request("agent", `${agent}/keys`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ keys }),
+        signal,
+      })) as { ok: boolean; keys_configured?: Record<string, boolean> };
     },
 
     async submitAgentJob(task, input = {}, { idempotencyKey, signal } = {}) {

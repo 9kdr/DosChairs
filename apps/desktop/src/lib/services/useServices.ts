@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { getDefaultSettingsStore } from "@/settings/settings-store";
 import { createServicesClient, ServiceError, type ServicesClient } from "./client";
 import type {
   AgentHealth,
@@ -56,6 +57,14 @@ export function useServiceHealth(options: ServicesOptions & { intervalMs?: numbe
       if (agentResult.status === "fulfilled") {
         setAgentHealth(agentResult.value);
         setAgent({ phase: "up", checkedAt: Date.now() });
+        void getDefaultSettingsStore()
+          .load()
+          .then((stored) => {
+            if (Object.values(stored.keys).some((k) => k != null)) {
+              void client.setAgentKeys(stored.keys, { signal }).catch(() => {});
+            }
+          })
+          .catch(() => {});
       } else {
         setAgent({
           phase: "down",

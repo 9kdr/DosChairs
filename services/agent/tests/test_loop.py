@@ -499,3 +499,53 @@ def test_handler_resolves_proxy_from_project_timeline(
     assert all(op["status"] == "pending" for op in result.ops)
     assert (silence.calls, transcriber.calls, preview.calls) == (1, 0, 1)
 
+
+def test_handle_edit_model_pick_drives_planner(monkeypatch: pytest.MonkeyPatch) -> None:
+    from chair_agent.client import _MEMORY_KEYS, HttpxTransport, set_key
+
+    _MEMORY_KEYS.clear()
+    reply = json.dumps({
+        "intents": ["silence"],
+        "steps": [
+            {"tool": "measure_audio", "goal": "find quiet spans"},
+            {"tool": "editor_op", "goal": "cut silence"},
+            {"tool": "render_preview", "goal": "render preview"},
+        ],
+    })
+
+    called_url = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        called_url.append(str(request.url))
+        payload = json.loads(request.content)
+        assert payload["model"] == "gpt-4o"
+        return httpx.Response(200, json={"choices": [{"message": {"content": reply}}]})
+
+    mock_client = httpx.Client(transport=httpx.MockTransport(handler))
+    def _mock_init(self, base_url, **kwargs):
+        self.base_url = base_url
+        self._client = mock_client
+
+    monkeypatch.setattr(HttpxTransport, "__init__", _mock_init)
+
+    set_key("openai", "test-key-openai")
+    data = GOLDEN["input"]
+    job_input = {
+        **data["context"],
+        "brief": "Cut the pauses",
+        "model": "gpt-4o (OpenAI)",
+        "spans": data["spans"],
+        "preview_urls": data["artifact_urls"],
+    }
+    before = dict(job_input)
+    job = _job(job_input)
+    result = handle_edit(job)
+
+    # Verify input not modified
+    assert job.input == before
+    # Verify planner was model
+    assert result.planner == "model"
+    assert any("api.openai.com" in url for url in called_url)
+    _MEMORY_KEYS.clear()
+
+

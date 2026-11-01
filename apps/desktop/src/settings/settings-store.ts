@@ -162,7 +162,24 @@ function isEditorConnection(value: unknown): value is EditorConnection {
 }
 
 export function createSettingsStore(backend: SettingsBackend) {
+  const listeners = new Set<(settings: AppSettings) => void>();
+  function notify(settings: AppSettings) {
+    for (const listener of listeners) {
+      try {
+        listener(settings);
+      } catch {
+        // ignore listener errors
+      }
+    }
+  }
+
   return {
+    subscribe(listener: (settings: AppSettings) => void): () => void {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
+    },
     async load(): Promise<AppSettings> {
       try {
         return parseSettings(await backend.read());
@@ -193,6 +210,7 @@ export function createSettingsStore(backend: SettingsBackend) {
         keys: { ...current.keys, [provider]: key && key.length > 0 ? key : null },
       };
       await backend.write(next);
+      notify(next);
       return next;
     },
     async saveModel(role: RoleId, choice: RoleChoice | null): Promise<AppSettings> {
@@ -202,6 +220,7 @@ export function createSettingsStore(backend: SettingsBackend) {
         models: { ...current.models, [role]: choice },
       };
       await backend.write(next);
+      notify(next);
       return next;
     },
     async saveProviderEnabled(
@@ -214,6 +233,7 @@ export function createSettingsStore(backend: SettingsBackend) {
         enabled: { ...current.enabled, [provider]: enabled },
       };
       await backend.write(next);
+      notify(next);
       return next;
     },
     async saveCustomModels(
@@ -234,6 +254,7 @@ export function createSettingsStore(backend: SettingsBackend) {
         customModels: { ...current.customModels, [provider]: cleaned },
       };
       await backend.write(next);
+      notify(next);
       return next;
     },
     async saveModelEnabled(
@@ -256,6 +277,7 @@ export function createSettingsStore(backend: SettingsBackend) {
         disabledModels: { ...current.disabledModels, [provider]: nextList },
       };
       await backend.write(next);
+      notify(next);
       return next;
     },
     async saveOrchestrator(name: string | null): Promise<AppSettings> {
@@ -265,6 +287,7 @@ export function createSettingsStore(backend: SettingsBackend) {
         orchestrator: name && name.length > 0 ? name : null,
       };
       await backend.write(next);
+      notify(next);
       return next;
     },
     async saveEditorConnection(
@@ -284,6 +307,7 @@ export function createSettingsStore(backend: SettingsBackend) {
         editors: { ...current.editors, [id]: nextConnection },
       };
       await backend.write(next);
+      notify(next);
       return next;
     },
   };
@@ -342,3 +366,14 @@ export function defaultBackend(): SettingsBackend {
   if (isTauri()) return createTauriBackend();
   return createWebBackend(localStorage);
 }
+
+let defaultStoreInstance: SettingsStore | null = null;
+
+/** Shared settings store across open composers and settings screens. */
+export function getDefaultSettingsStore(): SettingsStore {
+  if (!defaultStoreInstance) {
+    defaultStoreInstance = createSettingsStore(defaultBackend());
+  }
+  return defaultStoreInstance;
+}
+

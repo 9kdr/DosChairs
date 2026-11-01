@@ -184,3 +184,103 @@ def test_health_reports_configured_model_names(monkeypatch: pytest.MonkeyPatch) 
     assert "test-key" not in json.dumps(body)
     assert body["key_configured"] is True
     assert any(tool["name"] == "render_preview" for tool in body["tools"])
+
+
+def test_saved_key_endpoint_and_not_echoed(monkeypatch) -> None:
+    from urllib.request import Request
+
+    from chair_agent.__main__ import Handler
+    from chair_agent.client import _MEMORY_KEYS, set_key
+
+    # Ensure clean memory keys
+    _MEMORY_KEYS.clear()
+    monkeypatch.delenv("META_API_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    port = server.server_address[1]
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        # Check initial health
+        with urlopen(f"http://127.0.0.1:{port}/health") as response:
+            initial = json.load(response)
+        assert initial["key_configured"] is False
+        assert initial["keys_configured"] == {"meta": False, "openai": False, "anthropic": False}
+
+        # POST a key to /keys
+        secret_key = "test-secret-never-echoed-998877"
+        req = Request(
+            f"http://127.0.0.1:{port}/keys",
+            data=json.dumps({"provider": "meta", "key": secret_key}).encode(),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urlopen(req) as response:
+            post_resp = json.load(response)
+            assert response.status == 200
+
+        # Prove secret key is not in response
+        assert secret_key not in json.dumps(post_resp)
+        assert post_resp["ok"] is True
+        assert post_resp["keys_configured"]["meta"] is True
+
+        # Check /health reports key is configured but never echoes the key
+        with urlopen(f"http://127.0.0.1:{port}/health") as response:
+            health_body = json.load(response)
+        assert secret_key not in json.dumps(health_body)
+        assert health_body["key_configured"] is True
+        assert health_body["keys_configured"]["meta"] is True
+        assert health_body["keys_configured"]["openai"] is False
+
+        # Clear key
+        set_key("meta", None)
+        with urlopen(f"http://127.0.0.1:{port}/health") as response:
+            cleared_body = json.load(response)
+        assert cleared_body["keys_configured"]["meta"] is False
+    finally:
+        server.shutdown()
+        thread.join(timeout=2)
+        server.server_close()
+        _MEMORY_KEYS.clear()
+
+
+def test_model_selection_and_multi_provider() -> None:
+    from chair_agent.client import (
+        _MEMORY_KEYS,
+        build_client_for_model,
+        parse_model_selection,
+        set_key,
+    )
+
+    _MEMORY_KEYS.clear()
+    assert parse_model_selection("muse-wonder-1.0 (Meta)") == ("muse-wonder-1.0", "meta")
+    assert parse_model_selection("gpt-4o (OpenAI)") == ("gpt-4o", "openai")
+    assert parse_model_selection("claude-3-5-sonnet (Anthropic)") == (
+        "claude-3-5-sonnet",
+        "anthropic",
+    )
+    assert parse_model_selection("plain-model") == ("plain-model", "meta")
+
+    # With no keys, build_client_for_model returns None
+    assert build_client_for_model("muse-wonder-1.0 (Meta)", env={}) is None
+    assert build_client_for_model("gpt-4o (OpenAI)", env={}) is None
+
+    # Unsupported provider returns None even with key
+    set_key("anthropic", "ant-key")
+    assert build_client_for_model("claude-3-5-sonnet (Anthropic)", env={}) is None
+
+    # With key set in memory:
+    set_key("meta", "meta-secret")
+    meta_client = build_client_for_model("muse-wonder-1.0 (Meta)", env={})
+    assert meta_client is not None
+    assert meta_client.models.planner == "muse-wonder-1.0"
+
+    set_key("openai", "openai-secret")
+    openai_client = build_client_for_model("gpt-4o (OpenAI)", env={})
+    assert openai_client is not None
+    assert openai_client.models.planner == "gpt-4o"
+    assert "api.openai.com" in openai_client.transport.base_url
+    _MEMORY_KEYS.clear()
+

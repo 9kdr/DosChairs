@@ -9,6 +9,7 @@ from pydantic import BaseModel, ConfigDict
 from chair_agent.pieces import PieceHit
 
 DEFAULT_BASE_URL = "https://api.meta.ai/v1"
+OPENAI_DEFAULT_BASE_URL = "https://api.openai.com/v1"
 _TIMEOUT_SECONDS = 120.0
 
 RoleName = Literal["planner", "executor", "verifier"]
@@ -57,6 +58,30 @@ class Settings:
     api_key: str | None
 
 
+_MEMORY_KEYS: dict[str, str] = {}
+
+
+def set_key(provider: str, key: str | None) -> None:
+    norm = provider.strip().lower()
+    if key and key.strip():
+        _MEMORY_KEYS[norm] = key.strip()
+    else:
+        _MEMORY_KEYS.pop(norm, None)
+
+
+def get_key(provider: str = "meta", env: Mapping[str, str] | None = None) -> str | None:
+    norm = provider.strip().lower()
+    if norm in _MEMORY_KEYS:
+        return _MEMORY_KEYS[norm]
+    source: Mapping[str, str] = os.environ if env is None else env
+    env_vars = {
+        "meta": "META_API_KEY",
+        "openai": "OPENAI_API_KEY",
+        "anthropic": "ANTHROPIC_API_KEY",
+    }
+    return _value(source, env_vars.get(norm, f"{norm.upper()}_API_KEY"))
+
+
 def _value(env: Mapping[str, str], key: str) -> str | None:
     value = env.get(key, "").strip()
     return value or None
@@ -72,7 +97,7 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
             verifier=_value(source, "CHAIR_VERIFIER_MODEL"),
         ),
         base_url=base_url.rstrip("/"),
-        api_key=_value(source, "META_API_KEY"),
+        api_key=get_key("meta", env=env),
     )
 
 
@@ -80,9 +105,18 @@ def configured_models(env: Mapping[str, str] | None = None) -> dict[str, str | N
     return load_settings(env).models.model_dump()
 
 
-def key_configured(env: Mapping[str, str] | None = None) -> bool:
-    """Whether the agent sees a Meta key in its environment. Presence only."""
-    return load_settings(env).api_key is not None
+def key_configured(provider: str = "meta", env: Mapping[str, str] | None = None) -> bool:
+    """Whether the agent sees a key for the provider in memory or environment."""
+    return get_key(provider, env=env) is not None
+
+
+def keys_configured(env: Mapping[str, str] | None = None) -> dict[str, bool]:
+    """Key presence per known provider, never the key values."""
+    return {
+        "meta": key_configured("meta", env=env),
+        "openai": key_configured("openai", env=env),
+        "anthropic": key_configured("anthropic", env=env),
+    }
 
 
 class HttpxTransport:
@@ -196,3 +230,49 @@ def build_client(env: Mapping[str, str] | None = None) -> ModelClient:
         transport=HttpxTransport(settings.base_url),
         api_key=settings.api_key,
     )
+
+
+def parse_model_selection(selection: str | None) -> tuple[str | None, str]:
+    """Parse 'model (Provider)' format into (model_name, provider_id)."""
+    if not selection or not selection.strip():
+        return None, "meta"
+    trimmed = selection.strip()
+    if trimmed.endswith(")") and "(" in trimmed:
+        model_part, prov_part = trimmed[:-1].rsplit("(", 1)
+        return model_part.strip() or None, prov_part.strip().lower()
+    return trimmed, "meta"
+
+
+def build_client_for_model(
+    model_spec: str | None = None,
+    env: Mapping[str, str] | None = None,
+) -> ModelClient | None:
+    source: Mapping[str, str] = os.environ if env is None else env
+    model_name, provider = parse_model_selection(model_spec)
+    if provider == "meta":
+        api_key = get_key("meta", env=env)
+        if not api_key:
+            return None
+        base_url = _value(source, "META_API_BASE_URL") or DEFAULT_BASE_URL
+        planner_model = model_name or _value(source, "CHAIR_PLANNER_MODEL")
+        if not planner_model:
+            return None
+    elif provider == "openai":
+        api_key = get_key("openai", env=env)
+        if not api_key:
+            return None
+        base_url = _value(source, "OPENAI_API_BASE_URL") or OPENAI_DEFAULT_BASE_URL
+        planner_model = model_name or _value(source, "CHAIR_PLANNER_MODEL") or "gpt-4o"
+    else:
+        return None
+
+    return ModelClient(
+        models=RoleModels(
+            planner=planner_model,
+            executor=_value(source, "CHAIR_EXECUTOR_MODEL"),
+            verifier=_value(source, "CHAIR_VERIFIER_MODEL"),
+        ),
+        transport=HttpxTransport(base_url),
+        api_key=api_key,
+    )
+

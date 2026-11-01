@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { createServicesClient } from "@/lib/services/client";
 import type { EditorId } from "../home/data";
 import type { ProviderId, RoleId } from "./providers";
 import {
-  createSettingsStore,
-  defaultBackend,
+  getDefaultSettingsStore,
   EMPTY_SETTINGS,
   type AppSettings,
   type EditorConnection,
@@ -32,11 +32,12 @@ export type UseSettings = {
 
 /**
  * App settings from outside the project tree (Tauri store in the
- * window, localStorage in a plain browser). Loads once on mount.
+ * window, localStorage in a plain browser). Loads on mount and listens
+ * for updates across open composers.
  */
 export function useSettings(store?: SettingsStore): UseSettings {
   const resolved = useMemo(
-    () => store ?? createSettingsStore(defaultBackend()),
+    () => store ?? getDefaultSettingsStore(),
     [store],
   );
   const [settings, setSettings] = useState<AppSettings>(EMPTY_SETTINGS);
@@ -49,14 +50,21 @@ export function useSettings(store?: SettingsStore): UseSettings {
       setSettings(next);
       setLoaded(true);
     });
+    const unsubscribe = resolved.subscribe?.((next) => {
+      if (!live) return;
+      setSettings(next);
+    });
     return () => {
       live = false;
+      unsubscribe?.();
     };
   }, [resolved]);
 
   const saveKey = useCallback(
     async (provider: ProviderId, key: string | null) => {
-      setSettings(await resolved.saveKey(provider, key));
+      const next = await resolved.saveKey(provider, key);
+      setSettings(next);
+      void createServicesClient().setAgentKeys({ [provider]: key }).catch(() => {});
     },
     [resolved],
   );
