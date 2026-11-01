@@ -66,13 +66,15 @@ def run_loop(
     frames: Sequence[FrameEvidence | Mapping[str, Any]] = (),
     audio: AudioEvidence | Mapping[str, Any] | None = None,
     client: ModelClient | None = None,
+    planned: Plan | None = None,
 ) -> LoopResult:
     """Run plan, execute, verify for one brief against the proxy.
 
     The beat sheet, style profile, and frame/audio evidence are
     optional: absent, the mechanical verdict stands alone as before.
     """
-    planned = plan_brief(brief, client=client)
+    if planned is None:
+        planned = plan_brief(brief, client=client)
     executable_plan = Plan(
         brief=planned.brief,
         intents=[i for i in planned.intents if i in ("silence", "filler")],
@@ -144,11 +146,6 @@ def handle_edit(
          ("proxy_url", "base_revision", "target_id", "changeset_id", "total_frames")}
     )
     planned = plan_brief(brief, client=client)
-    job.input["planner"] = planned.planner
-    if planned.message:
-        job.input["message"] = planned.message
-        job.input["reply"] = planned.message
-
     if "spans" in job.input:
         spans = [Span.model_validate(item) for item in job.input.get("spans", [])]
     else:
@@ -184,16 +181,19 @@ def handle_edit(
         style=job.input.get("style"),
         frames=job.input.get("frames", []),
         audio=job.input.get("audio"),
-        client=client,
+        planned=planned,
     )
     if not result.verdict.accepted:
         if not spans and planned.message:
             return HandlerResult(
                 artifacts=[{"url": url} for url in artifact_urls],
-                ops=[],
+                planner=planned.planner,
+                message=planned.message,
             )
         raise PreviewRejected(result.verdict.reasons)
     return HandlerResult(
         artifacts=[{"url": url} for url in artifact_urls],
         ops=result.changeset["items"],
+        planner=planned.planner,
+        message=planned.message,
     )

@@ -99,6 +99,17 @@ def test_idempotent_submit_replays_same_request(tmp_path: Path) -> None:
         controller.submit("sam3_mask", {"media": "a.mov"}, idempotency_key="key-1")
 
 
+def test_idempotent_submit_replays_after_completion(tmp_path: Path) -> None:
+    controller = _controller(tmp_path)
+    first = controller.submit("edit", {"brief": "cut"}, idempotency_key="key-1")
+    controller.claim_next()
+    done = controller.finish_completed(first.request_id, planner="rules", message="note")
+    assert (done.planner, done.message) == ("rules", "note")
+
+    replay = controller.submit("edit", {"brief": "cut"}, idempotency_key="key-1")
+    assert replay.request_id == first.request_id
+
+
 def test_state_survives_restart(tmp_path: Path) -> None:
     path = tmp_path / "jobs.json"
     first_id = _controller(tmp_path).submit("transcribe", idempotency_key="key-1").request_id

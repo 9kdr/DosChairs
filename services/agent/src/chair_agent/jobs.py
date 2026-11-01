@@ -94,6 +94,8 @@ class Job(BaseModel):
     error: str | None = None
     artifacts: list[Artifact] = []
     changeset: ChangesetProposal | None = None
+    planner: str | None = None
+    message: str | None = None
     billable: bool | None = None
     webhook_attempts: int = 0
     webhook_delivered: bool = False
@@ -260,6 +262,9 @@ class JobController:
         request_id: str,
         artifacts: list[dict[str, Any]] | None = None,
         ops: list[dict[str, Any]] | None = None,
+        *,
+        planner: str | None = None,
+        message: str | None = None,
     ) -> Job:
         with self._lock:
             job = self._running(request_id)
@@ -271,6 +276,8 @@ class JobController:
             job.billable = True
             job.artifacts = validated
             job.changeset = changeset
+            job.planner = planner
+            job.message = message
             self._save()
         self._notify(request_id)
         return self.get(request_id)
@@ -418,6 +425,8 @@ class HandlerResult(BaseModel):
 
     artifacts: list[dict[str, Any]] = []
     ops: list[dict[str, Any]] = []
+    planner: str | None = None
+    message: str | None = None
 
 
 class Moderated(Exception):
@@ -453,7 +462,13 @@ def run_worker(
             controller.finish_failed(job.request_id, f"{type(error).__name__}: {error}")
         else:
             try:
-                controller.finish_completed(job.request_id, result.artifacts, result.ops)
+                controller.finish_completed(
+                    job.request_id,
+                    result.artifacts,
+                    result.ops,
+                    planner=result.planner,
+                    message=result.message,
+                )
             except Exception as error:
                 # A bad handler result fails its job, never the worker.
                 controller.finish_failed(job.request_id, f"{type(error).__name__}: {error}")

@@ -416,13 +416,15 @@ def test_handle_edit_records_planner_and_undispatched_message() -> None:
     job_input = {**data["context"], "brief": "Cut silence and add a warm grade"}
     silence, transcriber, preview = _LiveSilence(), _LiveTranscriber(), _LivePreview()
     job = _job(job_input)
+    before = json.loads(json.dumps(job.input))
     result = handle_edit(
         job, client=client, silence=silence, transcriber=transcriber, preview=preview
     )
 
-    assert job.input["planner"] == "model"
-    assert job.input["reply"] == "Cannot dispatch intents yet: grade"
-    assert job.input["message"] == "Cannot dispatch intents yet: grade"
+    # The input stays as submitted, so an idempotent resubmit still matches.
+    assert job.input == before
+    assert result.planner == "model"
+    assert result.message == "Cannot dispatch intents yet: grade"
     assert isinstance(result, HandlerResult)
     assert result.ops
     assert all(op["status"] == "pending" for op in result.ops)
@@ -442,8 +444,8 @@ def test_handle_edit_undispatched_only_does_not_crash() -> None:
         job, client=client, silence=silence, transcriber=transcriber, preview=preview
     )
 
-    assert job.input["planner"] == "model"
-    assert job.input["reply"] == "Cannot dispatch intents yet: grade"
+    assert result.planner == "model"
+    assert result.message == "Cannot dispatch intents yet: grade"
     assert isinstance(result, HandlerResult)
     assert result.ops == []
 
