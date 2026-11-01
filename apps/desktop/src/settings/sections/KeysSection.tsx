@@ -9,18 +9,21 @@ import type { AddProviderResult } from "../add-provider";
 import {
   addCustomModel,
   CONNECTION_LABEL,
+  keyDetectionHint,
   keySourceLabel,
   KNOWN_MODELS,
   maskKey,
   PROVIDERS,
   providerConnection,
   removeCustomModel,
+  trimKeyDraft,
   type ConnectionState,
   type Provider,
   type ProviderId,
 } from "../providers";
 import type { AppSettings } from "../settings-store";
 import { AddProviderDialog } from "./AddProviderDialog";
+import { ProviderLogo } from "./ProviderLogo";
 
 function connectionDot(state: ConnectionState): string {
   if (state === "live") return "bg-neutral-100";
@@ -140,7 +143,6 @@ export function KeysSection({
                 disabledModels={settings.disabledModels[detail.id]}
                 onSave={(key) => saveKey(detail.id, key)}
                 onClear={() => saveKey(detail.id, null)}
-                onAddKey={() => openAdd(detail.id)}
                 onSaveCustomModels={(models) =>
                   saveCustomModels(detail.id, models)
                 }
@@ -204,6 +206,7 @@ function ProviderRow({
             enabled ? connectionDot(state) : "bg-neutral-600",
           )}
         />
+        <ProviderLogo id={provider.id} />
         <span className="min-w-0 flex-1">
           <span
             className={cn(
@@ -236,7 +239,6 @@ type ProviderDetailProps = {
   disabledModels: string[];
   onSave: (key: string) => Promise<void>;
   onClear: () => Promise<void>;
-  onAddKey: () => void;
   onSaveCustomModels: (models: string[]) => Promise<void>;
   onToggleModel: (model: string, enabled: boolean) => Promise<void>;
 };
@@ -251,7 +253,6 @@ function ProviderDetail({
   disabledModels,
   onSave,
   onClear,
-  onAddKey,
   onSaveCustomModels,
   onToggleModel,
 }: ProviderDetailProps) {
@@ -265,7 +266,8 @@ function ProviderDetail({
   return (
     <div aria-label={`${provider.label} details`}>
       <div className="flex items-baseline justify-between gap-3">
-        <h3 className="text-sm font-medium text-neutral-100">
+        <h3 className="flex items-center gap-2 text-sm font-medium text-neutral-100">
+          <ProviderLogo id={provider.id} className="size-5" />
           {provider.label}
         </h3>
         <p className="flex shrink-0 items-center gap-2 text-xs text-neutral-400">
@@ -277,7 +279,7 @@ function ProviderDetail({
         </p>
       </div>
       <p className="mt-0.5 text-xs text-neutral-500">
-        {source ? `Key ${source}` : provider.blurb} ·{" "}
+        {source ? `Key ${source} · ` : null}
         <code className="font-mono">{provider.envVar}</code>
       </p>
 
@@ -287,7 +289,6 @@ function ProviderDetail({
         envKey={envKey}
         onSave={onSave}
         onClear={onClear}
-        onAddKey={onAddKey}
       />
 
       <ModelsBlock
@@ -307,26 +308,29 @@ type KeyBlockProps = {
   envKey: boolean;
   onSave: (key: string) => Promise<void>;
   onClear: () => Promise<void>;
-  onAddKey: () => void;
 };
 
-/** The provider's API key: masked once saved, replaceable, clearable. */
+/**
+ * The provider's API key: typed inline when missing — Enter or
+ * Save commits — masked once saved, replaceable, clearable.
+ */
 function KeyBlock({
   provider,
   saved,
   envKey,
   onSave,
   onClear,
-  onAddKey,
 }: KeyBlockProps) {
   const [replacing, setReplacing] = useState(false);
   const [draft, setDraft] = useState("");
   const [shown, setShown] = useState(false);
   const [busy, setBusy] = useState(false);
 
+  const hint = keyDetectionHint(draft, provider.id);
+
   const save = async () => {
-    const key = draft.trim();
-    if (key === "" || busy) return;
+    const key = trimKeyDraft(draft);
+    if (key == null || busy) return;
     setBusy(true);
     try {
       await onSave(key);
@@ -348,22 +352,20 @@ function KeyBlock({
     }
   };
 
+  const editing = saved == null || replacing;
+
   return (
     <div className="mt-4">
       <p className="text-sm font-medium text-neutral-100">API key</p>
+      {saved == null ? (
+        <p className="mt-1 text-xs text-neutral-500">
+          {envKey
+            ? "Nothing saved here · the agent sees a key in its environment"
+            : "No key — paste one below"}
+        </p>
+      ) : null}
       <div className="mt-2 flex items-center gap-2">
-        {saved == null && !replacing ? (
-          <>
-            <p className="min-w-0 flex-1 truncate text-xs text-neutral-500">
-              {envKey
-                ? "Nothing saved here · the agent sees a key in its environment"
-                : "No key"}
-            </p>
-            <Button type="button" size="sm" onClick={onAddKey}>
-              Add a key
-            </Button>
-          </>
-        ) : replacing || saved == null ? (
+        {editing ? (
           <>
             <Input
               type={shown ? "text" : "password"}
@@ -392,7 +394,7 @@ function KeyBlock({
             <Button
               type="button"
               size="sm"
-              disabled={draft.trim() === "" || busy}
+              disabled={trimKeyDraft(draft) == null || busy}
               onClick={() => void save()}
             >
               Save
@@ -439,6 +441,9 @@ function KeyBlock({
           </>
         )}
       </div>
+      {editing && hint != null ? (
+        <p className="mt-1 text-xs text-neutral-500">{hint}</p>
+      ) : null}
     </div>
   );
 }

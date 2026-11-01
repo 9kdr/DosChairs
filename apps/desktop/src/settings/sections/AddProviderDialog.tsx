@@ -22,6 +22,7 @@ import {
   providerLabel,
   type ProviderId,
 } from "../providers";
+import { ProviderLogo } from "./ProviderLogo";
 
 type AddProviderDialogProps = {
   open: boolean;
@@ -195,6 +196,7 @@ export function AddProviderDialog({
                         value={option.id}
                         className="flex cursor-pointer items-center gap-3 rounded-xl bg-white/[0.03] px-4 py-3 text-left ring-1 ring-white/[0.06] outline-none hover:bg-white/[0.05] focus-visible:ring-2 focus-visible:ring-white/40 data-[checked]:bg-white/[0.05] data-[checked]:ring-white/40"
                       >
+                        <ProviderLogo id={option.id} className="size-5" />
                         <span className="min-w-0 flex-1">
                           <span className="flex items-baseline justify-between gap-3">
                             <span className="text-sm font-medium text-neutral-100">
@@ -203,9 +205,6 @@ export function AddProviderDialog({
                             <span className="shrink-0 text-xs text-neutral-500">
                               {hasKey ? "Key saved. Adding replaces it." : "No key"}
                             </span>
-                          </span>
-                          <span className="mt-0.5 block truncate text-xs text-neutral-500">
-                            {option.blurb}
                           </span>
                         </span>
                         <Radio.Indicator

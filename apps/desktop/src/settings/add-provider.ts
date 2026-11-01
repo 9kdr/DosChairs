@@ -5,7 +5,12 @@
  * tests cover it; the dialog in `sections/AddProviderDialog.tsx`
  * is a thin view.
  */
-import { detectProvider, PROVIDERS, type ProviderId } from "./providers";
+import {
+  detectProvider,
+  PROVIDERS,
+  trimKeyDraft,
+  type ProviderId,
+} from "./providers";
 
 export const ADD_PROVIDER_STEPS = ["Provider", "Key"] as const;
 
@@ -64,7 +69,7 @@ export function buildAddProviderResult(input: {
   provider: ProviderId;
   key: string;
 }): AddProviderResult | null {
-  const key = input.key.trim();
-  if (key === "") return null;
+  const key = trimKeyDraft(input.key);
+  if (key == null) return null;
   return { provider: input.provider, key };
 }

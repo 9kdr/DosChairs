@@ -8,8 +8,6 @@ export type Provider = {
   label: string;
   /** The `.env` variable the agent reads — shown so `.env` stays findable. */
   envVar: string;
-  /** One line on what the agent does with this provider today. */
-  blurb: string;
 };
 
 export const PROVIDERS: Provider[] = [
@@ -17,19 +15,16 @@ export const PROVIDERS: Provider[] = [
     id: "meta",
     label: "Meta",
     envVar: "META_API_KEY",
-    blurb: "Primary. The agent calls Meta today.",
   },
   {
     id: "openai",
     label: "OpenAI",
     envVar: "OPENAI_API_KEY",
-    blurb: "Fallback. Saved here; the agent does not call it today.",
   },
   {
     id: "anthropic",
     label: "Anthropic",
     envVar: "ANTHROPIC_API_KEY",
-    blurb: "Fallback. Saved here; the agent does not call it today.",
   },
 ];
 
@@ -170,6 +165,33 @@ export function detectProvider(key: string): ProviderId | null {
   if (trimmed.startsWith("sk-ant-")) return "anthropic";
   if (trimmed.startsWith("sk-")) return "openai";
   return null;
+}
+
+/**
+ * A key draft counts once trimmed non-blank. Null leaves the
+ * store alone. Both key inputs — the detail field and the
+ * wizard — commit through here, so the rule cannot drift.
+ */
+export function trimKeyDraft(draft: string): string | null {
+  const key = draft.trim();
+  return key === "" ? null : key;
+}
+
+/**
+ * The note under the detail key field when the draft names a
+ * different provider than the open one: detection informs,
+ * the key still files under the open provider. Null when the
+ * draft is blank, unknown, or agrees with the open provider.
+ */
+export function keyDetectionHint(
+  draft: string,
+  current: ProviderId,
+): string | null {
+  const detected = detectProvider(draft);
+  if (detected == null || detected === current) return null;
+  const label = providerLabel(detected);
+  const article = /^[aeiou]/i.test(label) ? "an" : "a";
+  return `Looks like ${article} ${label} key — saving under ${providerLabel(current)}.`;
 }
 
 /**

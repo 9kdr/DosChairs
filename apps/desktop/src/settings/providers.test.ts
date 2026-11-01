@@ -5,12 +5,15 @@ import {
   enabledModels,
   followChoice,
   followProvider,
+  keyDetectionHint,
   keySourceLabel,
   maskKey,
+  PROVIDERS,
   providerConnection,
   providerLabel,
   removeCustomModel,
   ROLES,
+  trimKeyDraft,
   type ProviderId,
 } from "./providers";
 
@@ -19,6 +22,18 @@ describe("providerLabel", () => {
     expect(providerLabel("meta")).toBe("Meta");
     expect(providerLabel("openai")).toBe("OpenAI");
     expect(providerLabel("anthropic")).toBe("Anthropic");
+  });
+});
+
+describe("PROVIDERS", () => {
+  it("carries no descriptive copy — the detail header shows status, not a blurb", () => {
+    for (const provider of PROVIDERS) {
+      expect(Object.keys(provider).sort()).toEqual([
+        "envVar",
+        "id",
+        "label",
+      ]);
+    }
   });
 });
 
@@ -85,6 +100,34 @@ describe("detectProvider", () => {
     expect(detectProvider("test-key")).toBeNull();
     expect(detectProvider("")).toBeNull();
     expect(detectProvider("  sk-ant-padded  ")).toBe("anthropic");
+  });
+});
+
+describe("trimKeyDraft", () => {
+  it("trims the key for saving", () => {
+    expect(trimKeyDraft("  sk-ant-abc123  ")).toBe("sk-ant-abc123");
+  });
+
+  it("is null for a blank draft, so the store stays alone", () => {
+    expect(trimKeyDraft("")).toBeNull();
+    expect(trimKeyDraft("   ")).toBeNull();
+  });
+});
+
+describe("keyDetectionHint", () => {
+  it("names the detected provider when it differs from the open one", () => {
+    expect(keyDetectionHint("sk-ant-abc123", "meta")).toBe(
+      "Looks like an Anthropic key — saving under Meta.",
+    );
+    expect(keyDetectionHint("sk-test-openai-1", "anthropic")).toBe(
+      "Looks like an OpenAI key — saving under Anthropic.",
+    );
+  });
+
+  it("stays silent when detection agrees, is unknown, or the draft is blank", () => {
+    expect(keyDetectionHint("sk-ant-abc123", "anthropic")).toBeNull();
+    expect(keyDetectionHint("test-key", "meta")).toBeNull();
+    expect(keyDetectionHint("   ", "meta")).toBeNull();
   });
 });
 
