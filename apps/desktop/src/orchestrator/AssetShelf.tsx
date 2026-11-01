@@ -1537,7 +1537,8 @@ function Row({
   const draggable = item.scope === "assets";
   const dragRow = draggable && selected;
   const name = <span className="min-w-0 flex-1 truncate text-left font-medium">{item.name}</span>;
-  const proxy = item.scope === "assets" && item.proxy === "ready" ? <ProxyBadge /> : null;
+  const proxied = item.scope === "assets" && item.proxy === "ready";
+  const proxy = proxied ? <ProxyBadge /> : null;
   const meta = dense ? (
     <span className="shrink-0 text-[10px] font-normal text-neutral-500">{kindLabel}</span>
   ) : null;
@@ -1554,7 +1555,15 @@ function Row({
         SHELF_BUTTON,
         dimmed && "opacity-60",
         dragRow && "cursor-grab active:cursor-grabbing",
-        dense ? "h-8 px-2 text-xs sm:h-8" : "h-8 justify-start! gap-3! px-2.5 text-left sm:h-8",
+        // A badged row reserves the hover-action zone, so the badge
+        // never slides under the hide/remove buttons.
+        dense
+          ? proxied
+            ? "h-8 pr-[68px] pl-2 text-xs sm:h-8"
+            : "h-8 px-2 text-xs sm:h-8"
+          : proxied
+            ? "h-8 justify-start! gap-3! pr-[68px] pl-2.5 text-left sm:h-8"
+            : "h-8 justify-start! gap-3! px-2.5 text-left sm:h-8",
       )}
     >
       {dragRow ? (

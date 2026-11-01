@@ -95,6 +95,7 @@ def test_http_assets_endpoint(
     try:
         with urlopen(f"{base}/projects/proj_1/assets") as response:
             assert response.status == 200
+            assert response.headers["access-control-allow-origin"] == "*"
             body = json.load(response)
         assert body["project_id"] == "proj_1"
         assert body["folders"][0]["id"] == "interview"
