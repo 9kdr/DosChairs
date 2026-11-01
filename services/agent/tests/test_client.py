@@ -15,6 +15,7 @@ from chair_agent.client import (
     ModelNotConfigured,
     RoleModels,
     UnexpectedResponse,
+    build_brief_planner_messages,
     build_client,
     build_planner_messages,
     configured_models,
@@ -141,6 +142,17 @@ def test_planner_prompt_carries_pieces_refs_and_defaults() -> None:
     assert "template=lower-third" in messages[0].content
     with pytest.raises(ValueError):
         build_planner_messages("  ", search_pieces())
+
+
+def test_brief_planner_prompt_carries_tool_registry() -> None:
+    messages = build_brief_planner_messages("Cut pauses and add warm grade")
+    assert [message.role for message in messages] == ["developer", "user"]
+    assert "measure_audio" in messages[0].content
+    assert "render_preview" in messages[0].content
+    assert "editor_op" in messages[0].content
+    assert messages[1].content == "Cut pauses and add warm grade"
+    with pytest.raises(ValueError):
+        build_brief_planner_messages("  ")
 
 
 def test_health_reports_configured_model_names(monkeypatch: pytest.MonkeyPatch) -> None:

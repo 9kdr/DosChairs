@@ -167,6 +167,28 @@ def build_planner_messages(instruction: str, hits: Sequence[PieceHit]) -> list[M
     return [developer, Message(role="user", content=instruction)]
 
 
+def build_brief_planner_messages(brief: str) -> list[Message]:
+    """Turn a free-text brief into prompt messages for the planner model."""
+    if not brief.strip():
+        raise ValueError("brief must be a non-empty string")
+    from chair_agent.models import TOOLS
+
+    tool_lines = "\n".join(f"- {tool.name}: {tool.summary}" for tool in TOOLS)
+    developer = (
+        "You are the Chair video planner. Turn the brief into an ordered JSON plan.\n"
+        "Return a JSON object matching this schema:\n"
+        "{\n"
+        '  "intents": ["silence", ...],\n'
+        '  "steps": [\n'
+        '    {"tool": "<tool_name>", "goal": "<what this step achieves>"}\n'
+        "  ]\n"
+        "}\n"
+        "Steps may ONLY use tools from this registry:\n"
+        f"{tool_lines}"
+    )
+    return [Message(role="developer", content=developer), Message(role="user", content=brief)]
+
+
 def build_client(env: Mapping[str, str] | None = None) -> ModelClient:
     settings = load_settings(env)
     return ModelClient(

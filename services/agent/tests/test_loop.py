@@ -2,11 +2,13 @@ import json
 from datetime import UTC, datetime
 from pathlib import Path
 
+import httpx
 import pytest
+from chair_agent.client import HttpxTransport, ModelClient, RoleModels
 from chair_agent.executor import Span, fill_tool_calls, merge_spans
 from chair_agent.jobs import HandlerResult, Job
 from chair_agent.loop import LoopContext, PreviewRejected, handle_edit, run_loop
-from chair_agent.planner import Plan, PlanStep, plan_brief
+from chair_agent.planner import Plan, PlanStep, plan_brief, plan_with_model
 from chair_agent.transcribe import Transcript, Word
 from chair_agent.verifier import verify
 
@@ -302,3 +304,146 @@ def test_handler_rejects_a_bad_model(model: object) -> None:
 def test_handler_rejects_bad_files(files: object) -> None:
     with pytest.raises(ValueError, match="files"):
         handle_edit(_job({**_canned_input(), "files": files}))
+
+
+def _fake_client(reply_content: str, *, status_code: int = 200) -> ModelClient:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if status_code != 200:
+            return httpx.Response(status_code, json={"error": "mock error"})
+        return httpx.Response(200, json={"choices": [{"message": {"content": reply_content}}]})
+
+    return ModelClient(
+        models=RoleModels(planner="muse-wonder-1.0", executor=None, verifier=None),
+        transport=HttpxTransport(
+            "https://example.test/v1",
+            client=httpx.Client(transport=httpx.MockTransport(handler)),
+        ),
+        api_key="test-key",
+    )
+
+
+def test_plan_with_model_validates_and_parses() -> None:
+    reply = (
+        "```json\n"
+        "{\n"
+        '  "intents": ["silence"],\n'
+        '  "steps": [\n'
+        '    {"tool": "measure_audio", "goal": "find quiet spots"},\n'
+        '    {"tool": "editor_op", "goal": "cut quiet spots"},\n'
+        '    {"tool": "render_preview", "goal": "make preview"}\n'
+        "  ]\n"
+        "}\n"
+        "```"
+    )
+    client = _fake_client(reply)
+    plan = plan_with_model("Cut out the pauses", client)
+    assert plan.brief == "Cut out the pauses"
+    assert plan.intents == ["silence"]
+    assert [s.tool for s in plan.steps] == ["measure_audio", "editor_op", "render_preview"]
+    assert plan.planner == "model"
+    assert plan.message is None
+
+
+def test_plan_with_model_rejects_unknown_tools() -> None:
+    reply = json.dumps({
+        "intents": ["speed"],
+        "steps": [{"tool": "warp_speed", "goal": "go fast"}],
+    })
+    client = _fake_client(reply)
+    with pytest.raises(ValueError, match="unknown tool"):
+        plan_with_model("Speed it up", client)
+
+
+def test_plan_with_model_handles_undispatched_intents() -> None:
+    reply = json.dumps({
+        "intents": ["silence", "grade"],
+        "steps": [
+            {"tool": "measure_audio", "goal": "find silence"},
+            {"tool": "grade", "goal": "warm grade"},
+            {"tool": "editor_op", "goal": "cut silence"},
+            {"tool": "render_preview", "goal": "preview"},
+        ],
+    })
+    client = _fake_client(reply)
+    plan = plan_with_model("Cut silence and make it warmer", client)
+    assert plan.intents == ["silence", "grade"]
+    assert plan.message == "Cannot dispatch intents yet: grade"
+    assert plan.planner == "model"
+
+
+def test_plan_brief_falls_back_to_rules_on_model_error() -> None:
+    client = _fake_client("internal server error", status_code=500)
+    plan = plan_brief("cut the silence from the proxy", client=client)
+    assert plan.planner == "rules"
+    assert plan.intents == ["silence"]
+
+
+def test_plan_brief_falls_back_to_rules_on_invalid_answer() -> None:
+    reply = json.dumps({
+        "intents": ["silence"],
+        "steps": [{"tool": "unregistered_cutter", "goal": "cut"}],
+    })
+    client = _fake_client(reply)
+    plan = plan_brief("remove filler words", client=client)
+    assert plan.planner == "rules"
+    assert plan.intents == ["filler"]
+
+
+def test_plan_brief_raises_when_fallback_rules_cannot_plan() -> None:
+    client = _fake_client("crash", status_code=500)
+    with pytest.raises(ValueError, match="cleanup v1 plans"):
+        plan_brief("make the look warmer with a grade", client=client)
+
+
+def test_plan_brief_without_key_uses_rules() -> None:
+    plan = plan_brief("cut the silence", env={})
+    assert plan.planner == "rules"
+    assert plan.intents == ["silence"]
+
+
+def test_handle_edit_records_planner_and_undispatched_message() -> None:
+    reply = json.dumps({
+        "intents": ["silence", "grade"],
+        "steps": [
+            {"tool": "measure_audio", "goal": "find quiet spans"},
+            {"tool": "grade", "goal": "color grade"},
+            {"tool": "editor_op", "goal": "cut silence"},
+            {"tool": "render_preview", "goal": "render preview"},
+        ],
+    })
+    client = _fake_client(reply)
+    data = GOLDEN["input"]
+    job_input = {**data["context"], "brief": "Cut silence and add a warm grade"}
+    silence, transcriber, preview = _LiveSilence(), _LiveTranscriber(), _LivePreview()
+    job = _job(job_input)
+    result = handle_edit(
+        job, client=client, silence=silence, transcriber=transcriber, preview=preview
+    )
+
+    assert job.input["planner"] == "model"
+    assert job.input["reply"] == "Cannot dispatch intents yet: grade"
+    assert job.input["message"] == "Cannot dispatch intents yet: grade"
+    assert isinstance(result, HandlerResult)
+    assert result.ops
+    assert all(op["status"] == "pending" for op in result.ops)
+
+
+def test_handle_edit_undispatched_only_does_not_crash() -> None:
+    reply = json.dumps({
+        "intents": ["grade"],
+        "steps": [{"tool": "grade", "goal": "warm tone"}],
+    })
+    client = _fake_client(reply)
+    data = GOLDEN["input"]
+    job_input = {**data["context"], "brief": "Make the clip warmer with a grade"}
+    silence, transcriber, preview = _LiveSilence(), _LiveTranscriber(), _LivePreview()
+    job = _job(job_input)
+    result = handle_edit(
+        job, client=client, silence=silence, transcriber=transcriber, preview=preview
+    )
+
+    assert job.input["planner"] == "model"
+    assert job.input["reply"] == "Cannot dispatch intents yet: grade"
+    assert isinstance(result, HandlerResult)
+    assert result.ops == []
+

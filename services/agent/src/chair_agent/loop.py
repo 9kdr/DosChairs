@@ -8,9 +8,10 @@ accepts; a rejection keeps the preview away from the UI.
 from collections.abc import Mapping, Sequence
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from chair_agent.beats import StoryPlan
+from chair_agent.client import ModelClient
 from chair_agent.dispatch import (
     PreviewRenderer,
     SilenceMeasurer,
@@ -23,6 +24,8 @@ from chair_agent.planner import Plan, plan_brief
 from chair_agent.style import StyleProfile
 from chair_agent.transcribe import TranscriptionAdapter, build_transcription_adapter
 from chair_agent.verifier import AudioEvidence, FrameEvidence, Verdict, verify
+
+_EXECUTOR_TOOLS = frozenset({"measure_audio", "transcribe", "editor_op", "render_preview"})
 
 
 class LoopContext(BaseModel):
@@ -43,6 +46,7 @@ class LoopResult(BaseModel):
     changeset: dict[str, Any]
     verdict: Verdict
     show_to_ui: bool
+    message: str | None = Field(default=None, exclude=True)
 
 
 class PreviewRejected(Exception):
@@ -61,14 +65,20 @@ def run_loop(
     style: StyleProfile | Mapping[str, Any] | None = None,
     frames: Sequence[FrameEvidence | Mapping[str, Any]] = (),
     audio: AudioEvidence | Mapping[str, Any] | None = None,
+    client: ModelClient | None = None,
 ) -> LoopResult:
     """Run plan, execute, verify for one brief against the proxy.
 
     The beat sheet, style profile, and frame/audio evidence are
     optional: absent, the mechanical verdict stands alone as before.
     """
-    planned = plan_brief(brief)
-    tool_calls = fill_tool_calls(planned, spans, proxy_url=context.proxy_url)
+    planned = plan_brief(brief, client=client)
+    executable_plan = Plan(
+        brief=planned.brief,
+        intents=[i for i in planned.intents if i in ("silence", "filler")],
+        steps=[s for s in planned.steps if s.tool in _EXECUTOR_TOOLS],
+    )
+    tool_calls = fill_tool_calls(executable_plan, spans, proxy_url=context.proxy_url)
     changeset = cuts_to_changeset(
         spans,
         changeset_id=context.changeset_id,
@@ -92,12 +102,14 @@ def run_loop(
         changeset=dumped,
         verdict=verdict,
         show_to_ui=verdict.accepted,
+        message=planned.message,
     )
 
 
 def handle_edit(
     job: Job,
     *,
+    client: ModelClient | None = None,
     silence: SilenceMeasurer | None = None,
     transcriber: TranscriptionAdapter | None = None,
     preview: PreviewRenderer | None = None,
@@ -131,6 +143,12 @@ def handle_edit(
         {key: job.input.get(key) for key in
          ("proxy_url", "base_revision", "target_id", "changeset_id", "total_frames")}
     )
+    planned = plan_brief(brief, client=client)
+    job.input["planner"] = planned.planner
+    if planned.message:
+        job.input["message"] = planned.message
+        job.input["reply"] = planned.message
+
     if "spans" in job.input:
         spans = [Span.model_validate(item) for item in job.input.get("spans", [])]
     else:
@@ -142,7 +160,7 @@ def handle_edit(
             transcriber if transcriber is not None else build_transcription_adapter()
         )
         spans = dispatch_spans(
-            plan_brief(brief).intents,
+            planned.intents,
             context.proxy_url,
             silence=used_silence,
             transcriber=used_transcriber,
@@ -166,8 +184,14 @@ def handle_edit(
         style=job.input.get("style"),
         frames=job.input.get("frames", []),
         audio=job.input.get("audio"),
+        client=client,
     )
     if not result.verdict.accepted:
+        if not spans and planned.message:
+            return HandlerResult(
+                artifacts=[{"url": url} for url in artifact_urls],
+                ops=[],
+            )
         raise PreviewRejected(result.verdict.reasons)
     return HandlerResult(
         artifacts=[{"url": url} for url in artifact_urls],
