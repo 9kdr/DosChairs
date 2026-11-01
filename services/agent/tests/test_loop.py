@@ -339,13 +339,16 @@ def test_handler_resolves_proxy_from_project_timeline(
     monkeypatch.setattr(
         "chair_agent.review.read_project_timeline", lambda ref: timeline
     )
-    job = _job({"brief": "cut the silence", "project_id": "kdenlive:demo-cut"})
+    submitted = {"brief": "cut the silence", "project_id": "kdenlive:demo-cut"}
+    job = _job(dict(submitted))
     silence, transcriber, preview = _LiveSilence(), _LiveTranscriber(), _LivePreview()
     result = handle_edit(
         job, silence=silence, transcriber=transcriber, preview=preview
     )
     assert isinstance(result, HandlerResult)
-    assert job.input["target_id"] == "demo-timeline-1"
+    # Input stays as submitted so an idempotent resubmit still matches.
+    assert job.input == submitted
+    assert {op["targetId"] for op in result.ops} == {"demo-timeline-1"}
     assert result.ops
     assert all(op["status"] == "pending" for op in result.ops)
     assert (silence.calls, transcriber.calls, preview.calls) == (1, 0, 1)

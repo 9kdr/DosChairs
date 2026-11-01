@@ -194,7 +194,6 @@ def handle_edit(
             base_revision = str(timeline.get("id") or "rev-0")
         if resolved_target:
             target_id = resolved_target
-            job.input["target_id"] = target_id
 
     context = LoopContext(
         proxy_url=proxy_url,
