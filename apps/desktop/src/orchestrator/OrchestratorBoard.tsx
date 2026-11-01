@@ -5,7 +5,8 @@ import { SmoothScrollTarget } from "@/components/smooth-scroll";
 import { AssetShelf } from "./AssetShelf";
 import { parseAction } from "./actions";
 import { PlanDoc } from "./PlanDoc";
-import { RunningTasks, type RunningTask } from "./RunningTasks";
+import { RunningTasks, STANDIN_TASKS, type RunningTask } from "./RunningTasks";
+import { setupTask } from "./taskSetup";
 import { HistoryCard } from "../project/HistoryCard";
 import type { HistoryEntry } from "../project/store";
 
@@ -23,11 +24,15 @@ const MIN_RIGHT_EDIT = 360; // 18rem at the 20px root
 type PlanMode = "edit" | "talk";
 
 type OrchestratorBoardProps = {
+  projectId: string;
   command?: { id: number; text: string } | null;
   /** Accepted edits, shown in the History card under the running tasks. */
   history: HistoryEntry[];
+  /** Tasks prompted into being; shown above the stand-ins. */
+  createdTasks?: readonly RunningTask[];
   onOpenTask?: (task: RunningTask) => void;
   onUndoTask?: (task: RunningTask) => void;
+  onCreateTask?: (task: RunningTask) => void;
 };
 
 function columnWidths(available: number, editing: boolean) {
@@ -41,10 +46,13 @@ function columnWidths(available: number, editing: boolean) {
 }
 
 export function OrchestratorBoard({
+  projectId,
   command = null,
   history,
+  createdTasks = [],
   onOpenTask,
   onUndoTask,
+  onCreateTask,
 }: OrchestratorBoardProps) {
   const [planOpen, setPlanOpen] = useState(false);
   const [planMode, setPlanMode] = useState<PlanMode>("edit");
@@ -176,7 +184,10 @@ export function OrchestratorBoard({
     if (!command || seen.current === command.id) return;
     seen.current = command.id;
     const action = parseAction(command.text);
-    if (!action) return;
+    if (!action) {
+      if (command.text.trim()) onCreateTask?.(setupTask(command.text, command.id));
+      return;
+    }
     if (action.key === "brief") {
       setPlanMode("edit");
       setPlanOpen(true);
@@ -193,7 +204,7 @@ export function OrchestratorBoard({
       return;
     }
     if (action.slot) setNotice(`${action.key}: ${action.slot}`);
-  }, [command]);
+  }, [command, onCreateTask]);
 
   return (
     <>
@@ -239,6 +250,7 @@ export function OrchestratorBoard({
         >
           <AssetShelf
             className="min-h-0 flex-1"
+            projectId={projectId}
             transitionLock={widthTweening || planTweening}
           />
           <div ref={setRightSlot} className="contents" data-tasks-slot="edit" />
@@ -256,6 +268,7 @@ export function OrchestratorBoard({
               }}
             >
               <RunningTasks
+                tasks={[...createdTasks, ...STANDIN_TASKS]}
                 onOpen={onOpenTask}
                 onUndo={onUndoTask}
                 frozen={planTweening}

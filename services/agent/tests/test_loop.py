@@ -7,6 +7,7 @@ from chair_agent.executor import Span, fill_tool_calls, merge_spans
 from chair_agent.jobs import HandlerResult, Job
 from chair_agent.loop import LoopContext, PreviewRejected, handle_edit, run_loop
 from chair_agent.planner import Plan, PlanStep, plan_brief
+from chair_agent.transcribe import Transcript, Word
 from chair_agent.verifier import verify
 
 GOLDEN = json.loads((Path(__file__).parent / "golden_run.json").read_text(encoding="utf-8"))
@@ -132,6 +133,117 @@ def test_handler_returns_pending_ops_on_accept() -> None:
     result = handle_edit(_job(job_input))
     assert isinstance(result, HandlerResult)
     assert result.artifacts == [{"url": data["artifact_urls"][0]}]
+    assert result.ops
+    assert all(op["status"] == "pending" for op in result.ops)
+
+
+class _LiveSilence:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def measure_silence(self, media_url: str) -> list[tuple[float, float]]:
+        self.calls += 1
+        assert media_url == "file:///proxies/interview-proxy.mp4"
+        return [(4.0, 5.6)]
+
+
+class _LiveTranscriber:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def transcribe(self, audio_url: str, *, language: str | None = None) -> Transcript:
+        self.calls += 1
+        assert audio_url == "file:///proxies/interview-proxy.mp4"
+        words = [
+            Word(word="Welcome", start=1.0, end=1.5),
+            Word(word="um", start=30.0, end=30.6),
+        ]
+        return Transcript(text="Welcome um", words=words)
+
+
+class _LivePreview:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def render_preview(self, media_url: str) -> str:
+        self.calls += 1
+        assert media_url == "file:///proxies/interview-proxy.mp4"
+        return "file:///previews/live.mp4"
+
+
+def test_handler_dispatches_live_runs_without_hand_fed_spans() -> None:
+    data = GOLDEN["input"]
+    job_input = {**data["context"], "brief": data["brief"]}
+    silence, transcriber, preview = _LiveSilence(), _LiveTranscriber(), _LivePreview()
+    result = handle_edit(
+        _job(job_input), silence=silence, transcriber=transcriber, preview=preview
+    )
+    assert isinstance(result, HandlerResult)
+    assert result.artifacts == [{"url": "file:///previews/live.mp4"}]
+    assert [(op["patch"]["startFrames"], op["patch"]["frames"]) for op in result.ops] == [
+        (120, 48),
+        (900, 18),
+    ]
+    assert all(op["status"] == "pending" for op in result.ops)
+    assert (silence.calls, transcriber.calls, preview.calls) == (1, 1, 1)
+
+
+def test_handler_leaves_explicit_empties_canned() -> None:
+    data = GOLDEN["input"]
+    job_input = {**data["context"], "brief": data["brief"], "spans": [], "preview_urls": []}
+    silence, transcriber, preview = _LiveSilence(), _LiveTranscriber(), _LivePreview()
+    with pytest.raises(PreviewRejected):
+        handle_edit(
+            _job(job_input), silence=silence, transcriber=transcriber, preview=preview
+        )
+    assert (silence.calls, transcriber.calls, preview.calls) == (0, 0, 0)
+
+
+def _content_input() -> dict:
+    data = GOLDEN["input"]
+    return {
+        **data["context"],
+        "brief": data["brief"],
+        "spans": data["spans"],
+        "preview_urls": data["artifact_urls"],
+        "plan": {
+            "schemaVersion": "0.1.0",
+            "id": "story_1",
+            "brief": data["brief"],
+            "status": "approved",
+            "beats": [],
+        },
+        "style": {
+            "schemaVersion": "0.1.0",
+            "id": "style_1",
+            "name": "house",
+            "stats": {"targetLoudnessLufs": -16.0, "transitionVocabulary": ["cut"]},
+            "presets": [],
+            "exemplars": [
+                {"id": f"ex_{index}", "summary": f"snippet {index}"} for index in range(3)
+            ],
+        },
+    }
+
+
+def test_handler_runs_the_content_gate_without_evidence() -> None:
+    with pytest.raises(PreviewRejected) as rejected:
+        handle_edit(_job(_content_input()))
+    assert "no frame evidence for the preview" in rejected.value.reasons
+
+
+def test_handler_completes_with_matching_evidence() -> None:
+    job_input = {
+        **_content_input(),
+        "frames": [{"time_s": 5.0, "path": "/frames/f1.jpg", "caption": "room tone"}],
+        "audio": {
+            "path": "/audio/snippet.wav",
+            "loudness_lufs": -16.5,
+            "transcript": "welcome back",
+        },
+    }
+    result = handle_edit(_job(job_input))
+    assert isinstance(result, HandlerResult)
     assert result.ops
     assert all(op["status"] == "pending" for op in result.ops)
 

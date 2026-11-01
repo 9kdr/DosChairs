@@ -155,11 +155,13 @@ def test_health_reports_configured_model_names(monkeypatch: pytest.MonkeyPatch) 
     try:
         with urlopen(f"http://127.0.0.1:{port}/health") as response:
             body = json.load(response)
+            allow_origin = response.headers.get("Access-Control-Allow-Origin")
     finally:
         server.shutdown()
         thread.join(timeout=2)
         server.server_close()
 
+    assert allow_origin == "*"
     assert body["service"] == "agent"
     assert body["ok"] is True
     assert body["models"] == {
@@ -168,4 +170,5 @@ def test_health_reports_configured_model_names(monkeypatch: pytest.MonkeyPatch) 
         "verifier": "muse-spark-1",
     }
     assert "test-key" not in json.dumps(body)
+    assert body["key_configured"] is True
     assert any(tool["name"] == "render_preview" for tool in body["tools"])

@@ -403,7 +403,7 @@ class _FakeTimeline:
 
 
 class _FakeMediaPool:
-    def __init__(self, log: list, timeline: _FakeTimeline) -> None:
+    def __init__(self, log: list, timeline: _FakeTimeline | None) -> None:
         self._log = log
         self._timeline = timeline
 
@@ -411,7 +411,7 @@ class _FakeMediaPool:
         self._log.append(("import", [c["FilePath"] for c in clips]))
         return [object() for _ in clips]
 
-    def CreateEmptyTimeline(self, name: str) -> _FakeTimeline:
+    def CreateEmptyTimeline(self, name: str) -> _FakeTimeline | None:
         self._log.append(("create_timeline", name))
         return self._timeline
 
@@ -492,3 +492,23 @@ def test_write_timeline_without_studio_errors_clearly(monkeypatch: pytest.Monkey
     )
     with pytest.raises(ResolveClosedError, match="no project open"):
         write_timeline(TIMELINE, resolve=empty)
+
+
+def test_write_timeline_fails_when_create_empty_timeline_returns_none() -> None:
+    log: list = []
+    resolve = _fake_resolve(log)
+    resolve.GetProjectManager().GetCurrentProject().GetMediaPool()._timeline = None
+    with pytest.raises(RuntimeError, match=r"Write cut.*already exists"):
+        write_timeline(TIMELINE, resolve=resolve)
+    assert ("create_timeline", "Write cut") in log
+    assert not any(entry[0] == "import" for entry in log)
+
+
+def test_write_timeline_fails_when_set_current_timeline_fails() -> None:
+    log: list = []
+    resolve = _fake_resolve(log)
+    resolve.GetProjectManager().GetCurrentProject().SetCurrentTimeline = lambda _tl: False
+    with pytest.raises(RuntimeError, match="Studio could not set current timeline to 'Write cut'"):
+        write_timeline(TIMELINE, resolve=resolve)
+    assert ("create_timeline", "Write cut") in log
+    assert not any(entry[0] == "import" for entry in log)

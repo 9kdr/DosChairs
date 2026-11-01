@@ -1,0 +1,10 @@
+Composition {
+  CurrentTime = 0,
+  Tools = {
+    Glow = Glow {
+      Inputs = {
+        Blend = Input { Value = 0.5 },
+      },
+    },
+  },
+}
