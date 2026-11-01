@@ -44,9 +44,18 @@ export function activityForTask(task: RunningTask): TaskActivity {
   };
 }
 
-/** Live rail beside the thread: what this task is doing right now. */
-export function TaskActivityPanel({ task }: { task: RunningTask }) {
-  const activity = activityForTask(task);
+/**
+ * Live rail beside the thread: what this task is doing right now. The thread
+ * feeds it the live run; without one it falls back to the task's own status.
+ */
+export function TaskActivityPanel({
+  task,
+  activity,
+}: {
+  task: RunningTask;
+  activity?: TaskActivity;
+}) {
+  const shown = activity ?? activityForTask(task);
   const scrollRef = useRef<HTMLElement | null>(null);
   return (
     <aside
@@ -70,31 +79,30 @@ export function TaskActivityPanel({ task }: { task: RunningTask }) {
             aria-hidden
             className="pointer-events-none absolute inset-0"
             style={{
-              background:
-                "linear-gradient(to top, #1a1a1a 0%, #1a1a1a 45%, transparent 100%)",
+              background: "linear-gradient(to top, #1a1a1a 0%, #1a1a1a 45%, transparent 100%)",
             }}
           />
           <p className="absolute inset-x-3 bottom-2 text-xs leading-5 text-neutral-300">
-            {activity.headline}
+            {shown.headline}
           </p>
         </div>
 
         <div
           className="h-1 overflow-hidden rounded-full bg-white/10"
           role="progressbar"
-          aria-valuenow={Math.round(activity.progress * 100)}
+          aria-valuenow={Math.round(shown.progress * 100)}
           aria-valuemin={0}
           aria-valuemax={100}
           aria-label="Task progress"
         >
           <div
             className="h-full rounded-full bg-neutral-200 transition-[width] duration-500"
-            style={{ width: `${Math.round(activity.progress * 100)}%` }}
+            style={{ width: `${Math.round(shown.progress * 100)}%` }}
           />
         </div>
 
         <ol className="flex flex-col gap-2">
-          {activity.steps.map((step) => (
+          {shown.steps.map((step) => (
             <li key={step.id} className="flex items-start gap-2.5">
               {step.state === "done" ? (
                 <Check className="mt-1 size-3.5 shrink-0 text-emerald-400" aria-label="Done" />
