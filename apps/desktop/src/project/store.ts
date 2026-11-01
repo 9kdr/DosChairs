@@ -1,158 +1,15 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { Changeset, ChangesetItem, EditOp, Timeline } from "@chair/timeline-ir";
+import { fetchProjectReview, type ReviewJob } from "./review";
 
 /**
  * The project store: one open timeline plus one proposed changeset.
- * Opening a project loads the timeline mirror; review only flips item
- * status. Nothing here applies an item to the timeline.
+ * Opening a project loads the timeline mirror and the pending proposal
+ * through the review endpoint; review only flips item status. Nothing
+ * here applies an item to the timeline.
  */
 
 export type Decision = "accepted" | "rejected";
-
-/** Timeline mirror shaped like the Resolve read output (adapters/resolve). */
-export function sampleTimeline(projectId: string, name: string): Timeline {
-  return {
-    schemaVersion: "0.1.0",
-    id: projectId,
-    name,
-    rate: { num: 24, den: 1 },
-    globalStart: { value: 86400, rate: 24 },
-    tracks: [
-      {
-        id: "v1",
-        kind: "video",
-        name: "V1",
-        clips: [
-          {
-            id: "clip-interview",
-            name: "Interview",
-            mediaRef: "/media/interview.mov",
-            sourceRange: {
-              start: { value: 100, rate: 24 },
-              duration: { value: 96, rate: 24 },
-            },
-            timelineRange: {
-              start: { value: 86400, rate: 24 },
-              duration: { value: 48, rate: 24 },
-            },
-          },
-        ],
-      },
-      {
-        id: "a1",
-        kind: "audio",
-        name: "A1",
-        clips: [
-          {
-            id: "clip-interview-audio",
-            name: "Interview audio",
-            mediaRef: "/media/interview.mov",
-            sourceRange: {
-              start: { value: 100, rate: 24 },
-              duration: { value: 48, rate: 24 },
-            },
-            timelineRange: {
-              start: { value: 86400, rate: 24 },
-              duration: { value: 48, rate: 24 },
-            },
-          },
-        ],
-      },
-      {
-        id: "s1",
-        kind: "subtitle",
-        name: "Captions",
-        clips: [
-          {
-            id: "sub-hello",
-            name: "Hello",
-            sourceRange: {
-              start: { value: 0, rate: 24 },
-              duration: { value: 24, rate: 24 },
-            },
-            timelineRange: {
-              start: { value: 86412, rate: 24 },
-              duration: { value: 24, rate: 24 },
-            },
-          },
-        ],
-      },
-    ],
-    markers: [
-      {
-        id: "mark-hook",
-        name: "Hook",
-        time: { value: 86410, rate: 24 },
-        duration: { value: 1, rate: 24 },
-        kind: "hook",
-      },
-      {
-        id: "mark-open",
-        name: "Open",
-        time: { value: 86420, rate: 24 },
-        duration: { value: 8, rate: 24 },
-        kind: "beat",
-        beatId: "beat-opener",
-        comment: "opener",
-      },
-      {
-        id: "mark-room-tone",
-        name: "Room tone",
-        time: { value: 86448, rate: 24 },
-        duration: { value: 1, rate: 24 },
-        kind: "user",
-        comment: "room tone",
-      },
-    ],
-  };
-}
-
-/** Proposed edits waiting on a person. All start pending. */
-export function sampleChangeset(): Changeset {
-  return {
-    schemaVersion: "0.1.0",
-    id: "cs-rough-cut-1",
-    baseRevision: "r0",
-    summary: "First pass on the rough cut",
-    items: [
-      {
-        id: "item-hook-marker",
-        op: "add_marker",
-        rationale: "Mark the hook so the opener lands on the beat.",
-        patch: {
-          marker: {
-            id: "mark-hook-beat",
-            name: "Hook beat",
-            time: { value: 86410, rate: 24 },
-            kind: "beat",
-            beatId: "beat-opener",
-          },
-        },
-        status: "pending",
-      },
-      {
-        id: "item-trim-interview",
-        op: "trim",
-        targetId: "clip-interview",
-        rationale: "Trim the pause at the head of the interview.",
-        patch: { edge: "head", frames: 12 },
-        status: "pending",
-      },
-      {
-        id: "item-broll-cutaway",
-        op: "add_clip",
-        targetId: "v1",
-        rationale: "Cut away to the desk shot while the answer lands.",
-        patch: {
-          clipId: "clip-desk-wide",
-          timelineStart: { value: 86424, rate: 24 },
-          duration: { value: 24, rate: 24 },
-        },
-        status: "pending",
-      },
-    ],
-  };
-}
 
 /**
  * Review one item: flip its status and leave everything else alone.
@@ -309,36 +166,92 @@ export function acceptAllPending(changeset: Changeset): {
   };
 }
 
+/**
+ * Where one project open stands: loading the review, ready with a
+ * proposal, empty with no proposal yet, or failed with `error` set.
+ */
+export type ReviewPhase = "loading" | "ready" | "empty" | "error";
+
 export type ProjectStore = {
-  timeline: Timeline;
-  changeset: Changeset;
+  phase: ReviewPhase;
+  timeline: Timeline | null;
+  changeset: Changeset | null;
   history: HistoryEntry[];
   pendingCount: number;
+  error: string | null;
   acceptItem: (id: string) => void;
   rejectItem: (id: string) => void;
   acceptAll: () => void;
+  retry: () => void;
 };
 
-/** Open a project: its timeline mirror plus its pending proposals. */
+/**
+ * Open a project: load its timeline mirror plus its pending proposal
+ * through the review endpoint. Accept and reject only flip item
+ * status; the mirror never changes. The shell passes the gallery name
+ * along with the id; the mirror names the cut once it loads.
+ */
 export function useProject(projectId: string, projectName: string): ProjectStore {
-  const [timeline] = useState<Timeline>(() => sampleTimeline(projectId, projectName));
-  const [changeset, setChangeset] = useState<Changeset>(sampleChangeset);
+  const [timeline, setTimeline] = useState<Timeline | null>(null);
+  const [changeset, setChangeset] = useState<Changeset | null>(null);
+  const [job, setJob] = useState<ReviewJob | null>(null);
+  const [phase, setPhase] = useState<ReviewPhase>("loading");
+  const [error, setError] = useState<string | null>(null);
   const [history, setHistory] = useState<HistoryEntry[]>([]);
+  const [nonce, setNonce] = useState(0);
+
+  useEffect(() => {
+    let live = true;
+    const controller = new AbortController();
+    setPhase("loading");
+    setError(null);
+    setTimeline(null);
+    setChangeset(null);
+    setJob(null);
+    setHistory([]);
+    void (async () => {
+      try {
+        const review = await fetchProjectReview(projectId, { signal: controller.signal });
+        if (!live) return;
+        setTimeline(review.timeline);
+        if (review.kind === "proposal") {
+          setChangeset(review.changeset);
+          setJob(review.job);
+          setPhase("ready");
+        } else {
+          setPhase("empty");
+        }
+      } catch (reason) {
+        if (!live) return;
+        if (reason instanceof Error && reason.name === "AbortError") return;
+        setError(reason instanceof Error ? reason.message : "could not load the review");
+        setPhase("error");
+      }
+    })();
+    return () => {
+      live = false;
+      controller.abort();
+    };
+  }, [projectId, nonce]);
 
   const appendHistory = (decided: ChangesetItem[], stamp: string) => {
-    if (decided.length === 0) return;
+    if (decided.length === 0 || !changeset) return;
+    const taskId = job ? job.request_id : STAND_IN_TASK_ID;
     setHistory((current) => {
       const known = new Set(current.map((entry) => entry.itemId));
       const fresh = decided.filter((item) => !known.has(item.id));
       if (fresh.length === 0) return current;
       return [
         ...current,
-        ...fresh.map((item) => historyEntryForItem(changeset, item, STAND_IN_ACCEPTED_BY, stamp)),
+        ...fresh.map((item) =>
+          historyEntryForItem(changeset, item, STAND_IN_ACCEPTED_BY, stamp, taskId),
+        ),
       ];
     });
   };
 
   const acceptItem = (id: string) => {
+    if (!changeset) return;
     const item = changeset.items.find((entry) => entry.id === id);
     if (!item || item.status !== "pending") return;
     setChangeset(reviewItem(changeset, id, "accepted"));
@@ -346,6 +259,7 @@ export function useProject(projectId: string, projectName: string): ProjectStore
   };
 
   const acceptAll = () => {
+    if (!changeset) return;
     const { changeset: next, accepted } = acceptAllPending(changeset);
     if (accepted.length === 0) return;
     setChangeset(next);
@@ -353,12 +267,18 @@ export function useProject(projectId: string, projectName: string): ProjectStore
   };
 
   return {
+    phase,
     timeline,
     changeset,
     history,
-    pendingCount: changeset.items.filter((item) => item.status === "pending").length,
+    pendingCount: changeset
+      ? changeset.items.filter((item) => item.status === "pending").length
+      : 0,
+    error,
     acceptItem,
-    rejectItem: (id) => setChangeset((current) => reviewItem(current, id, "rejected")),
+    rejectItem: (id) =>
+      setChangeset((current) => (current ? reviewItem(current, id, "rejected") : current)),
     acceptAll,
+    retry: () => setNonce((current) => current + 1),
   };
 }

@@ -1,16 +1,56 @@
 import { describe, expect, it } from "vitest";
-import {
-  acceptAllPending,
-  historyEntryForItem,
-  historyForTask,
-  reviewItem,
-  sampleChangeset,
-  sampleTimeline,
-} from "./store";
+import type { Changeset } from "@chair/timeline-ir";
+import { acceptAllPending, historyEntryForItem, historyForTask, reviewItem } from "./store";
+
+/** Three pending items, shaped like a parsed review proposal. */
+function makeChangeset(): Changeset {
+  return {
+    schemaVersion: "0.1.0",
+    id: "cs-req-1",
+    baseRevision: "live",
+    items: [
+      {
+        id: "item-hook-marker",
+        op: "add_marker",
+        rationale: "Mark the hook so the opener lands on the beat.",
+        patch: {
+          marker: {
+            id: "mark-hook-beat",
+            name: "Hook beat",
+            time: { value: 86410, rate: 24 },
+            kind: "beat",
+            beatId: "beat-opener",
+          },
+        },
+        status: "pending",
+      },
+      {
+        id: "item-trim-interview",
+        op: "trim",
+        targetId: "clip-interview",
+        rationale: "Trim the pause at the head of the interview.",
+        patch: { edge: "head", frames: 12 },
+        status: "pending",
+      },
+      {
+        id: "item-broll-cutaway",
+        op: "add_clip",
+        targetId: "v1",
+        rationale: "Cut away to the desk shot while the answer lands.",
+        patch: {
+          clipId: "clip-desk-wide",
+          timelineStart: { value: 86424, rate: 24 },
+          duration: { value: 24, rate: 24 },
+        },
+        status: "pending",
+      },
+    ],
+  };
+}
 
 describe("reviewItem", () => {
   it("accepts one item and leaves the rest pending", () => {
-    const before = sampleChangeset();
+    const before = makeChangeset();
     const after = reviewItem(before, "item-trim-interview", "accepted");
 
     expect(after.items.find((item) => item.id === "item-trim-interview")?.status).toBe("accepted");
@@ -22,19 +62,19 @@ describe("reviewItem", () => {
   });
 
   it("rejects one item", () => {
-    const after = reviewItem(sampleChangeset(), "item-hook-marker", "rejected");
+    const after = reviewItem(makeChangeset(), "item-hook-marker", "rejected");
     expect(after.items.find((item) => item.id === "item-hook-marker")?.status).toBe("rejected");
   });
 
   it("ignores unknown ids", () => {
-    const before = sampleChangeset();
+    const before = makeChangeset();
     expect(reviewItem(before, "item-missing", "accepted")).toBe(before);
   });
 });
 
 describe("acceptAllPending", () => {
   it("accepts every pending item and reports what it accepted", () => {
-    const before = sampleChangeset();
+    const before = makeChangeset();
     const { changeset: after, accepted } = acceptAllPending(before);
 
     expect(after.items.map((item) => item.status)).toEqual(["accepted", "accepted", "accepted"]);
@@ -44,7 +84,7 @@ describe("acceptAllPending", () => {
   });
 
   it("leaves decided items alone and reports nothing new", () => {
-    const decided = reviewItem(sampleChangeset(), "item-trim-interview", "rejected");
+    const decided = reviewItem(makeChangeset(), "item-trim-interview", "rejected");
     const { changeset: after, accepted } = acceptAllPending(decided);
 
     expect(after.items.find((item) => item.id === "item-trim-interview")?.status).toBe("rejected");
@@ -56,7 +96,7 @@ describe("acceptAllPending", () => {
 
 describe("historyEntryForItem", () => {
   it("shapes one accepted item like the history entry in #75", () => {
-    const changeset = sampleChangeset();
+    const changeset = makeChangeset();
     const item = changeset.items[1]!;
     const entry = historyEntryForItem(changeset, item, "you", "2026-10-31T12:00:00.000Z");
 
@@ -75,7 +115,7 @@ describe("historyEntryForItem", () => {
   });
 
   it("defaults a missing forward patch to an empty object", () => {
-    const changeset = sampleChangeset();
+    const changeset = makeChangeset();
     const entry = historyEntryForItem(
       changeset,
       { id: "item-bare", op: "move" },
@@ -88,7 +128,7 @@ describe("historyEntryForItem", () => {
 
   it("carries an explicit task id when given", () => {
     const entry = historyEntryForItem(
-      sampleChangeset(),
+      makeChangeset(),
       { id: "item-bare", op: "move" },
       "you",
       "2026-10-31T12:00:00.000Z",
@@ -117,14 +157,5 @@ describe("historyForTask", () => {
 
   it("returns no entries for unknown tasks", () => {
     expect(historyForTask("task-missing")).toEqual([]);
-  });
-});
-
-describe("sampleTimeline", () => {
-  it("mirrors a cut with tracks, clips, and markers", () => {
-    const timeline = sampleTimeline("proj_talking_head", "Talking head rough-cut");
-    expect(timeline.tracks.map((track) => track.id)).toEqual(["v1", "a1", "s1"]);
-    expect(timeline.tracks.reduce((sum, track) => sum + track.clips.length, 0)).toBe(3);
-    expect(timeline.markers).toHaveLength(3);
   });
 });
