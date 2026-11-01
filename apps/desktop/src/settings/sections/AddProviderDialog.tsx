@@ -128,7 +128,7 @@ export function AddProviderDialog({
                   aria-current={index === step ? "step" : undefined}
                   aria-label={`${name}, step ${index + 1}`}
                   className={cn(
-                    "flex w-full min-w-0 cursor-pointer items-center gap-2 rounded-lg px-2.5 py-2 text-left outline-none hover:bg-white/[0.04] focus-visible:ring-2 focus-visible:ring-emerald-400/60",
+                    "flex w-full min-w-0 cursor-pointer items-center gap-2 rounded-lg px-2.5 py-2 text-left outline-none hover:bg-white/[0.04] focus-visible:ring-2 focus-visible:ring-white/40",
                     index === step &&
                       "bg-white/[0.06] ring-1 ring-white/[0.08] ring-inset hover:bg-white/[0.06]",
                   )}
@@ -138,9 +138,9 @@ export function AddProviderDialog({
                     className={cn(
                       "grid size-5 shrink-0 place-items-center rounded-full text-xs font-medium ring-1",
                       index < step
-                        ? "bg-emerald-400 text-neutral-950 ring-emerald-400"
+                        ? "bg-neutral-100 text-neutral-950 ring-neutral-100"
                         : index === step
-                          ? "bg-emerald-400/10 text-emerald-300 ring-emerald-400/40"
+                          ? "bg-white/[0.08] text-neutral-100 ring-white/40"
                           : "bg-white/[0.04] text-neutral-500 ring-white/10",
                     )}
                   >
@@ -193,7 +193,7 @@ export function AddProviderDialog({
                       <Radio.Root
                         key={option.id}
                         value={option.id}
-                        className="flex cursor-pointer items-center gap-3 rounded-xl bg-white/[0.03] px-4 py-3 text-left ring-1 ring-white/[0.06] outline-none hover:bg-white/[0.05] focus-visible:ring-2 focus-visible:ring-emerald-400/60 data-[checked]:bg-white/[0.05] data-[checked]:ring-emerald-400/60"
+                        className="flex cursor-pointer items-center gap-3 rounded-xl bg-white/[0.03] px-4 py-3 text-left ring-1 ring-white/[0.06] outline-none hover:bg-white/[0.05] focus-visible:ring-2 focus-visible:ring-white/40 data-[checked]:bg-white/[0.05] data-[checked]:ring-white/40"
                       >
                         <span className="min-w-0 flex-1">
                           <span className="flex items-baseline justify-between gap-3">
@@ -210,7 +210,7 @@ export function AddProviderDialog({
                         </span>
                         <Radio.Indicator
                           aria-hidden="true"
-                          className="grid size-5 shrink-0 place-items-center rounded-full bg-emerald-400 text-neutral-950"
+                          className="grid size-5 shrink-0 place-items-center rounded-full bg-neutral-100 text-neutral-950"
                         >
                           <CheckIcon className="size-3.5" />
                         </Radio.Indicator>

@@ -83,6 +83,23 @@ describe("parseSettings", () => {
     ).toEqual({ meta: ["mine-1"], openai: [], anthropic: [] });
   });
 
+  it("keeps valid disabled models and drops malformed ones", () => {
+    expect(parseSettings({}).disabledModels).toEqual({
+      meta: [],
+      openai: [],
+      anthropic: [],
+    });
+    expect(
+      parseSettings({
+        disabledModels: {
+          meta: ["muse-spark-1", "", 42],
+          openai: "gpt-x",
+          unknown: ["x"],
+        },
+      }).disabledModels,
+    ).toEqual({ meta: ["muse-spark-1"], openai: [], anthropic: [] });
+  });
+
   it("still parses docs saved before the new fields", () => {
     const parsed = parseSettings({
       keys: { meta: "sk-1" },
@@ -95,6 +112,7 @@ describe("parseSettings", () => {
     });
     expect(parsed.enabled.meta).toBe(true);
     expect(parsed.customModels.meta).toEqual([]);
+    expect(parsed.disabledModels.meta).toEqual([]);
   });
 });
 
@@ -157,6 +175,22 @@ describe("settings store", () => {
     ]);
     expect(next.customModels.meta).toEqual(["mine-1", "mine-2"]);
     await expect(store.load()).resolves.toEqual(next);
+  });
+
+  it("disables and re-enables one model per provider", async () => {
+    const store = createSettingsStore(memoryBackend());
+    const off = await store.saveModelEnabled("meta", "muse-spark-1", false);
+    expect(off.disabledModels).toEqual({
+      meta: ["muse-spark-1"],
+      openai: [],
+      anthropic: [],
+    });
+    await expect(store.load()).resolves.toEqual(off);
+    const offAgain = await store.saveModelEnabled("meta", "muse-spark-1", false);
+    expect(offAgain.disabledModels.meta).toEqual(["muse-spark-1"]);
+    const on = await store.saveModelEnabled("meta", "muse-spark-1", true);
+    expect(on.disabledModels.meta).toEqual([]);
+    await expect(store.load()).resolves.toEqual(on);
   });
 
   it("saves the orchestrator pick", async () => {

@@ -12,7 +12,7 @@ import { Menu, MenuPopup, MenuRadioGroup, MenuRadioItem, MenuTrigger } from "@/c
 import { acceptsChairRef, readChairRefs, type ChairRef } from "@/lib/chair-ref";
 import { cn } from "@/lib/utils";
 import { filterActions, type Action } from "@/orchestrator/actions";
-import { KNOWN_MODELS, PROVIDERS, type ProviderId } from "@/settings/providers";
+import { enabledModels, PROVIDERS, type ProviderId } from "@/settings/providers";
 import { useSettings } from "@/settings/useSettings";
 
 const CLOSED_WIDTH = 452;
@@ -30,13 +30,28 @@ const PRESETS: ReadonlySet<string> = new Set(MODELS);
 export const ORCHESTRATOR_DEFAULT = "Chair";
 
 /**
- * Orchestrator picker options: detected models from saved keys first,
- * then the Chair presets. A provider with no known models adds nothing —
- * the list never invents names.
+ * Orchestrator picker options: enabled models from saved keys first,
+ * then the Chair presets. A provider with no key, switched off, or
+ * with every model switched off adds nothing — the list never
+ * invents names, and a disabled model never appears.
  */
-export function orchestratorOptions(keys: Record<ProviderId, string | null>): string[] {
-  const detected = PROVIDERS.filter((provider) => keys[provider.id] != null).flatMap(
-    (provider) => KNOWN_MODELS[provider.id].map((name) => `${name} (${provider.label})`),
+export function orchestratorOptions(
+  keys: Record<ProviderId, string | null>,
+  opts?: {
+    enabled?: Record<ProviderId, boolean>;
+    customModels?: Record<ProviderId, string[]>;
+    disabledModels?: Record<ProviderId, string[]>;
+  },
+): string[] {
+  const detected = PROVIDERS.filter(
+    (provider) =>
+      keys[provider.id] != null && opts?.enabled?.[provider.id] !== false,
+  ).flatMap((provider) =>
+    enabledModels({
+      provider: provider.id,
+      custom: opts?.customModels?.[provider.id],
+      disabled: opts?.disabledModels?.[provider.id],
+    }).map((name) => `${name} (${provider.label})`),
   );
   return [...detected, ...MODELS];
 }
@@ -363,7 +378,20 @@ export function ChatPrompt({
   // Orchestrator pick: detected models from saved keys first, then the
   // Chair presets. The choice persists in app settings.
   const { settings, loaded, saveOrchestrator } = useSettings();
-  const options = useMemo(() => orchestratorOptions(settings.keys), [settings.keys]);
+  const options = useMemo(
+    () =>
+      orchestratorOptions(settings.keys, {
+        enabled: settings.enabled,
+        customModels: settings.customModels,
+        disabledModels: settings.disabledModels,
+      }),
+    [
+      settings.keys,
+      settings.enabled,
+      settings.customModels,
+      settings.disabledModels,
+    ],
+  );
   const detected = useMemo(() => options.filter((item) => !PRESETS.has(item)), [options]);
   useEffect(() => {
     if (!loaded) return;

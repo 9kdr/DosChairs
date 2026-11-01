@@ -7,6 +7,21 @@ const NO_KEYS: Record<ProviderId, string | null> = {
   openai: null,
   anthropic: null,
 };
+const ALL_ON: Record<ProviderId, boolean> = {
+  meta: true,
+  openai: true,
+  anthropic: true,
+};
+const NO_CUSTOM: Record<ProviderId, string[]> = {
+  meta: [],
+  openai: [],
+  anthropic: [],
+};
+const NONE_OFF: Record<ProviderId, string[]> = {
+  meta: [],
+  openai: [],
+  anthropic: [],
+};
 
 describe("orchestrator picker", () => {
   it("lists Chair presets when no key is saved", () => {
@@ -28,6 +43,47 @@ describe("orchestrator picker", () => {
       "Chair fast",
       "Chair precise",
     ]);
+  });
+
+  it("lists custom models after the known ones", () => {
+    const options = orchestratorOptions(
+      { ...NO_KEYS, openai: "sk-x" },
+      {
+        enabled: ALL_ON,
+        customModels: { ...NO_CUSTOM, openai: ["gpt-x"] },
+        disabledModels: NONE_OFF,
+      },
+    );
+    expect(options.slice(0, 1)).toEqual(["gpt-x (OpenAI)"]);
+  });
+
+  it("hides disabled models", () => {
+    const options = orchestratorOptions(
+      { ...NO_KEYS, meta: "key" },
+      {
+        enabled: ALL_ON,
+        customModels: NO_CUSTOM,
+        disabledModels: { ...NONE_OFF, meta: ["muse-spark-1"] },
+      },
+    );
+    expect(options).toEqual([
+      "muse-wonder-1.0 (Meta)",
+      "Chair",
+      "Chair fast",
+      "Chair precise",
+    ]);
+  });
+
+  it("hides a provider that is switched off", () => {
+    const options = orchestratorOptions(
+      { ...NO_KEYS, meta: "key" },
+      {
+        enabled: { ...ALL_ON, meta: false },
+        customModels: NO_CUSTOM,
+        disabledModels: NONE_OFF,
+      },
+    );
+    expect(options).toEqual(["Chair", "Chair fast", "Chair precise"]);
   });
 
   it("keeps a stored pick that is still offered, else Chair", () => {

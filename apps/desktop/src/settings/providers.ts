@@ -173,15 +173,35 @@ export function detectProvider(key: string): ProviderId | null {
 }
 
 /**
+ * Models on file for one provider that are switched on: known ids
+ * plus custom ones, minus the disabled list. The picker and role
+ * routing both read from here, so a toggle hides the model in both.
+ */
+export function enabledModels(input: {
+  provider: ProviderId;
+  custom?: string[];
+  disabled?: string[];
+}): string[] {
+  const off = new Set(input.disabled ?? []);
+  return [...KNOWN_MODELS[input.provider], ...(input.custom ?? [])].filter(
+    (name) => !off.has(name),
+  );
+}
+
+/**
  * The provider follow-mode roles route through: the first provider
  * in primary-to-fallback order with a saved key. Fixed priority —
- * deterministic with two keys, no timestamps.
+ * deterministic with two keys, no timestamps. A provider switched
+ * off is skipped when the enabled map is passed.
  */
 export function followProvider(
   keys: Record<ProviderId, string | null>,
+  enabled?: Record<ProviderId, boolean>,
 ): ProviderId | null {
   for (const provider of PROVIDERS) {
-    if (keys[provider.id] != null) return provider.id;
+    if (keys[provider.id] == null) continue;
+    if (enabled?.[provider.id] === false) continue;
+    return provider.id;
   }
   return null;
 }
@@ -194,19 +214,34 @@ export type FollowChoice = {
 };
 
 /**
- * Where a role with no explicit pick routes: the follow provider's
- * first known model, or the role's default model name when the
- * provider has no known models. Null when no key is saved.
+ * Where a role with no explicit pick routes: the first provider in
+ * follow order with a saved key and at least one enabled model, or
+ * the follow provider with the role's default model name when no
+ * provider has an enabled model on file. Null when no key is saved.
+ * Disabled models never route; a provider switched off is skipped.
  */
 export function followChoice(
   keys: Record<ProviderId, string | null>,
   role: Role,
+  opts?: {
+    enabled?: Record<ProviderId, boolean>;
+    customModels?: Record<ProviderId, string[]>;
+    disabledModels?: Record<ProviderId, string[]>;
+  },
 ): FollowChoice | null {
-  const provider = followProvider(keys);
-  if (provider == null) return null;
-  const known = KNOWN_MODELS[provider];
-  if (known.length > 0) {
-    return { provider, model: known[0]!, defaulted: false };
+  for (const provider of PROVIDERS) {
+    if (keys[provider.id] == null) continue;
+    if (opts?.enabled?.[provider.id] === false) continue;
+    const models = enabledModels({
+      provider: provider.id,
+      custom: opts?.customModels?.[provider.id],
+      disabled: opts?.disabledModels?.[provider.id],
+    });
+    if (models.length > 0) {
+      return { provider: provider.id, model: models[0]!, defaulted: false };
+    }
   }
+  const provider = followProvider(keys, opts?.enabled);
+  if (provider == null) return null;
   return { provider, model: role.defaultModel, defaulted: true };
 }

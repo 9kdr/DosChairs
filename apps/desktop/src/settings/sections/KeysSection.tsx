@@ -23,7 +23,7 @@ import type { AppSettings } from "../settings-store";
 import { AddProviderDialog } from "./AddProviderDialog";
 
 function connectionDot(state: ConnectionState): string {
-  if (state === "live") return "bg-emerald-400";
+  if (state === "live") return "bg-neutral-100";
   if (state === "saved") return "bg-amber-400";
   if (state === "checking") return "animate-pulse bg-neutral-500"; // taste-skill-ignore: pulse matches the live dot in service-status while a check is in flight.
   return "bg-neutral-600";
@@ -36,6 +36,11 @@ type KeysSectionProps = {
   saveKey: (provider: ProviderId, key: string | null) => Promise<void>;
   saveProviderEnabled: (provider: ProviderId, enabled: boolean) => Promise<void>;
   saveCustomModels: (provider: ProviderId, models: string[]) => Promise<void>;
+  saveModelEnabled: (
+    provider: ProviderId,
+    model: string,
+    enabled: boolean,
+  ) => Promise<void>;
 };
 
 /**
@@ -52,6 +57,7 @@ export function KeysSection({
   saveKey,
   saveProviderEnabled,
   saveCustomModels,
+  saveModelEnabled,
 }: KeysSectionProps) {
   const [selected, setSelected] = useState<ProviderId>("meta");
   const [addOpen, setAddOpen] = useState(false);
@@ -76,12 +82,9 @@ export function KeysSection({
 
   return (
     <div className="flex flex-col gap-8">
-      <div>
-        <h2 className="text-xl font-semibold text-neutral-100">Providers</h2>
-        <p className="mt-1 text-sm text-neutral-400">
-          Keys the agent can spend, and which models each one reaches.
-        </p>
-      </div>
+      <p className="text-sm text-neutral-400">
+        Keys the agent can spend, and which models each one reaches.
+      </p>
 
       <section aria-label="Providers">
         <div className="rounded-[28px] bg-surface text-neutral-100 shadow-raised ring-1 ring-white/8">
@@ -134,11 +137,15 @@ export function KeysSection({
                 envKey={detail.id === "meta" && metaEnvKey}
                 agentUp={agentUp}
                 customModels={settings.customModels[detail.id]}
+                disabledModels={settings.disabledModels[detail.id]}
                 onSave={(key) => saveKey(detail.id, key)}
                 onClear={() => saveKey(detail.id, null)}
                 onAddKey={() => openAdd(detail.id)}
                 onSaveCustomModels={(models) =>
                   saveCustomModels(detail.id, models)
+                }
+                onToggleModel={(model, enabled) =>
+                  saveModelEnabled(detail.id, model, enabled)
                 }
               />
             </div>
@@ -188,7 +195,7 @@ function ProviderRow({
         type="button"
         onClick={onSelect}
         aria-current={active}
-        className="flex min-w-0 flex-1 cursor-pointer items-center gap-3 rounded-lg text-left outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/60"
+        className="flex min-w-0 flex-1 cursor-pointer items-center gap-3 rounded-lg text-left outline-none focus-visible:ring-2 focus-visible:ring-white/40"
       >
         <span
           aria-hidden="true"
@@ -201,7 +208,7 @@ function ProviderRow({
           <span
             className={cn(
               "border-b pb-px text-sm font-medium text-neutral-100",
-              active ? "border-emerald-400" : "border-transparent",
+              active ? "border-neutral-100" : "border-transparent",
             )}
           >
             {provider.label}
@@ -215,7 +222,6 @@ function ProviderRow({
         checked={enabled}
         onCheckedChange={(next) => onToggle(next)}
         aria-label={`${provider.label} enabled`}
-        className="cursor-pointer data-checked:bg-emerald-500"
       />
     </div>
   );
@@ -227,10 +233,12 @@ type ProviderDetailProps = {
   envKey: boolean;
   agentUp: boolean | null;
   customModels: string[];
+  disabledModels: string[];
   onSave: (key: string) => Promise<void>;
   onClear: () => Promise<void>;
   onAddKey: () => void;
   onSaveCustomModels: (models: string[]) => Promise<void>;
+  onToggleModel: (model: string, enabled: boolean) => Promise<void>;
 };
 
 /** The open provider: its key, then its models. Nothing else. */
@@ -240,10 +248,12 @@ function ProviderDetail({
   envKey,
   agentUp,
   customModels,
+  disabledModels,
   onSave,
   onClear,
   onAddKey,
   onSaveCustomModels,
+  onToggleModel,
 }: ProviderDetailProps) {
   const state = providerConnection({
     appKey: saved != null,
@@ -283,7 +293,9 @@ function ProviderDetail({
       <ModelsBlock
         provider={provider}
         customModels={customModels}
+        disabledModels={disabledModels}
         onSaveCustomModels={onSaveCustomModels}
+        onToggleModel={onToggleModel}
       />
     </div>
   );
@@ -434,18 +446,23 @@ function KeyBlock({
 type ModelsBlockProps = {
   provider: Provider;
   customModels: string[];
+  disabledModels: string[];
   onSaveCustomModels: (models: string[]) => Promise<void>;
+  onToggleModel: (model: string, enabled: boolean) => Promise<void>;
 };
 
 /**
  * Models on file for the provider: the known ids, then the typed
- * ones, then the button to type another. The list never invents
- * names for providers it has not seen.
+ * ones, then the button to type another. Each row carries its own
+ * on/off switch; a model switched off leaves the picker and role
+ * routing. The list never invents names it has not seen.
  */
 function ModelsBlock({
   provider,
   customModels,
+  disabledModels,
   onSaveCustomModels,
+  onToggleModel,
 }: ModelsBlockProps) {
   const [adding, setAdding] = useState(false);
   const [draft, setDraft] = useState("");
@@ -491,34 +508,58 @@ function ModelsBlock({
         </p>
       ) : (
         <ul className="mt-2 flex flex-col gap-1">
-          {known.map((name) => (
-            <li
-              key={name}
-              className="rounded-xl bg-white/[0.03] px-3 py-1.5 font-mono text-xs text-neutral-300 shadow-rim ring-1 ring-white/[0.06]"
-            >
-              {name}
-            </li>
-          ))}
-          {customModels.map((name) => (
-            <li
-              key={name}
-              className="flex items-center gap-2 rounded-xl bg-white/[0.03] px-3 py-1.5 shadow-rim ring-1 ring-white/[0.06]"
-            >
-              <span className="min-w-0 flex-1 truncate font-mono text-xs text-neutral-300">
-                {name}
-              </span>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon-xs"
-                aria-label={`Remove ${name}`}
-                disabled={busy}
-                onClick={() => void remove(name)}
+          {known.map((name) => {
+            const off = disabledModels.includes(name);
+            return (
+              <li
+                key={name}
+                className={cn(
+                  "flex items-center gap-2 rounded-xl bg-white/[0.03] px-3 py-1.5 shadow-rim ring-1 ring-white/[0.06]",
+                  off && "opacity-60",
+                )}
               >
-                <XIcon />
-              </Button>
-            </li>
-          ))}
+                <span className="min-w-0 flex-1 truncate font-mono text-xs text-neutral-300">
+                  {name}
+                </span>
+                <Switch
+                  checked={!off}
+                  onCheckedChange={(next) => void onToggleModel(name, next)}
+                  aria-label={`${name} enabled`}
+                />
+              </li>
+            );
+          })}
+          {customModels.map((name) => {
+            const off = disabledModels.includes(name);
+            return (
+              <li
+                key={name}
+                className={cn(
+                  "flex items-center gap-2 rounded-xl bg-white/[0.03] px-3 py-1.5 shadow-rim ring-1 ring-white/[0.06]",
+                  off && "opacity-60",
+                )}
+              >
+                <span className="min-w-0 flex-1 truncate font-mono text-xs text-neutral-300">
+                  {name}
+                </span>
+                <Switch
+                  checked={!off}
+                  onCheckedChange={(next) => void onToggleModel(name, next)}
+                  aria-label={`${name} enabled`}
+                />
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-xs"
+                  aria-label={`Remove ${name}`}
+                  disabled={busy}
+                  onClick={() => void remove(name)}
+                >
+                  <XIcon />
+                </Button>
+              </li>
+            );
+          })}
         </ul>
       )}
       {adding ? (

@@ -25,6 +25,8 @@ export type AppSettings = {
   enabled: Record<ProviderId, boolean>;
   /** Model ids the person typed per provider, beyond the known ones. */
   customModels: Record<ProviderId, string[]>;
+  /** Model ids switched off per provider — hidden from picker and routing. */
+  disabledModels: Record<ProviderId, string[]>;
   /** The orchestrator pick from the composer input bar. Null keeps Chair. */
   orchestrator: string | null;
   editors: Record<EditorId, EditorConnection | null>;
@@ -35,6 +37,7 @@ export const EMPTY_SETTINGS: AppSettings = {
   models: { planner: null, executor: null, verifier: null },
   enabled: { meta: true, openai: true, anthropic: true },
   customModels: { meta: [], openai: [], anthropic: [] },
+  disabledModels: { meta: [], openai: [], anthropic: [] },
   orchestrator: null,
   editors: { resolve: null, kdenlive: null, otio: null },
 };
@@ -60,10 +63,23 @@ export function parseSettings(doc: unknown): AppSettings {
     openai: [],
     anthropic: [],
   };
+  const disabledModels: Record<ProviderId, string[]> = {
+    meta: [],
+    openai: [],
+    anthropic: [],
+  };
   const editors = { ...EMPTY_SETTINGS.editors };
   let orchestrator: string | null = null;
   if (!isRecord(doc))
-    return { keys, models, enabled, customModels, orchestrator, editors };
+    return {
+      keys,
+      models,
+      enabled,
+      customModels,
+      disabledModels,
+      orchestrator,
+      editors,
+    };
   if (isRecord(doc.keys)) {
     for (const [id, value] of Object.entries(doc.keys)) {
       if (isProviderId(id) && (typeof value === "string" || value === null)) {
@@ -98,6 +114,16 @@ export function parseSettings(doc: unknown): AppSettings {
       }
     }
   }
+  if (isRecord(doc.disabledModels)) {
+    for (const [id, value] of Object.entries(doc.disabledModels)) {
+      if (isProviderId(id) && Array.isArray(value)) {
+        disabledModels[id] = value.filter(
+          (name): name is string =>
+            typeof name === "string" && name.trim().length > 0,
+        );
+      }
+    }
+  }
   if (typeof doc.orchestrator === "string" && doc.orchestrator.length > 0) {
     orchestrator = doc.orchestrator;
   }
@@ -108,7 +134,15 @@ export function parseSettings(doc: unknown): AppSettings {
       }
     }
   }
-  return { keys, models, enabled, customModels, orchestrator, editors };
+  return {
+    keys,
+    models,
+    enabled,
+    customModels,
+    disabledModels,
+    orchestrator,
+    editors,
+  };
 }
 
 function isRoleChoice(value: unknown): value is RoleChoice {
@@ -139,6 +173,11 @@ export function createSettingsStore(backend: SettingsBackend) {
           models: { ...EMPTY_SETTINGS.models },
           enabled: { ...EMPTY_SETTINGS.enabled },
           customModels: {
+            meta: [],
+            openai: [],
+            anthropic: [],
+          },
+          disabledModels: {
             meta: [],
             openai: [],
             anthropic: [],
@@ -193,6 +232,28 @@ export function createSettingsStore(backend: SettingsBackend) {
       const next: AppSettings = {
         ...current,
         customModels: { ...current.customModels, [provider]: cleaned },
+      };
+      await backend.write(next);
+      return next;
+    },
+    async saveModelEnabled(
+      provider: ProviderId,
+      model: string,
+      enabled: boolean,
+    ): Promise<AppSettings> {
+      const current = await this.load();
+      const name = model.trim();
+      const prev = current.disabledModels[provider];
+      const nextList = enabled
+        ? prev.filter((entry) => entry !== name && entry !== model)
+        : prev.includes(model) || (name !== "" && prev.includes(name))
+          ? prev
+          : name === ""
+            ? prev
+            : [...prev, name];
+      const next: AppSettings = {
+        ...current,
+        disabledModels: { ...current.disabledModels, [provider]: nextList },
       };
       await backend.write(next);
       return next;

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   addCustomModel,
   detectProvider,
+  enabledModels,
   followChoice,
   followProvider,
   keySourceLabel,
@@ -87,6 +88,28 @@ describe("detectProvider", () => {
   });
 });
 
+describe("enabledModels", () => {
+  it("lists known ids plus custom ones", () => {
+    expect(enabledModels({ provider: "meta" })).toEqual([
+      "muse-wonder-1.0",
+      "muse-spark-1",
+    ]);
+    expect(
+      enabledModels({ provider: "openai", custom: ["gpt-x"] }),
+    ).toEqual(["gpt-x"]);
+  });
+
+  it("drops disabled ids", () => {
+    expect(
+      enabledModels({
+        provider: "meta",
+        custom: ["mine-1"],
+        disabled: ["muse-spark-1", "mine-1"],
+      }),
+    ).toEqual(["muse-wonder-1.0"]);
+  });
+});
+
 describe("followProvider", () => {
   const keys = (
     meta: string | null,
@@ -100,6 +123,23 @@ describe("followProvider", () => {
     expect(followProvider(keys(null, "o1", "a1"))).toBe("openai");
   });
 
+  it("skips a provider that is switched off", () => {
+    expect(
+      followProvider(keys("m1", "o1"), {
+        meta: false,
+        openai: true,
+        anthropic: true,
+      }),
+    ).toBe("openai");
+    expect(
+      followProvider(keys("m1"), {
+        meta: false,
+        openai: true,
+        anthropic: true,
+      }),
+    ).toBeNull();
+  });
+
   it("is null with no keys", () => {
     expect(followProvider(keys(null))).toBeNull();
   });
@@ -107,6 +147,9 @@ describe("followProvider", () => {
 
 describe("followChoice", () => {
   const planner = ROLES[0]!;
+  const allOn = { meta: true, openai: true, anthropic: true };
+  const noCustom = { meta: [], openai: [], anthropic: [] };
+  const noneOff = { meta: [], openai: [], anthropic: [] };
 
   it("routes to the follow provider's first known model", () => {
     expect(
@@ -128,6 +171,40 @@ describe("followChoice", () => {
       model: planner.defaultModel,
       defaulted: true,
     });
+  });
+
+  it("skips disabled models and falls to the next one on file", () => {
+    expect(
+      followChoice(
+        { meta: "m1", openai: null, anthropic: null },
+        planner,
+        {
+          enabled: allOn,
+          customModels: noCustom,
+          disabledModels: {
+            ...noneOff,
+            meta: ["muse-wonder-1.0"],
+          },
+        },
+      ),
+    ).toEqual({ provider: "meta", model: "muse-spark-1", defaulted: false });
+  });
+
+  it("skips a provider with every model switched off", () => {
+    expect(
+      followChoice(
+        { meta: "m1", openai: "o1", anthropic: null },
+        planner,
+        {
+          enabled: allOn,
+          customModels: { ...noCustom, openai: ["gpt-x"] },
+          disabledModels: {
+            ...noneOff,
+            meta: ["muse-wonder-1.0", "muse-spark-1"],
+          },
+        },
+      ),
+    ).toEqual({ provider: "openai", model: "gpt-x", defaulted: false });
   });
 
   it("is null with no keys", () => {
