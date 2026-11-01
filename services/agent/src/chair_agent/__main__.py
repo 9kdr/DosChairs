@@ -4,6 +4,7 @@ import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
+from urllib.parse import unquote, urlsplit
 
 from chair_agent.client import configured_models
 from chair_agent.jobs import (
@@ -17,6 +18,7 @@ from chair_agent.jobs import (
 )
 from chair_agent.loop import handle_edit
 from chair_agent.models import TOOLS
+from chair_agent.review import ReviewUnavailable, build_review
 from chair_agent.transcribe import handle_transcribe
 
 HANDLERS: dict[str, TaskHandler] = {"transcribe": handle_transcribe, "edit": handle_edit}
@@ -28,6 +30,13 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:
         if self.path == "/health":
             self._send(200, _health())
+            return
+        project_id = _review_path(self.path)
+        if project_id is not None:
+            try:
+                self._send(200, build_review(self.controller, project_id))
+            except ReviewUnavailable as error:
+                self._send(503, _error(error.code, str(error)))
             return
         request_id = _job_path(self.path)
         if request_id is None:
@@ -93,6 +102,13 @@ class Handler(BaseHTTPRequestHandler):
 
     def log_message(self, fmt: str, *args: object) -> None:
         return
+
+
+def _review_path(path: str) -> str | None:
+    parts = urlsplit(path).path.strip("/").split("/")
+    if len(parts) == 3 and parts[0] == "projects" and parts[1] and parts[2] == "review":
+        return unquote(parts[1])
+    return None
 
 
 def _job_path(path: str) -> str | None:
