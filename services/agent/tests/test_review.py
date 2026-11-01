@@ -128,3 +128,72 @@ def test_http_review_without_studio_returns_503(
         server.shutdown()
         thread.join(timeout=2)
         server.server_close()
+
+
+def test_review_file_based_kdenlive_project(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from chair_kdenlive import kdenlive_from_timeline
+
+    projects_dir = tmp_path / "projects"
+    projects_dir.mkdir()
+    monkeypatch.setenv("CHAIR_PROJECTS_DIR", str(projects_dir))
+
+    tl = dict(MIRROR)
+    tl["id"] = "kdenlive-cut-1"
+    (projects_dir / "MyCut.kdenlive").write_text(kdenlive_from_timeline(tl), encoding="utf-8")
+
+    controller = _controller(tmp_path)
+    job = _completed(
+        controller, "edit", {"target_id": "kdenlive-cut-1"}, ops=[{"op": "cut", "id": "op-1"}]
+    )
+
+    body = build_review(controller, "kdenlive:mycut")
+    assert body["project_id"] == "kdenlive:mycut"
+    assert body["timeline"]["id"] == "kdenlive-cut-1"
+    assert body["changeset"]["ops"] == [{"op": "cut", "id": "op-1"}]
+    assert body["job"]["request_id"] == job.request_id
+
+
+def test_review_file_based_not_found(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    projects_dir = tmp_path / "projects"
+    projects_dir.mkdir()
+    monkeypatch.setenv("CHAIR_PROJECTS_DIR", str(projects_dir))
+
+    controller = _controller(tmp_path)
+    with pytest.raises(ReviewUnavailable, match="not found"):
+        build_review(controller, "kdenlive:missing-project")
+
+
+def test_http_review_endpoint_file_based(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from chair_kdenlive import kdenlive_from_timeline
+
+    projects_dir = tmp_path / "projects"
+    projects_dir.mkdir()
+    monkeypatch.setenv("CHAIR_PROJECTS_DIR", str(projects_dir))
+
+    tl = dict(MIRROR)
+    tl["id"] = "kdenlive-http-1"
+    (projects_dir / "DemoCut.kdenlive").write_text(kdenlive_from_timeline(tl), encoding="utf-8")
+
+    controller = _controller(tmp_path)
+    job = _completed(
+        controller, "edit", {"target_id": "kdenlive-http-1"}, ops=[{"op": "remove_clip"}]
+    )
+    server, thread, base = _serve(controller)
+    try:
+        with urlopen(f"{base}/projects/kdenlive:democut/review") as response:
+            assert response.status == 200
+            body = json.load(response)
+        assert body["project_id"] == "kdenlive:democut"
+        assert body["timeline"]["id"] == "kdenlive-http-1"
+        assert body["changeset"]["ops"] == [{"op": "remove_clip"}]
+        assert body["job"]["request_id"] == job.request_id
+    finally:
+        server.shutdown()
+        thread.join(timeout=2)
+        server.server_close()

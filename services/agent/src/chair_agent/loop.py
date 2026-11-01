@@ -95,6 +95,41 @@ def run_loop(
     )
 
 
+def _resolve_timeline_media(timeline: Mapping[str, Any]) -> tuple[str, int, str]:
+    proxy_url = ""
+    for track in timeline.get("tracks", []):
+        for clip in track.get("clips", []):
+            ref = clip.get("mediaRef")
+            if isinstance(ref, str) and ref.strip():
+                proxy_url = ref.strip()
+                break
+        if proxy_url:
+            break
+
+    rate_info = timeline.get("rate") or {}
+    num = rate_info.get("num", 30)
+    den = rate_info.get("den", 1)
+    fps = num / den if den else 30.0
+
+    total_frames = 0
+    for track in timeline.get("tracks", []):
+        for clip in track.get("clips", []):
+            tr = clip.get("timelineRange") or clip.get("sourceRange") or {}
+            start = tr.get("start") or {}
+            duration = tr.get("duration") or {}
+            s_val = start.get("value", 0)
+            s_rate = start.get("rate", fps)
+            d_val = duration.get("value", 0)
+            d_rate = duration.get("rate", fps)
+            end_s = (s_val / s_rate if s_rate else 0) + (d_val / d_rate if d_rate else 0)
+            clip_frames = int(round(end_s * fps))
+            if clip_frames > total_frames:
+                total_frames = clip_frames
+
+    target_id = str(timeline.get("id") or "")
+    return proxy_url, total_frames, target_id
+
+
 def handle_edit(
     job: Job,
     *,
@@ -127,9 +162,46 @@ def handle_edit(
             isinstance(name, str) and name.strip() for name in files
         ):
             raise ValueError("job input 'files' must be a list of file names")
-    context = LoopContext.model_validate(
-        {key: job.input.get(key) for key in
-         ("proxy_url", "base_revision", "target_id", "changeset_id", "total_frames")}
+
+    proxy_url = str(job.input.get("proxy_url") or "").strip()
+    base_revision = str(job.input.get("base_revision") or "").strip()
+    target_id = str(job.input.get("target_id") or "").strip()
+    changeset_id = (
+        str(job.input.get("changeset_id") or "").strip() or f"cs-{job.request_id}"
+    )
+    total_frames_raw = job.input.get("total_frames")
+    total_frames = (
+        int(total_frames_raw)
+        if isinstance(total_frames_raw, (int, float)) and total_frames_raw > 0
+        else 0
+    )
+
+    if not proxy_url:
+        from chair_agent.review import read_project_timeline
+
+        proj_id = job.input.get("project_id")
+        proj_ref = proj_id if isinstance(proj_id, str) and proj_id.strip() else None
+        if not proj_ref and target_id:
+            proj_ref = target_id
+        timeline = read_project_timeline(proj_ref)
+        resolved_media, resolved_frames, resolved_target = _resolve_timeline_media(timeline)
+        if not resolved_media:
+            raise ValueError("project timeline has no clips with media references")
+        proxy_url = resolved_media
+        if total_frames <= 0:
+            total_frames = resolved_frames
+        if not base_revision:
+            base_revision = str(timeline.get("id") or "rev-0")
+        if resolved_target:
+            target_id = resolved_target
+            job.input["target_id"] = target_id
+
+    context = LoopContext(
+        proxy_url=proxy_url,
+        base_revision=base_revision,
+        target_id=target_id,
+        changeset_id=changeset_id,
+        total_frames=total_frames,
     )
     if "spans" in job.input:
         spans = [Span.model_validate(item) for item in job.input.get("spans", [])]

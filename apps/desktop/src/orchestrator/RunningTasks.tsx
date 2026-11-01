@@ -35,6 +35,8 @@ export interface RunningTask {
   plan?: TaskPlan;
   /** Footage for agent turns; absent until the task has media loaded. */
   media?: TaskMedia;
+  /** Project this task belongs to, if opened from a project view. */
+  projectId?: string;
   /** Live agent job behind this row; absent until the opening turn submits. */
   jobId?: string;
   jobStatus?: AgentJobStatus;

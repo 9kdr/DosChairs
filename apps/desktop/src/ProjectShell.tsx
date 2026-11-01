@@ -129,7 +129,7 @@ export function ProjectShell({ projectId, projectName, editorId, onHome }: Proje
                 setCreatedTasks((current) =>
                   current.some((existing) => existing.id === task.id)
                     ? current
-                    : [task, ...current],
+                    : [{ ...task, projectId }, ...current],
                 )
               }
               onOpenTask={(task) => {

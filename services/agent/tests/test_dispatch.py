@@ -104,7 +104,7 @@ def test_sidecar_tools_measure_and_poll() -> None:
         calls.append(f"{request.method} {request.url.path}")
         if request.method == "POST":
             assert request.url.path == "/jobs/measure_audio"
-            assert json.loads(request.content) == {"source": "file:///proxy.mp4"}
+            assert json.loads(request.content) == {"source": "/proxy.mp4"}
             return httpx.Response(202, json={"id": "job1", "status": "queued"})
         polls = len([call for call in calls if call.startswith("GET")])
         if polls < 2:
@@ -121,6 +121,17 @@ def test_sidecar_tools_measure_and_poll() -> None:
     assert _tools(handler).measure_silence("file:///proxy.mp4") == [(4.0, 5.0)]
     assert calls[0] == "POST /jobs/measure_audio"
     assert calls[-1] == "GET /jobs/job1"
+
+
+def test_sidecar_tools_surfaces_sidecar_400_error() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            400,
+            json={"error": "source is not a file: /not/a/file.mp4"},
+        )
+
+    with pytest.raises(UnexpectedDispatch, match="source is not a file"):
+        _tools(handler).measure_silence("file:///not/a/file.mp4")
 
 
 def test_sidecar_tools_reject_bad_measure_results() -> None:
@@ -155,7 +166,7 @@ def test_sidecar_tools_render_returns_a_file_url() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         if request.method == "POST":
             assert request.url.path == "/jobs/render_preview"
-            assert json.loads(request.content) == {"source": "file:///proxy.mp4"}
+            assert json.loads(request.content) == {"source": "/proxy.mp4"}
             return httpx.Response(202, json={"id": "job1", "status": "queued"})
         return httpx.Response(
             200,
