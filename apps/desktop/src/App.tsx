@@ -11,7 +11,7 @@ type Screen = "home" | "project";
 /** The gallery project that was open at shutdown, if it still exists. */
 function restoredProjectId(): string | null {
   const stored = readOpenProject();
-  return stored !== null && PROJECTS.some((entry) => entry.id === stored) ? stored : null;
+  return stored !== null && findStoredProject(stored) !== null ? stored : null;
 }
 
 export function App() {
