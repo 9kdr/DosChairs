@@ -11,6 +11,7 @@ import {
 
 const ONE: ChairRef = { kind: "asset", id: "A001_C004.mov", label: "A001_C004.mov" };
 const TWO: ChairRef = { kind: "asset", id: "dialogue.wav", label: "dialogue.wav" };
+const PIECE: ChairRef = { kind: "piece", id: "piece-opening", label: "Opening hook" };
 
 function stubTransfer(data: Record<string, string> = {}) {
   return {
@@ -37,7 +38,7 @@ describe("pressStartsDrag", () => {
     expect(pressStartsDrag({ selected: false, draggable: true })).toBe(false);
   });
 
-  it("marquees on a press when the card cannot drag (pieces)", () => {
+  it("marquees on a press when the card cannot drag", () => {
     expect(pressStartsDrag({ selected: true, draggable: false })).toBe(false);
     expect(pressStartsDrag({ selected: false, draggable: false })).toBe(false);
   });
@@ -60,15 +61,21 @@ describe("chair ref payload", () => {
     expect(decodeChairRefs(encodeChairRefs([ONE, TWO]))).toEqual([ONE, TWO]);
   });
 
+  it("round-trips a piece drag, alone and mixed with assets", () => {
+    expect(decodeChairRefs(encodeChairRefs([PIECE]))).toEqual([PIECE]);
+    expect(decodeChairRefs(encodeChairRefs([ONE, PIECE]))).toEqual([ONE, PIECE]);
+  });
+
   it("drops malformed entries instead of failing the drop", () => {
     const raw = JSON.stringify([
       ONE,
+      PIECE,
       { kind: "asset", id: "", label: "empty id" },
       { kind: "clip", id: "c1", label: "unknown kind" },
       { kind: "asset", id: "no-label" },
       null,
     ]);
-    expect(decodeChairRefs(raw)).toEqual([ONE]);
+    expect(decodeChairRefs(raw)).toEqual([ONE, PIECE]);
   });
 
   it("reads nothing from garbage, empty, or missing payloads", () => {
