@@ -1,17 +1,26 @@
 import { useState } from "react";
 import { WindowChrome } from "@/components/window-chrome";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { PROJECTS } from "./home/data";
 import { HomeScreen } from "./home/HomeScreen";
+import { findStoredProject } from "./home/projects";
 import { ProjectShell } from "./ProjectShell";
+import { readOpenProject, writeOpenProject } from "./project/persist";
 
 type Screen = "home" | "project";
 
-export function App() {
-  const [screen, setScreen] = useState<Screen>("home");
-  const [projectId, setProjectId] = useState<string | null>(null);
+/** The gallery project that was open at shutdown, if it still exists. */
+function restoredProjectId(): string | null {
+  const stored = readOpenProject();
+  return stored !== null && PROJECTS.some((entry) => entry.id === stored) ? stored : null;
+}
 
-  const project = PROJECTS.find((entry) => entry.id === projectId) ?? null;
+export function App() {
+  const [screen, setScreen] = useState<Screen>(() =>
+    restoredProjectId() === null ? "home" : "project",
+  );
+  const [projectId, setProjectId] = useState<string | null>(restoredProjectId);
+
+  const project = projectId !== null ? findStoredProject(projectId) : null;
   const projectOpen = screen === "project" && project !== null;
 
   return (
@@ -23,11 +32,15 @@ export function App() {
             projectId={project.id}
             projectName={project.name}
             editorId={project.editorId}
-            onHome={() => setScreen("home")}
+            onHome={() => {
+              writeOpenProject(null);
+              setScreen("home");
+            }}
           />
         ) : (
           <HomeScreen
             onOpenProject={(id) => {
+              writeOpenProject(id);
               setProjectId(id);
               setScreen("project");
             }}

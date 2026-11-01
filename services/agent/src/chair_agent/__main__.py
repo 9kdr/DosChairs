@@ -7,7 +7,7 @@ from typing import Any
 from urllib.parse import unquote, urlsplit
 
 from chair_agent.assets import build_assets
-from chair_agent.client import configured_models
+from chair_agent.client import configured_models, key_configured
 from chair_agent.jobs import (
     Job,
     JobConflict,
@@ -19,6 +19,7 @@ from chair_agent.jobs import (
 )
 from chair_agent.loop import handle_edit
 from chair_agent.models import TOOLS
+from chair_agent.projects import detect_projects
 from chair_agent.review import ReviewUnavailable, build_review
 from chair_agent.transcribe import handle_transcribe
 
@@ -32,14 +33,17 @@ class Handler(BaseHTTPRequestHandler):
         if self.path == "/health":
             self._send(200, _health())
             return
-        project_id = _project_path(self.path, "review")
+        if urlsplit(self.path).path == "/projects":
+            self._send(200, detect_projects())
+            return
+        project_id = _review_path(self.path)
         if project_id is not None:
             try:
                 self._send(200, build_review(self.controller, project_id))
             except ReviewUnavailable as error:
                 self._send(503, _error(error.code, str(error)))
             return
-        project_id = _project_path(self.path, "assets")
+        project_id = _assets_path(self.path)
         if project_id is not None:
             try:
                 self._send(200, build_assets(project_id))
@@ -105,7 +109,9 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(status)
         self.send_header("content-type", "application/json")
         self.send_header("content-length", str(len(raw)))
-        # Same-machine service: the desktop window reads GETs cross-origin.
+        # The desktop window is a different origin; without this the
+        # browser blocks reads and the service always looks down.
+        # Responses here never carry secrets (see the health test).
         self.send_header("access-control-allow-origin", "*")
         self.end_headers()
         self.wfile.write(raw)
@@ -114,9 +120,16 @@ class Handler(BaseHTTPRequestHandler):
         return
 
 
-def _project_path(path: str, leaf: str) -> str | None:
+def _review_path(path: str) -> str | None:
     parts = urlsplit(path).path.strip("/").split("/")
-    if len(parts) == 3 and parts[0] == "projects" and parts[1] and parts[2] == leaf:
+    if len(parts) == 3 and parts[0] == "projects" and parts[1] and parts[2] == "review":
+        return unquote(parts[1])
+    return None
+
+
+def _assets_path(path: str) -> str | None:
+    parts = urlsplit(path).path.strip("/").split("/")
+    if len(parts) == 3 and parts[0] == "projects" and parts[1] and parts[2] == "assets":
         return unquote(parts[1])
     return None
 
@@ -141,6 +154,7 @@ def _health() -> dict[str, Any]:
         "ok": True,
         "tools": [tool.model_dump() for tool in TOOLS],
         "models": configured_models(),
+        "key_configured": key_configured(),
     }
 
 

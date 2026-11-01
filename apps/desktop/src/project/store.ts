@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import type { Changeset, ChangesetItem, EditOp, Timeline } from "@chair/timeline-ir";
+import { readReviewSnapshot, withStoredDecisions, writeReviewSnapshot } from "./persist";
 import { fetchProjectReview, type ReviewJob } from "./review";
 
 /**
@@ -215,7 +216,8 @@ export function useProject(projectId: string, projectName: string): ProjectStore
         if (!live) return;
         setTimeline(review.timeline);
         if (review.kind === "proposal") {
-          setChangeset(review.changeset);
+          const cached = readReviewSnapshot(projectId);
+          setChangeset(withStoredDecisions(review.changeset, cached?.changeset ?? null));
           setJob(review.job);
           setPhase("ready");
         } else {
@@ -224,6 +226,13 @@ export function useProject(projectId: string, projectName: string): ProjectStore
       } catch (reason) {
         if (!live) return;
         if (reason instanceof Error && reason.name === "AbortError") return;
+        const cached = readReviewSnapshot(projectId);
+        if (cached) {
+          setTimeline(cached.timeline);
+          setChangeset(cached.changeset);
+          setPhase("ready");
+          return;
+        }
         setError(reason instanceof Error ? reason.message : "could not load the review");
         setPhase("error");
       }
@@ -233,6 +242,17 @@ export function useProject(projectId: string, projectName: string): ProjectStore
       controller.abort();
     };
   }, [projectId, nonce]);
+
+  // Keep the mirror plus the person's decisions on disk so both survive
+  // a restart (#132). Every accept and reject flows through here.
+  useEffect(() => {
+    if (timeline === null || (phase !== "ready" && phase !== "empty")) return;
+    writeReviewSnapshot(projectId, {
+      timeline,
+      changeset,
+      savedAt: new Date().toISOString(),
+    });
+  }, [projectId, phase, timeline, changeset]);
 
   const appendHistory = (decided: ChangesetItem[], stamp: string) => {
     if (decided.length === 0 || !changeset) return;

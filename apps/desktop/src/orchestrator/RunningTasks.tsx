@@ -10,11 +10,29 @@ import { createServicesClient } from "@/lib/services/client";
 
 export type TaskLane = "edit" | "effects" | "colour";
 
+/** What the orchestrator planned for a prompted task: the brief plus wanted lanes. */
+export type TaskPlan = {
+  brief: string;
+  /** Lanes the task wants subagents for, primary first. */
+  lanes: TaskLane[];
+};
+
+/** Proxy media a task's agent turns read. Source footage is never submitted. */
+export type TaskMedia = {
+  proxyUrl: string;
+  baseRevision?: string;
+  totalFrames?: number;
+};
+
 export interface RunningTask {
   id: string;
   name: string;
   status: string;
   lane: TaskLane;
+  /** Setup plan; absent on tasks that predate prompting. */
+  plan?: TaskPlan;
+  /** Footage for agent turns; absent until the task has media loaded. */
+  media?: TaskMedia;
 }
 
 /** True when a task is completed and has at least one accepted history entry to rewind. */

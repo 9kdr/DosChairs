@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { EDITORS, LIBRARY_ASSETS, editorById, formatEditedAt } from "./data";
+import {
+  EDITOR_IDS,
+  EDITOR_META,
+  LIBRARY_ASSETS,
+  editorById,
+  editorName,
+  formatEditedAt,
+} from "./data";
 
 describe("formatEditedAt", () => {
   const now = Date.parse("2026-10-27T12:00:00.000Z");
@@ -17,10 +24,14 @@ describe("formatEditedAt", () => {
   });
 });
 
-describe("EDITORS", () => {
-  it("marks DaVinci Resolve as inProject", () => {
-    expect(editorById("resolve").status).toBe("inProject");
-    expect(EDITORS.some((editor) => editor.status === "inProject")).toBe(true);
+describe("editor meta", () => {
+  it("names every known editor without a status", () => {
+    expect(EDITOR_IDS).toEqual(["resolve", "kdenlive", "otio"]);
+    expect(editorName("resolve")).toBe("DaVinci Resolve");
+    expect(EDITOR_META.otio.short).toBe("OTIO");
+    // Statuses always come from detection; the default admits ignorance.
+    expect(editorById("resolve").status).toBe("stopped");
+    expect(editorById("resolve", "inProject").status).toBe("inProject");
   });
 });
 

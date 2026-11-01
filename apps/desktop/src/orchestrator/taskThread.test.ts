@@ -12,6 +12,7 @@ import {
   isThreadDemo,
   noteKey,
   openingKey,
+  openTurnScope,
   replyForSubmitError,
   runTurn,
   shortRequestId,
@@ -50,6 +51,22 @@ describe("turn identity", () => {
     expect(noteKey("task-3", 7)).not.toBe(noteKey("task-1", 7));
   });
 
+  it("keeps the primary lane on the resumable opening key", () => {
+    const primary = openTurnScope("task-3", "edit", true);
+    expect(primary).toMatchObject({
+      id: "open-edit",
+      key: openingKey("task-3"),
+      changesetId: "cs-task-3-open",
+    });
+    const extra = openTurnScope("task-3", "colour", false);
+    expect(extra).toMatchObject({
+      id: "open-colour",
+      key: `${openingKey("task-3")}:colour`,
+      changesetId: "cs-task-3-open-colour",
+    });
+    expect(extra.key).not.toBe(primary.key);
+  });
+
   it("briefs the opening turn from the task itself", () => {
     const brief = briefForOpening(task);
     expect(brief).toContain("Detect silence and jump cuts");
@@ -69,6 +86,19 @@ describe("turn identity", () => {
       total_frames: 0,
       spans: [],
       preview_urls: [],
+    });
+  });
+
+  it("resolves the task's loaded proxy media into the turn", () => {
+    const loaded: RunningTask = {
+      ...task,
+      media: { proxyUrl: "file:///proxies/silence.mp4", baseRevision: "rev-9", totalFrames: 900 },
+    };
+    const input = inputForTurn(loaded, "trim the pause", "cs-task-3-open");
+    expect(input).toMatchObject({
+      proxy_url: "file:///proxies/silence.mp4",
+      base_revision: "rev-9",
+      total_frames: 900,
     });
   });
 });
@@ -190,8 +220,12 @@ describe("runTurn", () => {
     };
     const client = createServicesClient({ fetchFn });
     const updates: AgentJobStatus[] = [];
+    const loaded: RunningTask = {
+      ...task,
+      media: { proxyUrl: "file:///proxies/silence.mp4", baseRevision: "rev-9", totalFrames: 900 },
+    };
     const finished = await runTurn(client, {
-      task,
+      task: loaded,
       brief: "remove the silence",
       key: noteKey("task-3", 7),
       changesetId: "cs-task-3-7",
@@ -208,7 +242,13 @@ describe("runTurn", () => {
     const body = submit?.init?.body;
     expect(JSON.parse(typeof body === "string" ? body : "{}")).toMatchObject({
       task: "edit",
-      input: { brief: "remove the silence", task_id: "task-3" },
+      input: {
+        brief: "remove the silence",
+        task_id: "task-3",
+        proxy_url: "file:///proxies/silence.mp4",
+        base_revision: "rev-9",
+        total_frames: 900,
+      },
     });
   });
 });
