@@ -49,7 +49,36 @@ function item(
   patch?: Record<string, unknown>,
   targetId?: string,
 ): ChangesetItem {
-  return { id, op, rationale: `test ${op}`, patch, targetId, status: "pending" };
+  return {
+    id,
+    op,
+    rationale: `test ${op}`,
+    status: "pending",
+    ...(patch ? { patch } : {}),
+    ...(targetId ? { targetId } : {}),
+  };
+}
+
+/** An accepted undo item from an inverse, for round-trip application. */
+function undoItem(inverse: { op: EditOp; targetId?: string; patch: Record<string, unknown> }): ChangesetItem {
+  return {
+    id: "undo",
+    op: inverse.op,
+    rationale: "undo",
+    patch: inverse.patch,
+    status: "accepted",
+    ...(inverse.targetId ? { targetId: inverse.targetId } : {}),
+  };
+}
+
+/** An inverse back into invertible shape, for double-inversion checks. */
+function reItem(inverse: { op: EditOp; targetId?: string; patch: Record<string, unknown> }) {
+  return {
+    id: "u",
+    op: inverse.op,
+    patch: inverse.patch,
+    ...(inverse.targetId ? { targetId: inverse.targetId } : {}),
+  };
 }
 
 function accepted(changeset: Changeset): Changeset {
@@ -73,7 +102,7 @@ function acceptForTest(
     changesetId: "cs-1",
     itemId: entry.id,
     op: entry.op,
-    targetId: entry.targetId,
+    ...(entry.targetId ? { targetId: entry.targetId } : {}),
     baseRevision: "live",
     forward: entry.patch ?? {},
     inverse: inverted.inverse,
@@ -228,7 +257,7 @@ describe("invertItem", () => {
 
   it("fails closed for an op with no defined inverse", () => {
     const inverted = invertItem(
-      { id: "i", op: "teleport" as EditOp, rationale: "x", status: "pending" },
+      { id: "i", op: "teleport" as EditOp },
       makeTimeline(),
     );
     expect(inverted.ok).toBe(false);
@@ -294,16 +323,7 @@ describe("applyAccepted round-trips", () => {
       schemaVersion: "0.1.0",
       id: "cs-inv",
       baseRevision: "live",
-      items: [
-        {
-          id: "undo",
-          op: inverted.inverse.op,
-          targetId: inverted.inverse.targetId,
-          rationale: "undo",
-          patch: inverted.inverse.patch,
-          status: "accepted",
-        },
-      ],
+      items: [undoItem(inverted.inverse)],
     });
     expect(back).toEqual(before);
   }
@@ -365,16 +385,7 @@ describe("applyAccepted round-trips", () => {
       schemaVersion: "0.1.0",
       id: "cs-back",
       baseRevision: "live",
-      items: [
-        {
-          id: "undo",
-          op: inverted.inverse.op,
-          targetId: inverted.inverse.targetId,
-          rationale: "undo",
-          patch: inverted.inverse.patch,
-          status: "accepted",
-        },
-      ],
+      items: [undoItem(inverted.inverse)],
     });
     expect(back).toEqual(withEffect);
   });
@@ -397,10 +408,7 @@ describe("applyAccepted round-trips", () => {
     const speed = invertItem(item("i", "set_speed", { rate: 2 }, "clip-a"), timeline);
     expect(speed.ok).toBe(true);
     if (!speed.ok) return;
-    const speedBack = invertItem(
-      { id: "u", op: speed.inverse.op, targetId: speed.inverse.targetId, patch: speed.inverse.patch },
-      timeline,
-    );
+    const speedBack = invertItem(reItem(speed.inverse), timeline);
     expect(speedBack.ok).toBe(true);
     if (speedBack.ok) {
       expect(speedBack.inverse.op).toBe("set_speed");
@@ -410,10 +418,7 @@ describe("applyAccepted round-trips", () => {
     const mute = invertItem(item("i", "mute_clip", undefined, "clip-a"), timeline);
     expect(mute.ok).toBe(true);
     if (!mute.ok) return;
-    const muteBack = invertItem(
-      { id: "u", op: mute.inverse.op, targetId: mute.inverse.targetId, patch: mute.inverse.patch },
-      timeline,
-    );
+    const muteBack = invertItem(reItem(mute.inverse), timeline);
     expect(muteBack).toEqual({
       ok: true,
       inverse: { op: "mute_clip", targetId: "clip-a", patch: { muted: true } },
@@ -425,15 +430,7 @@ describe("applyAccepted round-trips", () => {
     );
     expect(transition.ok).toBe(true);
     if (!transition.ok) return;
-    const transitionBack = invertItem(
-      {
-        id: "u",
-        op: transition.inverse.op,
-        targetId: transition.inverse.targetId,
-        patch: transition.inverse.patch,
-      },
-      timeline,
-    );
+    const transitionBack = invertItem(reItem(transition.inverse), timeline);
     expect(transitionBack.ok).toBe(true);
     if (transitionBack.ok) {
       expect(transitionBack.inverse.op).toBe("add_transition");

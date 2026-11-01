@@ -6,8 +6,10 @@ import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
 import { OpDiff } from "./OpDiff";
-import type { ProjectStore } from "./store";
+import { opLabel, type ProjectStore } from "./store";
 import type { ChangesetItem } from "@chair/timeline-ir";
+
+export { opLabel };
 
 const CARD = "rounded-[28px] bg-[#1a1a1a] text-neutral-100 shadow-raised ring-1 ring-white/8";
 
@@ -27,13 +29,6 @@ function timecode(time: RationalTime): string {
 function seconds(time: RationalTime): string {
   const value = time.value / time.rate;
   return `${Number.isInteger(value) ? value : value.toFixed(1)}s`;
-}
-
-export function opLabel(op: string): string {
-  return op
-    .split("_")
-    .map((word) => word[0]!.toUpperCase() + word.slice(1))
-    .join(" ");
 }
 
 function ReviewTitle() {
@@ -133,6 +128,9 @@ export function ReviewBoard({ store }: { store: ProjectStore }) {
   }
   const { changeset, pendingCount } = store;
   const clipCount = timeline.tracks.reduce((sum, track) => sum + track.clips.length, 0);
+  const rollbackPending = store.rollback
+    ? store.rollback.items.filter((item) => item.status === "pending").length
+    : 0;
 
   return (
     <div className="h-full overflow-y-auto p-4 pb-[9.5rem]">
@@ -143,6 +141,50 @@ export function ReviewBoard({ store }: { store: ProjectStore }) {
         </Badge>
         <p className="ml-auto text-xs text-neutral-500">Pending edits never change the cut.</p>
       </div>
+
+      {store.refusal ? (
+        <div role="alert" className={cn(CARD, "mt-3 flex items-start gap-2 p-4 ring-amber-300/25")}>
+          <TriangleAlertIcon className="mt-0.5 size-4 shrink-0 text-amber-300" aria-hidden="true" />
+          <p className="text-sm leading-6 text-neutral-200">
+            Couldn&apos;t accept{store.refusal.itemId ? ` ${store.refusal.itemId}` : ""}:{" "}
+            <span className="text-neutral-400">{store.refusal.reason}</span> Nothing changed.
+          </p>
+        </div>
+      ) : null}
+
+      {store.rollback ? (
+        <section
+          aria-label="Undo proposal"
+          className={cn(CARD, "mt-3 flex min-h-0 flex-col gap-1 p-4")}
+        >
+          <div className="flex shrink-0 flex-wrap items-center gap-2 px-1 pb-1">
+            <h3 className="text-sm font-semibold tracking-wide text-neutral-100">Undo proposal</h3>
+            <Badge variant={rollbackPending === 0 ? "success" : "warning"} size="sm">
+              {rollbackPending === 1 ? "1 pending" : `${rollbackPending} pending`}
+            </Badge>
+            {rollbackPending > 0 ? (
+              <Button type="button" size="sm" onClick={() => store.acceptAllUndo()}>
+                Accept undo ({rollbackPending})
+              </Button>
+            ) : null}
+          </div>
+          {store.rollback.summary ? (
+            <p className="px-1 pb-1 text-xs leading-5 text-neutral-500">
+              {store.rollback.summary} Accepting rewinds the cut newest first.
+            </p>
+          ) : null}
+          <ul className="flex min-h-0 flex-col">
+            {store.rollback.items.map((item) => (
+              <ChangesetItemRow
+                key={item.id}
+                item={item}
+                onAccept={() => store.acceptItem(item.id)}
+                onReject={() => store.rejectItem(item.id)}
+              />
+            ))}
+          </ul>
+        </section>
+      ) : null}
 
       <div className="mt-3 grid grid-cols-1 items-start gap-3 lg:grid-cols-12">
         <section

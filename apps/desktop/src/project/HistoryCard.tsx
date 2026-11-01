@@ -6,8 +6,10 @@ import type { HistoryEntry } from "./store";
 
 /**
  * Accepted edits as a bento card beside the running tasks, in the same
- * card treatment as `RunningTasks`. Each row carries its full history
- * entry for #75 to wire up; the undo buttons stay disabled until then.
+ * card treatment as `RunningTasks`. Each row shows what landed, when, and
+ * which changeset item and plan step it came from; Undo to here proposes
+ * rewinding that entry plus its tail, and the proposal lands in Review
+ * for accept.
  */
 export function HistoryCard({
   entries,
@@ -32,7 +34,7 @@ export function HistoryCard({
         <span className="text-xs tabular-nums text-neutral-500">
           {entries.length === 1 ? "1 entry" : `${entries.length} entries`}
         </span>
-        <p className="ml-auto text-xs text-neutral-500">Undo to here arrives with #75.</p>
+        <p className="ml-auto text-xs text-neutral-500">Undo proposes; Review accepts.</p>
       </div>
       {entries.length === 0 ? (
         <p className="px-1 py-2 text-xs text-neutral-500">
@@ -58,13 +60,22 @@ export function HistoryCard({
                 <p className="mt-0.5 text-xs text-neutral-500">
                   Accepted {clockTime(entry.acceptedAt)} by {entry.acceptedBy}
                 </p>
+                <p className="mt-0.5 truncate text-xs text-neutral-600">
+                  <span className="font-mono">{entry.itemId}</span>
+                  {entry.beatId ? <span> · step {entry.beatId}</span> : null}
+                </p>
               </div>
               <Button
                 type="button"
                 size="sm"
                 variant="ghost"
-                disabled
-                title="Undo to here arrives with #75"
+                disabled={!onUndoEntry}
+                title={
+                  onUndoEntry
+                    ? `Propose rewinding to before ${entry.itemId}`
+                    : "Undo is unavailable here"
+                }
+                aria-label={`Undo to here: ${opLabel(entry.op)}${entry.targetId ? ` on ${entry.targetId}` : ""}`}
                 onClick={() => onUndoEntry?.(entry)}
                 className="shrink-0"
               >

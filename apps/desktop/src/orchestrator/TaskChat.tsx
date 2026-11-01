@@ -3,11 +3,15 @@ import { ArrowLeft, Undo2 } from "lucide-react";
 import { ChatPrompt } from "@/components/chat-prompt";
 import { SmoothScrollTarget } from "@/components/smooth-scroll";
 import { Button } from "@/components/ui/button";
-import { canUndoTask, type RunningTask } from "./RunningTasks";
+import type { RunningTask } from "./RunningTasks";
 import { TaskActivityPanel } from "./TaskActivity";
 import { useTaskThread } from "./taskThread";
-import { historyForTask } from "../project/store";
-import { opLabel } from "../project/ReviewBoard";
+import {
+  canUndoTask,
+  historyForTask,
+  undoSummaryForTask,
+  type HistoryEntry,
+} from "../project/store";
 
 const LANE: Record<RunningTask["lane"], string> = {
   edit: "Edit",
@@ -19,41 +23,35 @@ const LANE: Record<RunningTask["lane"], string> = {
 export const UNDO_PROMPT = "Undo this task's changes.";
 
 /**
- * Stand-in rewind summary for an undo prompt, read off the task's
- * stand-in history (#75's shape). Newest first, like the rewind would run.
- */
-function undoReply(task: RunningTask): string {
-  const entries = historyForTask(task.id);
-  if (entries.length === 0) return `No accepted edits to rewind for ${task.name} yet.`;
-  const list = [...entries]
-    .reverse()
-    .map((entry) =>
-      entry.targetId ? `${opLabel(entry.op)} on ${entry.targetId}` : opLabel(entry.op),
-    )
-    .join("; ");
-  const count = entries.length === 1 ? "1 accepted edit" : `${entries.length} accepted edits`;
-  return `Would rewind ${count}, newest first: ${list}. Real undo arrives with #75 — nothing changed.`;
-}
-
-/**
  * A full thread for one running task. Turns run live on the agent; undo
- * prompts answer locally from history until #75. Sending does not change
- * the timeline.
+ * prompts propose rewinding the task's accepted tail as one gated
+ * changeset. Sending does not change the timeline.
  */
 export function TaskChat({
   task,
   note,
+  history,
   onClose,
   onSend,
+  onUndoRequest,
+  onUndoEntry,
 }: {
   task: RunningTask;
   note: { id: number; text: string } | null;
+  history: readonly HistoryEntry[];
   onClose: () => void;
   onSend: (text: string) => void;
+  /** Propose rewinding the task's tail; answers the undo prompt. */
+  onUndoRequest?: (task: RunningTask) => string;
+  onUndoEntry?: (entry: HistoryEntry) => void;
 }) {
+  const entries = historyForTask(history, task.id);
   const resolveLocalReply = useCallback(
-    (text: string) => (text.toLowerCase().startsWith("undo") ? undoReply(task) : null),
-    [task],
+    (text: string) =>
+      text.toLowerCase().startsWith("undo")
+        ? (onUndoRequest?.(task) ?? undoSummaryForTask(history, task.id, task.name))
+        : null,
+    [history, onUndoRequest, task],
   );
   const { turns, activity } = useTaskThread(task, note, resolveLocalReply);
   const endRef = useRef<HTMLDivElement>(null);
@@ -106,13 +104,18 @@ export function TaskChat({
             <div ref={endRef} />
           </ol>
         </div>
-        <TaskActivityPanel task={task} activity={activity ?? undefined} />
+        <TaskActivityPanel
+          task={task}
+          activity={activity ?? undefined}
+          history={entries}
+          onUndoEntry={onUndoEntry}
+        />
       </div>
 
       <div className="flex shrink-0 gap-4 px-4 pt-2 pb-6">
         <div className="min-w-0 flex-1">
           <div className="mx-auto w-full max-w-3xl">
-            {canUndoTask(task) ? (
+            {canUndoTask(task, history) ? (
               <div className="pb-2">
                 <Button
                   type="button"

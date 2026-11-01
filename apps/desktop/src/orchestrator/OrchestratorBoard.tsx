@@ -28,6 +28,7 @@ type OrchestratorBoardProps = {
   history: HistoryEntry[];
   onOpenTask?: (task: RunningTask) => void;
   onUndoTask?: (task: RunningTask) => void;
+  onUndoEntry?: (entry: HistoryEntry) => void;
 };
 
 function columnWidths(available: number, editing: boolean) {
@@ -45,6 +46,7 @@ export function OrchestratorBoard({
   history,
   onOpenTask,
   onUndoTask,
+  onUndoEntry,
 }: OrchestratorBoardProps) {
   const [planOpen, setPlanOpen] = useState(false);
   const [planMode, setPlanMode] = useState<PlanMode>("edit");
@@ -256,11 +258,12 @@ export function OrchestratorBoard({
               }}
             >
               <RunningTasks
+                history={history}
                 onOpen={onOpenTask}
                 onUndo={onUndoTask}
                 frozen={planTweening}
               />
-              <HistoryCard entries={history} />
+              <HistoryCard entries={history} onUndoEntry={onUndoEntry} />
             </div>,
             slotContainer,
           )}

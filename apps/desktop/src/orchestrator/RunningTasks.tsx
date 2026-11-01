@@ -5,7 +5,7 @@ import { DitherShader } from "@/lib/dither";
 import type { DitherColor } from "@/lib/dither";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { historyForTask } from "../project/store";
+import { canUndoTask, type HistoryEntry } from "../project/store";
 import { createServicesClient } from "@/lib/services/client";
 
 export type TaskLane = "edit" | "effects" | "colour";
@@ -15,11 +15,6 @@ export interface RunningTask {
   name: string;
   status: string;
   lane: TaskLane;
-}
-
-/** True when a task is completed and has at least one accepted history entry to rewind. */
-export function canUndoTask(task: RunningTask): boolean {
-  return task.status.toLowerCase() === "completed" && historyForTask(task.id).length > 0;
 }
 
 const NON_STOPPABLE_STATUSES = new Set([
@@ -39,6 +34,8 @@ export function canStopTask(task: RunningTask): boolean {
 export interface RunningTasksProps {
   className?: string;
   tasks?: readonly RunningTask[];
+  /** Accepted history: gates each row's Undo button. Empty until accepts land. */
+  history?: readonly HistoryEntry[];
   /** Hold the dither shaders on their current frame (e.g. mid-morph). */
   frozen?: boolean;
   onOpen?: (task: RunningTask) => void;
@@ -132,6 +129,7 @@ function TaskRow({
   task,
   seed,
   frozen,
+  history,
   onOpen,
   onUndo,
   onStop,
@@ -139,6 +137,7 @@ function TaskRow({
   task: RunningTask;
   seed: number;
   frozen: boolean;
+  history: readonly HistoryEntry[];
   onOpen: () => void;
   onUndo?: () => void;
   onStop?: () => void;
@@ -346,7 +345,7 @@ function TaskRow({
               Stop task
             </Button>
           ) : null}
-          {onUndo && canUndoTask(task) ? (
+          {onUndo && canUndoTask(task, history) ? (
             <Button
               type="button"
               size="sm"
@@ -377,6 +376,7 @@ function TaskRow({
 export function RunningTasks({
   className,
   tasks = STANDIN_TASKS,
+  history = [],
   frozen = false,
   onOpen,
   onUndo,
@@ -409,6 +409,7 @@ export function RunningTasks({
             task={task}
             seed={index + 1}
             frozen={frozen}
+            history={history}
             onOpen={() => onOpen?.(task)}
             onUndo={onUndo ? () => onUndo(task) : undefined}
             onStop={() => {

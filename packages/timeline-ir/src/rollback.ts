@@ -256,7 +256,7 @@ export function invertItem(
         ok: true,
         inverse: {
           op: "set_speed",
-          targetId: item.targetId,
+          ...(item.targetId ? { targetId: item.targetId } : {}),
           patch: { rate: before, previousRate: after },
         },
       };
@@ -271,7 +271,7 @@ export function invertItem(
         ok: true,
         inverse: {
           op: "set_gain",
-          targetId: item.targetId,
+          ...(item.targetId ? { targetId: item.targetId } : {}),
           patch: { gainDb: before, previousGainDb: after },
         },
       };
@@ -280,7 +280,11 @@ export function invertItem(
       const muted = typeof patch.muted === "boolean" ? patch.muted : true;
       return {
         ok: true,
-        inverse: { op: "mute_clip", targetId: item.targetId, patch: { muted: !muted } },
+        inverse: {
+          op: "mute_clip",
+          ...(item.targetId ? { targetId: item.targetId } : {}),
+          patch: { muted: !muted },
+        },
       };
     }
     case "add_marker": {
@@ -457,7 +461,7 @@ export function buildUndoChangeset(
   const items: ChangesetItem[] = tail.map((tailEntry) => ({
     id: `undo-${tailEntry.itemId}`,
     op: tailEntry.inverse.op,
-    targetId: tailEntry.inverse.targetId,
+    ...(tailEntry.inverse.targetId ? { targetId: tailEntry.inverse.targetId } : {}),
     rationale:
       `Undo ${tailEntry.op}` +
       (tailEntry.targetId ? ` on ${tailEntry.targetId}` : "") +

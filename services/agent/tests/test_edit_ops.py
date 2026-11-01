@@ -120,3 +120,13 @@ def test_invalid_tool_output_is_rejected_before_the_ui() -> None:
 def test_fixture_changeset_validates() -> None:
     fixture = json.loads((ROOT / "fixtures/timelines/example.changeset.json").read_text())
     assert validate_changeset(fixture).id == "cs_example"
+
+
+def test_removal_ops_validate_for_undo_changesets() -> None:
+    ops = ["remove_marker", "remove_effect", "remove_transition", "remove_track"]
+    items = [
+        ChangesetItem(id=f"undo-{op}", op=op, rationale="Undo.", status="pending")  # type: ignore[arg-type]
+        for op in ops
+    ]
+    validated = validate_changeset(_dumped(items))
+    assert [item.op for item in validated.items] == ops
