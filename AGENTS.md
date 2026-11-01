@@ -20,6 +20,7 @@ Talk to the user in plain language. Say what you are doing, which issue it belon
 
 - Mel is semi-technical and acts as the client. They judge what they can see and run. Agents get trusted on code they cannot see.
 - Report what the implementation actually did, never just the plan. Name what changed in the app, the check that ran, and the review score.
+- Every pull request carries its proof: a visual (screenshot, clip, or other capture) when there is a screen, the Gemini score, and a short explanation of the change. It never merges until Mel says so. The main agent reports back per issue: what the issue was, what got fixed, and the proof.
 - When the user wants another round on an already-open PR, comment on the PR first: one line saying the user is reiterating, so the next push doesn't land unexplained.
 - Visual or behavior-changing work comes back with what a person can check: where to look or click, what to expect, and a screenshot when there is a screen. It never merges until Mel has looked and said so.
 - Pure code work still reports its check and score. It needs no eyes-on before commit.
@@ -40,7 +41,7 @@ Read `.cursor/skills/chair-models/SKILL.md` before you hand work off. The same t
 
 When you delegate implementation, end the task with this paragraph. A child does not inherit the parent chat, and an Antigravity thread does not load this file:
 
-"Before you commit a change that is moderately worth a review, delegate the check and the score to Gemini 3.8 Flash high on Antigravity (model `gemini-3.8-flash-high`). Read `.agents/skills/chair-models/SKILL.md` and follow Score the implementation. Also read `.agents/skills/ponytail-review/SKILL.md` and the ladder in `.agents/skills/ponytail/SKILL.md` at level full. The bloat deduction follows that lean pass. Gemini runs `mise run check` on what changed, scores, and does not edit. Commit only after the check passes. Quick work uses that same Gemini. OpenCode only if the user named the screen or the long bug."
+"Before you commit a change that is moderately worth a review, delegate the check and the score to Gemini 3.8 Flash high on Antigravity (model `gemini-3.8-flash-high`). Read `.agents/skills/chair-models/SKILL.md` and follow Score the implementation. Also read `.agents/skills/ponytail-review/SKILL.md` and the ladder in `.agents/skills/ponytail/SKILL.md` at level full. The bloat deduction follows that lean pass. Gemini runs `mise run check` on what changed, scores, and does not edit. Commit only after the check passes. Quick work uses that same Gemini. OpenCode only if the user named the screen or the long bug. Never merge or enable auto-merge; report the PR back instead."
 
 A new job is a new T3 thread (`t3 thread start`, or `delegate_task` from inside a thread). The child gets that issue and the paragraph above. Two models run at the same time only when they are fixing different problems and will not edit the same files.
 Any chat may spawn separate sub-chats with no callback to the parent when the task is long, spans multiple issues, or Mel will follow that chat directly.
