@@ -77,6 +77,44 @@ def read_current_timeline() -> dict[str, Any]:
     return timeline_from_resolve(_snapshot(resolve_app()))
 
 
+def media_pool_files(resolve: Any = None) -> list[str]:
+    """File paths of every clip in the open project's media pool, bins included.
+
+    Read-only: walks the root folder and its subfolders, keeping items with
+    a File Path. Timelines sit in the clip list with an empty path, so they
+    drop out here. Sorted and de-duplicated for a stable shelf listing.
+    """
+    app = resolve if resolve is not None else resolve_app()
+    manager = _maybe(app, "GetProjectManager")
+    project = _maybe(manager, "GetCurrentProject") if manager is not None else None
+    if project is None:
+        raise ResolveClosedError(
+            "Resolve Studio has no project open. Open a project and try again."
+        )
+    pool = _maybe(project, "GetMediaPool")
+    root = _maybe(pool, "GetRootFolder") if pool is not None else None
+    if root is None:
+        return []
+    found: set[str] = set()
+    folders = [root]
+    while folders:
+        folder = folders.pop()
+        for item in _maybe(folder, "GetClipList") or []:
+            path = _clip_file_path(item)
+            if path:
+                found.add(path)
+        folders.extend(_maybe(folder, "GetSubFolderList") or [])
+    return sorted(found)
+
+
+def _clip_file_path(item: Any) -> str | None:
+    value = _maybe(item, "GetClipProperty", "File Path")
+    if not isinstance(value, str):
+        return None
+    path = value.strip()
+    return path or None
+
+
 def scripting_module_paths() -> list[str]:
     """Installed Studio scripting module locations for this OS."""
     if sys.platform.startswith("darwin"):
@@ -167,11 +205,7 @@ def _file_path(item: Any) -> str | None:
     pool = _maybe(item, "GetMediaPoolItem")
     if pool is None:
         return None
-    value = _maybe(pool, "GetClipProperty", "File Path")
-    if not isinstance(value, str):
-        return None
-    path = value.strip()
-    return path or None
+    return _clip_file_path(pool)
 
 
 def _frame_rate_label(timeline: Any, project: Any) -> str:
