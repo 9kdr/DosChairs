@@ -6,9 +6,38 @@
  * closed agent is an error, and a malformed payload fails loudly instead
  * of rendering fakes.
  */
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ServiceError, type FetchFn } from "@/lib/services/client";
 import { agentBaseUrl } from "@/lib/services/config";
+
+/** How often the shelf re-reads the listing while the window is visible. */
+export const ASSETS_POLL_MS = 5000;
+
+export type PollerOptions = {
+  intervalMs?: number;
+  /** False while the page is hidden: ticks are skipped, never queued. */
+  visible?: () => boolean;
+  /** Seams for tests; the shelf uses real timers. */
+  schedule?: (tick: () => void, ms: number) => unknown;
+  cancel?: (timer: unknown) => void;
+};
+
+export type Poller = { stop: () => void };
+
+/**
+ * Call onTick every intervalMs while visible stays true. Hidden ticks
+ * are skipped, never bunched, so a background tab makes no requests.
+ */
+export function startPolling(onTick: () => void, options: PollerOptions = {}): Poller {
+  const intervalMs = options.intervalMs ?? ASSETS_POLL_MS;
+  const visible = options.visible ?? (() => true);
+  const schedule = options.schedule ?? ((tick, ms) => setInterval(tick, ms));
+  const cancel = options.cancel ?? ((timer) => clearInterval(timer as number));
+  const timer = schedule(() => {
+    if (visible()) onTick();
+  }, intervalMs);
+  return { stop: () => cancel(timer) };
+}
 
 export type ShelfAssetKind = "video" | "image" | "audio";
 
@@ -219,7 +248,15 @@ export type AssetsStore = {
   assets: ShelfAsset[];
   pieces: ShelfPiece[];
   error: string | null;
+  /** Full reload through the loading state; the manual refresh. */
   retry: () => void;
+  /** Quiet re-read that keeps the last good listing on screen. */
+  refresh: () => void;
+};
+
+export type UseProjectAssetsOptions = {
+  /** Re-read cadence in ms; 0 or less disables the poll. */
+  pollMs?: number;
 };
 
 const EMPTY: ProjectAssets = { folders: [], assets: [], pieces: [] };
@@ -227,28 +264,40 @@ const EMPTY: ProjectAssets = { folders: [], assets: [], pieces: [] };
 /**
  * Open a project's asset listing for the shelf. An empty project is
  * ready with no items; only transport and malformed payloads fail.
+ * The listing re-reads on a poll while the window is visible (quiet,
+ * so the shelf never flashes loading) and once when the window
+ * returns; a failed background re-read keeps the last good listing.
  */
-export function useProjectAssets(projectId: string): AssetsStore {
+export function useProjectAssets(
+  projectId: string,
+  options: UseProjectAssetsOptions = {},
+): AssetsStore {
+  const { pollMs = ASSETS_POLL_MS } = options;
   const [listing, setListing] = useState<ProjectAssets>(EMPTY);
   const [phase, setPhase] = useState<AssetsPhase>("loading");
   const [error, setError] = useState<string | null>(null);
-  const [nonce, setNonce] = useState(0);
+  const [request, setRequest] = useState({ nonce: 0, quiet: false });
 
   useEffect(() => {
     let live = true;
     const controller = new AbortController();
-    setPhase("loading");
-    setError(null);
-    setListing(EMPTY);
+    const quiet = request.quiet;
+    if (!quiet) {
+      setPhase("loading");
+      setError(null);
+      setListing(EMPTY);
+    }
     void (async () => {
       try {
         const assets = await fetchProjectAssets(projectId, { signal: controller.signal });
         if (!live) return;
         setListing(assets);
+        setError(null);
         setPhase("ready");
       } catch (fetchError) {
         if (!live) return;
         if (fetchError instanceof Error && fetchError.name === "AbortError") return;
+        if (quiet) return;
         setError(fetchError instanceof Error ? fetchError.message : "Could not load assets.");
         setPhase("error");
       }
@@ -257,7 +306,34 @@ export function useProjectAssets(projectId: string): AssetsStore {
       live = false;
       controller.abort();
     };
-  }, [projectId, nonce]);
+  }, [projectId, request]);
+
+  const retry = useCallback(
+    () => setRequest((current) => ({ nonce: current.nonce + 1, quiet: false })),
+    [],
+  );
+  const refresh = useCallback(
+    () => setRequest((current) => ({ nonce: current.nonce + 1, quiet: true })),
+    [],
+  );
+
+  const refreshRef = useRef(refresh);
+  refreshRef.current = refresh;
+  useEffect(() => {
+    if (pollMs <= 0) return;
+    const poller = startPolling(() => refreshRef.current(), {
+      intervalMs: pollMs,
+      visible: () => !document.hidden,
+    });
+    const onVisible = () => {
+      if (!document.hidden) refreshRef.current();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      poller.stop();
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [pollMs]);
 
   return {
     phase,
@@ -265,6 +341,7 @@ export function useProjectAssets(projectId: string): AssetsStore {
     assets: listing.assets,
     pieces: listing.pieces,
     error,
-    retry: () => setNonce((current) => current + 1),
+    retry,
+    refresh,
   };
 }

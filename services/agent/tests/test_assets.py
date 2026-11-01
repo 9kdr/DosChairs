@@ -146,6 +146,24 @@ def _studio(name: str, root, imported: list | None = None, fail: bool = False):
     )
 
 
+def _syncing_studio(name: str, existing: list[str], imported: list):
+    """A Studio whose pool keeps imported clips, like the real one."""
+    clips = [_pool_clip(path) for path in existing]
+    pool = _FakePool(_pool_folder(clips), imported)
+    land = pool.ImportMedia
+
+    def import_media(paths: list) -> list:
+        items = land(paths)
+        clips.extend(_pool_clip(path) for path in paths)
+        return items
+
+    pool.ImportMedia = import_media
+    project = types.SimpleNamespace(GetName=lambda: name, GetMediaPool=lambda: pool)
+    return types.SimpleNamespace(
+        GetProjectManager=lambda: types.SimpleNamespace(GetCurrentProject=lambda: project)
+    )
+
+
 def _file_editor_root(tmp_path: Path) -> Path:
     root = tmp_path / "projects"
     root.mkdir(parents=True, exist_ok=True)
@@ -245,19 +263,124 @@ def test_assets_editor_entry_wins_a_tie_and_prunes_folders(tmp_path: Path) -> No
     (local / "bin" / "clip.mov").write_bytes(b"video")
     (local / "bin" / "keep.png").write_bytes(b"image")
     pool = _pool_folder([_pool_clip(str(local / "bin" / "clip.mov"))])
+    imported: list = []
 
     body = build_assets(
         "resolve:demo-film",
         projects_dir=root,
         proxies=tmp_path / "proxies",
-        studio=_studio("Demo Film", pool),
+        studio=_studio("Demo Film", pool, imported),
     )
 
+    # keep.png was local-only, so the read pushed it up; both files now
+    # show once, as pool entries, and the emptied folder drops out.
+    assert imported == [str((local / "bin" / "keep.png").resolve())]
     by_id = {asset["id"]: asset for asset in body["assets"]}
-    assert set(by_id) == {"editor/clip.mov", "bin/keep.png"}
+    assert set(by_id) == {"editor/clip.mov", "editor/keep.png"}
+    assert body["folders"] == []
+
+
+def test_back_sync_pushes_local_only_files_and_lists_once(tmp_path: Path) -> None:
+    root = tmp_path / "projects"
+    local = root / "resolve:demo-film"
+    local.mkdir(parents=True)
+    (local / "fresh.mov").write_bytes(b"video")
+    imported: list = []
+    studio = _syncing_studio("Demo Film", [], imported)
+
+    body = build_assets(
+        "resolve:demo-film", projects_dir=root, proxies=tmp_path / "proxies", studio=studio
+    )
+
+    assert imported == [str((local / "fresh.mov").resolve())]
+    assert {asset["id"] for asset in body["assets"]} == {"editor/fresh.mov"}
+
+
+def test_back_sync_never_reimports_a_synced_file(tmp_path: Path) -> None:
+    root = tmp_path / "projects"
+    local = root / "resolve:demo-film"
+    local.mkdir(parents=True)
+    (local / "fresh.mov").write_bytes(b"video")
+    imported: list = []
+    studio = _syncing_studio("Demo Film", [], imported)
+
+    for _ in range(3):
+        body = build_assets(
+            "resolve:demo-film",
+            projects_dir=root,
+            proxies=tmp_path / "proxies",
+            studio=studio,
+        )
+
+    assert imported == [str((local / "fresh.mov").resolve())]
+    assert {asset["id"] for asset in body["assets"]} == {"editor/fresh.mov"}
+
+
+def test_back_sync_closed_or_other_project_imports_nothing(tmp_path: Path) -> None:
+    root = tmp_path / "projects"
+    local = root / "resolve:demo-film"
+    local.mkdir(parents=True)
+    (local / "fresh.mov").write_bytes(b"video")
+    imported: list = []
+
+    closed = build_assets(
+        "resolve:demo-film", projects_dir=root, proxies=tmp_path / "proxies", studio=None
+    )
+    assert {asset["id"] for asset in closed["assets"]} == {"fresh.mov"}
+
+    other = build_assets(
+        "resolve:demo-film",
+        projects_dir=root,
+        proxies=tmp_path / "proxies",
+        studio=_syncing_studio("Other Project", [], imported),
+    )
+    assert {asset["id"] for asset in other["assets"]} == {"fresh.mov"}
+    assert imported == []
+
+
+def test_back_sync_pool_refusal_still_serves_local(tmp_path: Path) -> None:
+    root = tmp_path / "projects"
+    local = root / "resolve:demo-film"
+    (local / "bin").mkdir(parents=True)
+    (local / "bin" / "refused.mov").write_bytes(b"video")
+
+    body = build_assets(
+        "resolve:demo-film",
+        projects_dir=root,
+        proxies=tmp_path / "proxies",
+        studio=_studio("Demo Film", _pool_folder([]), fail=True),
+    )
+
+    assert {asset["id"] for asset in body["assets"]} == {"bin/refused.mov"}
     assert body["folders"] == [
-        {"id": "bin", "name": "bin", "asset_ids": ["bin/keep.png"]}
+        {"id": "bin", "name": "bin", "asset_ids": ["bin/refused.mov"]}
     ]
+
+
+def test_back_sync_same_name_collision_suffixes_without_overwriting(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "projects"
+    local = root / "resolve:demo-film"
+    local.mkdir(parents=True)
+    (local / "clip.mov").write_bytes(b"chair-side")
+    elsewhere = tmp_path / "media"
+    elsewhere.mkdir()
+    (elsewhere / "clip.mov").write_bytes(b"pool-side")
+    imported: list = []
+    studio = _syncing_studio("Demo Film", [str(elsewhere / "clip.mov")], imported)
+
+    body = build_assets(
+        "resolve:demo-film", projects_dir=root, proxies=tmp_path / "proxies", studio=studio
+    )
+
+    assert imported == [str((local / "clip.mov").resolve())]
+    assert {asset["id"] for asset in body["assets"]} == {
+        "editor/clip.mov",
+        "editor/clip (2).mov",
+    }
+    assert (local / "clip.mov").read_bytes() == b"chair-side"
+    assert (elsewhere / "clip.mov").read_bytes() == b"pool-side"
 
 
 def test_import_to_kdenlive_lands_alongside_and_lists(tmp_path: Path) -> None:
