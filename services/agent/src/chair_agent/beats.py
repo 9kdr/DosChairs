@@ -136,23 +136,36 @@ def build_beat_sheet(
         timed = [TranscriptSegment.model_validate(item) for item in segments]
     except ValidationError as error:
         raise InvalidStoryPlan(f"invalid transcript segment: {error}") from error
-    count = len(timed)
-    bounds = [index * count // len(ROLES) for index in range(len(ROLES) + 1)]
-    beats = [
-        Beat(
-            id=f"beat_{role}",
-            role=role,
-            intent=_chunk_intent(role, timed[start:stop], brief),
-            startSec=timed[start].start_sec if start < stop else None,
-            endSec=timed[stop - 1].end_sec if start < stop else None,
-        )
-        for role, start, stop in (
-            (role, bounds[index], bounds[index + 1]) for index, role in enumerate(ROLES)
-        )
-    ]
     if target_duration_sec is None:
         target_duration_sec = next(
-            (item.end_sec for item in reversed(timed) if item.end_sec is not None), None
+            (item.end_sec for item in reversed(timed) if item.end_sec is not None),
+            next((item.start_sec for item in reversed(timed) if item.start_sec is not None), None),
+        )
+    first_start = next((item.start_sec for item in timed if item.start_sec is not None), 0.0)
+    span = (
+        max(0.0, target_duration_sec - first_start)
+        if target_duration_sec is not None
+        else None
+    )
+    count = len(timed)
+    bounds = [index * count // len(ROLES) for index in range(len(ROLES) + 1)]
+    beats = []
+    for index, role in enumerate(ROLES):
+        start, stop = bounds[index], bounds[index + 1]
+        start_sec = timed[start].start_sec if count >= len(ROLES) and start < stop else None
+        end_sec = timed[stop - 1].end_sec if count >= len(ROLES) and start < stop else None
+        if start_sec is None and span is not None:
+            start_sec = round(first_start + index * span / len(ROLES), 3)
+        if end_sec is None and span is not None:
+            end_sec = round(first_start + (index + 1) * span / len(ROLES), 3)
+        beats.append(
+            Beat(
+                id=f"beat_{role}",
+                role=role,
+                intent=_chunk_intent(role, timed[start:stop], brief),
+                startSec=start_sec,
+                endSec=end_sec,
+            )
         )
     return StoryPlan(
         id=plan_id or f"story_{uuid.uuid4().hex[:12]}",
@@ -238,7 +251,10 @@ def beats_to_markers(plan: StoryPlan, *, rate: float) -> list[ChangesetItem]:
     items = []
     for beat in plan.beats:
         if beat.start_sec is None:
-            raise InvalidStoryPlan(f"beat {beat.id!r} has no startSec")
+            raise InvalidStoryPlan(
+                f"beat {beat.id!r} has no startSec; "
+                "set start times or supply timed transcript segments"
+            )
         items.append(
             marker_op(
                 f"marker_{beat.id}",
