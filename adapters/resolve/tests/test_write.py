@@ -100,6 +100,7 @@ FUSION_OFF = Manifest(
         "fusionComps": "prerendered overlay track",
         "subtitles": "import captions in Studio by hand",
         "adjustmentLayers": "add an adjustment clip in Studio by hand",
+        "speedChanges": "retime the clip in Studio by hand",
     },
 )
 
@@ -478,6 +479,34 @@ def test_write_timeline_keeps_existing_tracks() -> None:
     write_timeline(TIMELINE, resolve=_fake_resolve(log, {"video": 2, "audio": 1}))
     assert ("add_track", "video") not in log
     assert ("add_track", "audio") not in log
+
+
+def test_plan_retimed_clip_records_fallback_and_bounds_duration() -> None:
+    clip = {
+        "id": "clip-fast",
+        "name": "clip-fast",
+        "mediaRef": "/media/fast.mov",
+        "sourceRange": _range(100, 48),
+        "timelineRange": _range(86400, 24),
+    }
+    plan = plan_from_timeline(
+        {
+            "id": "tl",
+            "name": "Speed Cut",
+            "rate": {"num": 24, "den": 1},
+            "tracks": [{"id": "v1", "kind": "video", "name": "V1", "clips": [clip]}],
+            "markers": [],
+        }
+    )
+    assert len(plan["skipped"]) == 1
+    assert plan["skipped"][0]["id"] == "clip-fast"
+    assert MANIFEST.fallbacks["speedChanges"] in plan["skipped"][0]["reason"]
+    assert len(plan["clips"]) == 1
+    planned_clip = plan["clips"][0]
+    clip_end = planned_clip["record_frame"] + (
+        planned_clip["end_frame"] - planned_clip["start_frame"] + 1
+    )
+    assert clip_end <= planned_clip["record_frame"] + 24
 
 
 def test_write_timeline_without_studio_errors_clearly(monkeypatch: pytest.MonkeyPatch) -> None:
