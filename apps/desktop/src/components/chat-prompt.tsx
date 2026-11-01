@@ -9,6 +9,7 @@ import type {
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { Button } from "@/components/ui/button";
 import { Menu, MenuPopup, MenuRadioGroup, MenuRadioItem, MenuTrigger } from "@/components/ui/menu";
+import { acceptsChairRef, readChairRefs, type ChairRef } from "@/lib/chair-ref";
 import { cn } from "@/lib/utils";
 import { filterActions, type Action } from "@/orchestrator/actions";
 import { KNOWN_MODELS, PROVIDERS } from "@/settings/providers";
@@ -21,7 +22,6 @@ const OPEN_RADIUS = 22;
 const MORPH = "380ms cubic-bezier(0.22, 1, 0.36, 1)";
 const LINE = 22;
 const MAX_ROWS = 4;
-const CHAIR_REF = "application/x-chair-ref";
 const ZWSP = "\u200B";
 
 const MODELS = ["Chair", "Chair fast", "Chair precise"] as const;
@@ -40,12 +40,6 @@ type ChatPromptProps = {
   /** Full parent width with room to grow, for inline thread composers. */
   wide?: boolean;
   placeholder?: string;
-};
-
-type ChairRef = {
-  kind: "asset" | "task";
-  id: string;
-  label: string;
 };
 
 type TextPiece = { type: "text"; id: string; value: string };
@@ -221,35 +215,6 @@ function inBarOverlay(target: EventTarget | null) {
     target instanceof Element &&
     Boolean(target.closest("[data-slot=menu-popup], [data-slot=menu-positioner], [data-chair-menu]"))
   );
-}
-
-function acceptsChairRef(transfer: DataTransfer) {
-  return Array.from(transfer.types).includes(CHAIR_REF);
-}
-
-function parseChairRef(parsed: unknown): ChairRef | null {
-  if (!parsed || typeof parsed !== "object") return null;
-  const record = parsed as { kind?: unknown; id?: unknown; label?: unknown };
-  if (record.kind !== "asset" && record.kind !== "task") return null;
-  if (typeof record.id !== "string" || record.id.length === 0) return null;
-  if (typeof record.label !== "string" || record.label.length === 0) return null;
-  return { kind: record.kind, id: record.id, label: record.label };
-}
-
-function readChairRefs(transfer: DataTransfer): ChairRef[] {
-  const raw = transfer.getData(CHAIR_REF);
-  if (!raw) return [];
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch {
-    return [];
-  }
-  const records = Array.isArray(parsed) ? parsed : [parsed];
-  return records.flatMap((record) => {
-    const ref = parseChairRef(record);
-    return ref ? [ref] : [];
-  });
 }
 
 function boundaryOffset(

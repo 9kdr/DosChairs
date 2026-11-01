@@ -44,6 +44,7 @@ import { Menu, MenuPopup, MenuRadioGroup, MenuRadioItem, MenuTrigger } from "@/c
 import { Spinner } from "@/components/ui/spinner";
 import { Tabs, TabsList, TabsTab } from "@/components/ui/tabs";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "@/components/ui/tooltip";
+import { pressStartsDrag, writeChairRefs } from "@/lib/chair-ref";
 import { cn } from "@/lib/utils";
 import { useProjectAssets } from "@/project/assets";
 
@@ -132,8 +133,6 @@ function loadIdList(key: string): string[] {
     return [];
   }
 }
-
-const CHAIR_REF = "application/x-chair-ref";
 
 /** Command-bar glide: 380ms cubic-bezier(0.22, 1, 0.36, 1). */
 const EASE: [number, number, number, number] = [0.22, 1, 0.36, 1];
@@ -263,12 +262,6 @@ function kindFor(name: string): AssetKind {
   if (["png", "jpg", "jpeg", "webp", "gif", "tif", "tiff"].includes(ext)) return "image";
   if (["wav", "mp3", "aif", "aiff", "flac", "m4a"].includes(ext)) return "audio";
   return "video";
-}
-
-function setChairRefs(transfer: DataTransfer, refs: { id: string; label: string }[]) {
-  const payload = refs.map((ref) => ({ kind: "asset" as const, id: ref.id, label: ref.label }));
-  transfer.setData(CHAIR_REF, JSON.stringify(payload.length === 1 ? payload[0] : payload));
-  transfer.effectAllowed = "copy";
 }
 
 type SearchFieldProps = {
@@ -530,7 +523,6 @@ export function AssetShelf({
     base: string[];
     moved: boolean;
     held: HTMLElement | null;
-    wasDraggable: boolean;
     frame: number;
     at: { x: number; y: number } | null;
   } | null>(null);
@@ -657,16 +649,21 @@ export function AssetShelf({
     if (target.closest("[data-shelf-action]")) return;
     if (target.closest("[data-drag-handle], input, textarea")) return;
     const held = target.closest<HTMLElement>("[data-shelf-id]");
+    // A press on a selected card drags; the shelf marks exactly those
+    // cards draggable, so this is the same rule as the card itself.
     if (
       held?.dataset.shelfId &&
-      held.draggable &&
-      selectedIdsRef.current.includes(held.dataset.shelfId)
+      pressStartsDrag({
+        selected: selectedIdsRef.current.includes(held.dataset.shelfId),
+        draggable: held.draggable,
+      })
     ) {
       return;
     }
     if (!held && target.closest("button")) return;
-    const wasDraggable = held?.draggable ?? false;
-    if (held) held.draggable = false;
+    // Reachable only for presses the drag rule yields to marquee: the card
+    // is not draggable, so there is nothing to disable, and React owns the
+    // draggable attribute from here on (never write it from this handler).
     const drag = {
       pointerId: event.pointerId,
       origin: contentPoint(event.clientX, event.clientY),
@@ -674,7 +671,6 @@ export function AssetShelf({
       base: event.shiftKey ? [...selectedIdsRef.current] : [],
       moved: false,
       held,
-      wasDraggable,
       frame: 0,
       at: null as { x: number; y: number } | null,
     };
@@ -712,7 +708,6 @@ export function AssetShelf({
       window.removeEventListener("pointerup", onUp);
       window.removeEventListener("pointercancel", onUp);
       cancelAnimationFrame(drag.frame);
-      if (drag.held) drag.held.draggable = drag.wasDraggable;
       if (drag.moved) suppressClick.current = true;
       else if (!drag.held) setSelectedIds([]);
       marqueeDrag.current = null;
@@ -768,7 +763,10 @@ export function AssetShelf({
   ) => {
     suppressClick.current = true;
     const group = dragItemsFor(id, label, tone);
-    setChairRefs(event.dataTransfer, group);
+    writeChairRefs(
+      event.dataTransfer,
+      group.map((item) => ({ kind: "asset" as const, id: item.id, label: item.label })),
+    );
     const root = listRef.current;
     for (const item of group) {
       const row = root?.querySelector<HTMLElement>(`[data-shelf-id="${CSS.escape(item.id)}"]`);
@@ -1154,7 +1152,12 @@ export function AssetShelf({
                 {folderRows.length > 0 ? (
                   <ul className={cn("relative mb-1.5 flex flex-col", rowGap)}>
                     <AnimatePresence mode={listMode} initial={false}>
-                      {folderRows.map((item) => (
+                      {folderRows.map((item) => {
+                        const folderDrag = pressStartsDrag({
+                          selected: selectedIds.includes(item.id),
+                          draggable: true,
+                        });
+                        return (
                         <motion.li key={item.id} className="min-w-0" {...itemMotion}>
                           <div className="group relative min-w-0">
                           <Button
@@ -1164,10 +1167,11 @@ export function AssetShelf({
                             data-shelf-id={item.id}
                             aria-pressed={selectedIds.includes(item.id)}
                             data-pressed={selectedIds.includes(item.id) ? "" : undefined}
+                            draggable={folderDrag || undefined}
                             className={cn(
                               SHELF_BUTTON,
                               hiddenIds.has(item.id) && "opacity-60",
-                              selectedIds.includes(item.id) && "cursor-grab active:cursor-grabbing",
+                              folderDrag && "cursor-grab active:cursor-grabbing",
                               view === "compact" && "h-8 justify-start! gap-3! px-2.5 text-left sm:h-8",
                               view === "more" && "h-8 px-2 text-xs sm:h-8",
                             )}
@@ -1177,9 +1181,16 @@ export function AssetShelf({
                                 else showFolder(item.id);
                               })
                             }
+                            onDragStart={
+                              folderDrag
+                                ? (event) => beginDrag(event, item.id, item.name, "folder")
+                                : undefined
+                            }
+                            onDragEnd={folderDrag ? finishDrag : undefined}
                           >
-                            {selectedIds.includes(item.id) ? (
+                            {folderDrag ? (
                               <DragHandle
+                                passive
                                 className={cn(
                                   "flex min-w-0 w-full items-center",
                                   view === "more" ? "gap-1.5" : "gap-3",
@@ -1235,7 +1246,8 @@ export function AssetShelf({
                           />
                           </div>
                         </motion.li>
-                      ))}
+                        );
+                      })}
                     </AnimatePresence>
                   </ul>
                 ) : null}
@@ -1308,16 +1320,19 @@ function DragHandle({
   onDragStart,
   onDragEnd,
   children,
+  passive = false,
 }: {
   className?: string;
   onDragStart: (event: DragEvent) => void;
   onDragEnd: (event: DragEvent) => void;
   children: ReactNode;
+  /** Inert layout when the card itself carries the drag (selected cards). */
+  passive?: boolean;
 }) {
   return (
     <span
-      data-drag-handle=""
-      draggable
+      data-drag-handle={passive ? undefined : ""}
+      draggable={!passive}
       className={className}
       onPointerDown={(event) => event.stopPropagation()}
       onDragStart={onDragStart}
@@ -1421,6 +1436,7 @@ function FolderCard({
   onDragStart: (event: DragEvent) => void;
   onDragEnd: (event: DragEvent) => void;
 }) {
+  const cardDrag = pressStartsDrag({ selected, draggable: true });
   return (
     <Button
       type="button"
@@ -1429,10 +1445,19 @@ function FolderCard({
       data-shelf-id={id}
       aria-pressed={selected}
       data-pressed={selected ? "" : undefined}
+      draggable={cardDrag || undefined}
       onClick={onOpen}
-      className={cn(SHELF_BUTTON, dimmed && "opacity-60", "h-auto flex-col gap-1.5 px-1.5 pt-1.5 pb-2 sm:h-auto")}
+      onDragStart={cardDrag ? onDragStart : undefined}
+      onDragEnd={cardDrag ? onDragEnd : undefined}
+      className={cn(
+        SHELF_BUTTON,
+        dimmed && "opacity-60",
+        cardDrag && "cursor-grab active:cursor-grabbing",
+        "h-auto flex-col gap-1.5 px-1.5 pt-1.5 pb-2 sm:h-auto",
+      )}
     >
       <DragHandle
+        passive={cardDrag}
         className={cn(
           "flex aspect-video w-full cursor-grab items-center justify-center overflow-hidden rounded-lg bg-white/8 active:cursor-grabbing",
           PLACEHOLDER,
@@ -1466,6 +1491,7 @@ function Tile({
   const Icon = kind ? KIND_ICON[kind] : Puzzle;
   const draggable = item.scope === "assets";
   const proxied = item.scope === "assets" && item.proxy === "ready";
+  const cardDrag = pressStartsDrag({ selected, draggable });
   return (
     <Button
       type="button"
@@ -1474,11 +1500,20 @@ function Tile({
       data-shelf-id={item.id}
       aria-pressed={selected}
       data-pressed={selected ? "" : undefined}
+      draggable={cardDrag || undefined}
       onClick={onSelect}
-      className={cn(SHELF_BUTTON, dimmed && "opacity-60", "h-auto flex-col gap-1.5 px-1.5 pt-1.5 pb-2 sm:h-auto")}
+      onDragStart={cardDrag ? onDragStart : undefined}
+      onDragEnd={cardDrag ? onDragEnd : undefined}
+      className={cn(
+        SHELF_BUTTON,
+        dimmed && "opacity-60",
+        cardDrag && "cursor-grab active:cursor-grabbing",
+        "h-auto flex-col gap-1.5 px-1.5 pt-1.5 pb-2 sm:h-auto",
+      )}
     >
       {draggable ? (
       <DragHandle
+        passive={cardDrag}
         className={cn(
           "relative flex aspect-video w-full cursor-grab items-center justify-center overflow-hidden rounded-lg active:cursor-grabbing",
           kind ? KIND_FRAME[kind] : "bg-white/8",
@@ -1535,7 +1570,7 @@ function Row({
   const kind = item.scope === "assets" ? item.kind : null;
   const kindLabel = kind ? KIND_LABEL[kind] : "Piece";
   const draggable = item.scope === "assets";
-  const dragRow = draggable && selected;
+  const cardDrag = pressStartsDrag({ selected, draggable });
   const name = <span className="min-w-0 flex-1 truncate text-left font-medium">{item.name}</span>;
   const proxied = item.scope === "assets" && item.proxy === "ready";
   const proxy = proxied ? <ProxyBadge /> : null;
@@ -1550,11 +1585,14 @@ function Row({
       data-shelf-id={item.id}
       aria-pressed={selected}
       data-pressed={selected ? "" : undefined}
+      draggable={cardDrag || undefined}
       onClick={onSelect}
+      onDragStart={cardDrag ? onDragStart : undefined}
+      onDragEnd={cardDrag ? onDragEnd : undefined}
       className={cn(
         SHELF_BUTTON,
         dimmed && "opacity-60",
-        dragRow && "cursor-grab active:cursor-grabbing",
+        cardDrag && "cursor-grab active:cursor-grabbing",
         // A badged row reserves the hover-action zone, so the badge
         // never slides under the hide/remove buttons.
         dense
@@ -1566,8 +1604,9 @@ function Row({
             : "h-8 justify-start! gap-3! px-2.5 text-left sm:h-8",
       )}
     >
-      {dragRow ? (
+      {cardDrag ? (
         <DragHandle
+          passive
           className={cn("flex min-w-0 w-full items-center", dense ? "gap-1.5" : "gap-3")}
           onDragStart={onDragStart}
           onDragEnd={onDragEnd}
