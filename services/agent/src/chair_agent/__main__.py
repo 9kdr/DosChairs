@@ -1,3 +1,4 @@
+import base64
 import json
 import os
 import threading
@@ -6,7 +7,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import unquote, urlsplit
 
-from chair_agent.assets import build_assets
+from chair_agent.assets import EditorUnlinkedError, build_assets, import_asset
 from chair_agent.client import configured_models, key_configured
 from chair_agent.jobs import (
     Job,
@@ -81,6 +82,26 @@ class Handler(BaseHTTPRequestHandler):
             else:
                 self._send(200, _handle_body(self._base_url(), job))
             return
+        project_id = _assets_path(self.path)
+        if project_id is not None:
+            try:
+                body = self._body()
+            except ValueError:
+                self._send(400, _error("invalid_json", "request body must be JSON"))
+                return
+            try:
+                asset = import_asset(
+                    project_id, body.get("name"), _import_bytes(body.get("data"))
+                )
+            except EditorUnlinkedError as error:
+                self._send(409, _error("editor_unlinked", str(error)))
+            except ValueError as error:
+                self._send(400, _error("invalid_asset", str(error)))
+            except ReviewUnavailable as error:
+                self._send(503, _error(error.code, str(error)))
+            else:
+                self._send(200, {"project_id": project_id, "asset": asset})
+            return
         request_id = _cancel_path(self.path)
         if request_id is None:
             self.send_error(404)
@@ -132,6 +153,15 @@ def _assets_path(path: str) -> str | None:
     if len(parts) == 3 and parts[0] == "projects" and parts[1] and parts[2] == "assets":
         return unquote(parts[1])
     return None
+
+
+def _import_bytes(data: Any) -> bytes:
+    if not isinstance(data, str) or not data:
+        raise ValueError("Import needs base64 file data.")
+    try:
+        return base64.b64decode(data, validate=True)
+    except ValueError as error:
+        raise ValueError("Import data is not valid base64.") from error
 
 
 def _job_path(path: str) -> str | None:

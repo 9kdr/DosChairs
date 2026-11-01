@@ -3,8 +3,8 @@ import types
 
 import pytest
 from chair_resolve.manifest import MANIFEST, Capabilities, Manifest
-from chair_resolve.read import timeline_from_resolve
-from chair_resolve.write import plan_from_timeline, write_timeline
+from chair_resolve.read import ResolveClosedError, timeline_from_resolve
+from chair_resolve.write import import_media, plan_from_timeline, write_timeline
 
 
 def _time(value, rate=24):
@@ -408,7 +408,7 @@ class _FakeMediaPool:
         self._timeline = timeline
 
     def ImportMedia(self, clips: list) -> list:
-        self._log.append(("import", [c["FilePath"] for c in clips]))
+        self._log.append(("import", list(clips)))
         return [object() for _ in clips]
 
     def CreateEmptyTimeline(self, name: str) -> _FakeTimeline | None:
@@ -512,3 +512,30 @@ def test_write_timeline_fails_when_set_current_timeline_fails() -> None:
         write_timeline(TIMELINE, resolve=resolve)
     assert ("create_timeline", "Write cut") in log
     assert not any(entry[0] == "import" for entry in log)
+
+
+def test_import_media_imports_one_file() -> None:
+    log: list = []
+    item = import_media("/media/new.mov", _fake_resolve(log))
+
+    assert item is not None
+    assert ("import", ["/media/new.mov"]) in log
+
+
+def test_import_media_without_a_project_errors_clearly() -> None:
+    empty = types.SimpleNamespace(
+        GetProjectManager=lambda: types.SimpleNamespace(GetCurrentProject=lambda: None)
+    )
+
+    with pytest.raises(ResolveClosedError, match="no project open"):
+        import_media("/media/new.mov", empty)
+
+
+def test_import_media_when_studio_refuses() -> None:
+    log: list = []
+    resolve = _fake_resolve(log)
+    pool = resolve.GetProjectManager().GetCurrentProject().GetMediaPool()
+    pool.ImportMedia = lambda clips: [None]
+
+    with pytest.raises(RuntimeError, match="could not import media"):
+        import_media("/media/new.mov", resolve)

@@ -129,6 +129,63 @@ export function assetsFromJson(payload: unknown): ProjectAssets {
 }
 
 /**
+ * Encode bytes as base64 for the import endpoint. Chunked so big media
+ * files never blow the argument list.
+ */
+export function bytesToBase64(bytes: Uint8Array): string {
+  let text = "";
+  const CHUNK = 0x8000;
+  for (let at = 0; at < bytes.length; at += CHUNK) {
+    text += String.fromCharCode(...bytes.subarray(at, at + CHUNK));
+  }
+  return btoa(text);
+}
+
+/** Read a picked file as base64 for POST /projects/:id/assets. */
+export async function fileToBase64(file: {
+  arrayBuffer(): Promise<ArrayBufferLike>;
+}): Promise<string> {
+  return bytesToBase64(new Uint8Array(await file.arrayBuffer()));
+}
+
+/**
+ * Import one file into the linked editor's library (issue #203). The
+ * agent stores it and returns the shelf entry; without a link it answers
+ * 409 editor_unlinked and the shelf keeps its session-local staging.
+ * Anything not-ok throws a ServiceError carrying status, code, message.
+ */
+export async function importProjectAsset(
+  projectId: string,
+  name: string,
+  data: string,
+  options: FetchAssetsOptions = {},
+): Promise<ShelfAsset> {
+  const { agentUrl, fetchFn = fetch, signal } = options;
+  const url = `${agentBaseUrl(agentUrl)}/projects/${encodeURIComponent(projectId)}/assets`;
+  let response: { ok: boolean; status: number; json: () => Promise<unknown> };
+  try {
+    response = await fetchFn(url, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name, data }),
+      signal,
+    });
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") throw error;
+    throw new ServiceError("agent", `agent is unreachable at ${url}`);
+  }
+  const payload = await readJson(response);
+  if (!response.ok) {
+    const { code, message } = errorFromJson(payload, response.status);
+    throw new ServiceError("agent", message, { status: response.status, code });
+  }
+  if (!isRecord(payload) || !("asset" in payload)) {
+    throw malformed("import needs an asset");
+  }
+  return assetFromJson(payload.asset);
+}
+
+/**
  * Load one project's asset listing. Anything not-ok throws a ServiceError
  * carrying the agent's status, code, and message.
  */
