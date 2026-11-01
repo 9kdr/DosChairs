@@ -1,7 +1,6 @@
 import {
   BlocksIcon,
   HomeIcon,
-  LibraryBigIcon,
   SettingsIcon,
   StoreIcon,
   UserRoundIcon,
@@ -17,7 +16,7 @@ import {
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
-export type HomeTab = "projects" | "pieces" | "marketplace" | "library";
+export type HomeTab = "projects" | "pieces" | "marketplace";
 
 type HomeDockProps = {
   tab: HomeTab;
@@ -66,14 +65,6 @@ export function HomeDock({ tab, onTab, onAccount, onSettings }: HomeDockProps) {
           >
             <StoreIcon />
           </DockButton>
-          <DockButton
-            label="Library"
-            active={tab === "library"}
-            onClick={() => onTab("library")}
-          >
-            <LibraryBigIcon />
-          </DockButton>
-
           <span
             aria-hidden="true"
             className="mx-1 h-5 border-l border-white/[0.08] border-r border-black/50"

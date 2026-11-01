@@ -1,15 +1,8 @@
-import {
-  AudioWaveformIcon,
-  FilmIcon,
-  ImageIcon,
-  MusicIcon,
-  RefreshCwIcon,
-} from "lucide-react";
+import { RefreshCwIcon } from "lucide-react";
 import packageJson from "../../package.json";
 import { motion, useReducedMotion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
 import { SmoothScrollTarget } from "@/components/smooth-scroll";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { ChairMark } from "./ChairMark";
@@ -25,11 +18,9 @@ import {
   type GridSize,
 } from "./GridSizeSlider";
 import {
-  LIBRARY_ASSETS,
   editorName,
   type EditorInfo,
   type EditorStatus,
-  type LibraryAssetKind,
   type Project,
 } from "./data";
 import { HomeDock, type HomeTab } from "./HomeDock";
@@ -57,20 +48,6 @@ const STATUS_DOT: Record<EditorStatus, string> = {
   stopped: "bg-neutral-500",
 };
 
-const ASSET_KIND_LABEL: Record<LibraryAssetKind, string> = {
-  music: "Music",
-  image: "Image",
-  video: "Video",
-  sfx: "SFX",
-};
-
-const ASSET_KIND_ICON = {
-  music: MusicIcon,
-  image: ImageIcon,
-  video: FilmIcon,
-  sfx: AudioWaveformIcon,
-} as const;
-
 export function HomeScreen({ onOpenProject }: HomeScreenProps) {
   const [tab, setTab] = useState<HomeTab>("projects");
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -94,7 +71,6 @@ export function HomeScreen({ onOpenProject }: HomeScreenProps) {
               {tab === "projects" ? (
                 <ProjectsPane onOpenProject={onOpenProject} />
               ) : null}
-              {tab === "library" ? <LibraryPane /> : null}
               {tab === "pieces" ? (
                 <PlaceholderPane
                   title="Pieces"
@@ -507,35 +483,6 @@ function EditorsStrip({ editors }: { editors: EditorInfo[] }) {
           />
         </span>
       ))}
-    </div>
-  );
-}
-
-function LibraryPane() {
-  return (
-    <div className="mx-auto w-full max-w-2xl">
-      <ul className="space-y-2">
-        {LIBRARY_ASSETS.map((asset) => {
-          const KindIcon = ASSET_KIND_ICON[asset.kind];
-          return (
-            <li
-              key={asset.id}
-              className="flex items-center gap-3 rounded-2xl bg-white/[0.03] px-4 py-3 ring-1 ring-white/[0.06]"
-            >
-              <span className="grid size-9 place-items-center rounded-xl bg-white/[0.04] text-neutral-300 ring-1 ring-white/[0.06]">
-                <KindIcon className="size-5" />
-              </span>
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-medium">{asset.name}</p>
-                <p className="text-xs text-neutral-500">{asset.detail}</p>
-              </div>
-              <Badge variant="secondary" size="sm">
-                {ASSET_KIND_LABEL[asset.kind]}
-              </Badge>
-            </li>
-          );
-        })}
-      </ul>
     </div>
   );
 }

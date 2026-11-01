@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import {
   EDITOR_IDS,
   EDITOR_META,
-  LIBRARY_ASSETS,
   editorById,
   editorName,
   formatEditedAt,
@@ -35,9 +34,3 @@ describe("editor meta", () => {
   });
 });
 
-describe("LIBRARY_ASSETS", () => {
-  it("covers every reusable kind with stand-ins", () => {
-    const kinds = new Set(LIBRARY_ASSETS.map((asset) => asset.kind));
-    expect(kinds).toEqual(new Set(["music", "image", "video", "sfx"]));
-  });
-});
