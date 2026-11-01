@@ -3,12 +3,14 @@ import {
   FilmIcon,
   ImageIcon,
   MusicIcon,
+  RefreshCwIcon,
 } from "lucide-react";
 import packageJson from "../../package.json";
 import { motion, useReducedMotion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
 import { SmoothScrollTarget } from "@/components/smooth-scroll";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { ChairMark } from "./ChairMark";
 import { EditorLogo } from "./EditorLogo";
@@ -23,15 +25,17 @@ import {
   type GridSize,
 } from "./GridSizeSlider";
 import {
-  EDITORS,
   LIBRARY_ASSETS,
-  PROJECTS,
+  editorName,
+  type EditorInfo,
   type EditorStatus,
   type LibraryAssetKind,
+  type Project,
 } from "./data";
 import { HomeDock, type HomeTab } from "./HomeDock";
 import { ProjectCard } from "./ProjectCard";
 import { useElementWidth } from "./use-element-width";
+import { useProjects } from "./useProjects";
 
 /** Halfway between Tailwind neutral-900 (#171717) and 950 (#0a0a0a). */
 const HOME_BG = "#111111";
@@ -197,6 +201,8 @@ function ProjectsPane({
     ease: [0.22, 1, 0.36, 1] as const,
   };
 
+  const detected = useProjects();
+
   return (
     <motion.div
       className="mx-auto flex w-full max-w-5xl flex-col gap-8"
@@ -204,26 +210,131 @@ function ProjectsPane({
       animate={{ opacity: 1 }}
       transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
     >
-      <EditorsStrip />
+      <EditorsStrip editors={detected.editors} />
       <div>
         <div className="mb-4 flex items-center justify-between gap-3">
           <h2 className="text-sm font-medium text-neutral-400">Recent projects</h2>
-          <GridSizeSlider
-            value={size}
-            max={maxSize}
-            onChange={onGridSize}
-            onApproach={setApproach}
-          />
+          <div className="flex items-center gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              loading={detected.scanning}
+              onClick={detected.rescan}
+            >
+              <RefreshCwIcon aria-hidden="true" />
+              Rescan
+            </Button>
+            <GridSizeSlider
+              value={size}
+              max={maxSize}
+              onChange={onGridSize}
+              onApproach={setApproach}
+            />
+          </div>
         </div>
+        {detected.phase === "loading" ? (
+          <ProjectsSkeleton columns={columns} gapClass={layout.gapClass} />
+        ) : detected.phase === "error" ? (
+          <ProjectsNotice
+            title="Couldn't reach the helper"
+            body="Chair looks for projects through its helper, and the helper didn't answer. Start it and try again."
+            actionLabel="Retry"
+            onAction={detected.rescan}
+          />
+        ) : detected.projects.length === 0 ? (
+          <ProjectsNotice
+            title={
+              detected.editors.every((editor) => editor.status === "stopped")
+                ? "No editors connected"
+                : "No projects found"
+            }
+            body={
+              detected.editors.every((editor) => editor.status === "stopped")
+                ? "Open a project in your editor, then press Rescan and it will show up here."
+                : "Nothing to show yet. Open a project in your editor and press Rescan."
+            }
+            actionLabel="Rescan"
+            onAction={detected.rescan}
+            loading={detected.scanning}
+          />
+        ) : (
+          <>
+            {detected.refreshError !== null ? (
+              <p className="mb-3 flex items-center gap-2 text-xs text-neutral-500">
+                Couldn't refresh just now — showing saved projects.
+                <Button
+                  type="button"
+                  variant="link"
+                  size="sm"
+                  className="h-auto px-0 text-xs"
+                  onClick={detected.rescan}
+                >
+                  Retry
+                </Button>
+              </p>
+            ) : null}
+            <ProjectsGrid
+              gridRef={gridRef}
+              projects={detected.projects}
+              columns={columns}
+              gapClass={layout.gapClass}
+              hoveredId={hoveredId}
+              onHover={setHoveredId}
+              layoutEpoch={layoutEpoch}
+              layoutTransition={layoutTransition}
+              hoverEase={hoverEase}
+              embraceScale={embraceScale}
+              reduceMotion={reduceMotion}
+              onOpenProject={onOpenProject}
+              cardRefs={cardRefs}
+            />
+          </>
+        )}
+      </div>
+    </motion.div>
+  );
+}
+
+function ProjectsGrid({
+  gridRef,
+  projects,
+  columns,
+  gapClass,
+  hoveredId,
+  onHover,
+  layoutEpoch,
+  layoutTransition,
+  hoverEase,
+  embraceScale,
+  reduceMotion,
+  onOpenProject,
+  cardRefs,
+}: {
+  gridRef: React.RefObject<HTMLUListElement | null>;
+  projects: Project[];
+  columns: number;
+  gapClass: string;
+  hoveredId: string | null;
+  onHover: (id: string | null) => void;
+  layoutEpoch: number;
+  layoutTransition: { duration: number } | { type: "spring"; stiffness: number; damping: number; mass: number };
+  hoverEase: { type: "tween"; duration: number; ease: readonly [number, number, number, number] };
+  embraceScale: number;
+  reduceMotion: boolean | null;
+  onOpenProject: (projectId: string) => void;
+  cardRefs: React.RefObject<Record<string, HTMLDivElement | null>>;
+}) {
+  return (
         <ul
           ref={gridRef}
-          className={cn("grid", layout.gapClass)}
+          className={cn("grid", gapClass)}
           style={{
             gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))`,
           }}
-          onPointerLeave={() => setHoveredId(null)}
+          onPointerLeave={() => onHover(null)}
         >
-          {PROJECTS.map((project) => {
+          {projects.map((project) => {
             const emphasized = hoveredId === project.id;
             const diminished = hoveredId != null && hoveredId !== project.id;
             const hoverScale = emphasized ? 1.012 : diminished ? 0.992 : 1;
@@ -284,18 +395,10 @@ function ProjectsPane({
                       );
                     }
                   }}
-                  onPointerEnter={() => setHoveredId(project.id)}
-                  onPointerLeave={() =>
-                    setHoveredId((current) =>
-                      current === project.id ? null : current,
-                    )
-                  }
-                  onFocus={() => setHoveredId(project.id)}
-                  onBlur={() =>
-                    setHoveredId((current) =>
-                      current === project.id ? null : current,
-                    )
-                  }
+                  onPointerEnter={() => onHover(project.id)}
+                  onPointerLeave={() => onHover(null)}
+                  onFocus={() => onHover(project.id)}
+                  onBlur={() => onHover(null)}
                   className={cn(
                     "absolute top-0 bottom-0 z-10 rounded-xl outline-none",
                     "focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-[#111111]",
@@ -306,13 +409,64 @@ function ProjectsPane({
             );
           })}
         </ul>
-      </div>
-    </motion.div>
+  );
+}
+
+/** Flat placeholder tiles at card size — no shimmer, no layout shift. */
+function ProjectsSkeleton({ columns, gapClass }: { columns: number; gapClass: string }) {
+  return (
+    <div
+      aria-hidden="true"
+      className={cn("grid", gapClass)}
+      style={{ gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` }}
+    >
+      {Array.from({ length: Math.max(columns * 2, 4) }, (_, index) => (
+        <div key={index} className="flex w-full flex-col gap-2">
+          <div className="aspect-[16/10] rounded-xl bg-neutral-800/80 ring-1 ring-white/[0.06]" />
+          <div className="flex flex-col gap-1.5 px-0.5 py-0.5">
+            <div className="h-3.5 w-3/4 rounded bg-neutral-800" />
+            <div className="h-3 w-1/3 rounded bg-neutral-800/70" />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** Empty and error states keep the section frame with one plain sentence. */
+function ProjectsNotice({
+  title,
+  body,
+  actionLabel,
+  onAction,
+  loading = false,
+}: {
+  title: string;
+  body: string;
+  actionLabel: string;
+  onAction: () => void;
+  loading?: boolean;
+}) {
+  return (
+    <div className="flex w-full flex-col items-start gap-2 rounded-xl border border-dashed border-white/15 px-5 py-6">
+      <h3 className="text-sm font-medium text-neutral-200">{title}</h3>
+      <p className="text-sm leading-6 text-neutral-400">{body}</p>
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        loading={loading}
+        onClick={onAction}
+        className="mt-1"
+      >
+        {actionLabel}
+      </Button>
+    </div>
   );
 }
 
 /** Host status, not a library — which editors are around, nothing to open. */
-function EditorsStrip() {
+function EditorsStrip({ editors }: { editors: EditorInfo[] }) {
   return (
     <div
       className={cn(
@@ -322,11 +476,11 @@ function EditorsStrip() {
         "supports-[backdrop-filter]:bg-[#1a1a1a]/88",
       )}
     >
-      {EDITORS.map((editor) => (
+      {editors.map((editor) => (
         <span
           key={editor.id}
           role="img"
-          aria-label={`${editor.name}, ${STATUS_LABEL[editor.status]}`}
+          aria-label={`${editorName(editor.id)}, ${STATUS_LABEL[editor.status]}`}
           className="relative grid size-7 place-items-center rounded-full text-neutral-200"
         >
           <EditorLogo id={editor.id} className="size-3.5" />

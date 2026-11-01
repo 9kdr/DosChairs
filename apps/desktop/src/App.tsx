@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { WindowChrome } from "@/components/window-chrome";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { PROJECTS } from "./home/data";
 import { HomeScreen } from "./home/HomeScreen";
+import { findStoredProject } from "./home/projects";
 import { ProjectShell } from "./ProjectShell";
 
 type Screen = "home" | "project";
@@ -11,7 +11,7 @@ export function App() {
   const [screen, setScreen] = useState<Screen>("home");
   const [projectId, setProjectId] = useState<string | null>(null);
 
-  const project = PROJECTS.find((entry) => entry.id === projectId) ?? null;
+  const project = projectId !== null ? findStoredProject(projectId) : null;
   const projectOpen = screen === "project" && project !== null;
 
   return (
