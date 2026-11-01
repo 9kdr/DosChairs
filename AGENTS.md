@@ -10,7 +10,7 @@ Talk to the user in plain language. Say what you are doing, which issue it belon
 - One issue, one branch, one pull request. Branch from `main` as `feat/<area>/<slug>`. Areas: `desktop`, `ir`, `agent`, `sidecar`, `adapters`, `docs`.
 - Do the smallest change that does the job. Do not tidy unrelated files.
 - On a change that is moderately worth a review, Gemini 3.8 Flash high on Antigravity runs `mise run check` before you commit, then scores. Moderate means a behavior change, a new file, or a diff that touches the cut, the window, a schema, an adapter, or a check. Commit only after that check passes. A typo, a comment, or a one-line wording fix can skip the score; run `mise run check` yourself. Do not download model weights unless the user asks. Boot the desktop app only for the Gemini review screenshot, and only when the change has a screen.
-- **Always give proof to the user on the changes when needed, this is mainly what you must remember from this. Includes screenshots, visualizations, etc...**
+- **Always give proof to the user on the changes, this is mainly what you must remember from this. Includes screenshots, visualizations, etc...**
 - Never merge, and never turn on auto-merge, until the user answers a direct question. See the desk skill for the wording.
 - Commit early and often on the branch while work lands. The check-and-score review happens when the task (or a finished part of it) is done, not on every commit. Nothing merges until that review passes and the user answers.
 - A pending proposed edit does not change the timeline. Do not overwrite source video or audio. Name the editor's presets. If an adapter cannot do something, use the fallback in its capability manifest.
