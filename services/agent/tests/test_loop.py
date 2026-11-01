@@ -199,6 +199,55 @@ def test_handler_leaves_explicit_empties_canned() -> None:
     assert (silence.calls, transcriber.calls, preview.calls) == (0, 0, 0)
 
 
+def _content_input() -> dict:
+    data = GOLDEN["input"]
+    return {
+        **data["context"],
+        "brief": data["brief"],
+        "spans": data["spans"],
+        "preview_urls": data["artifact_urls"],
+        "plan": {
+            "schemaVersion": "0.1.0",
+            "id": "story_1",
+            "brief": data["brief"],
+            "status": "approved",
+            "beats": [],
+        },
+        "style": {
+            "schemaVersion": "0.1.0",
+            "id": "style_1",
+            "name": "house",
+            "stats": {"targetLoudnessLufs": -16.0, "transitionVocabulary": ["cut"]},
+            "presets": [],
+            "exemplars": [
+                {"id": f"ex_{index}", "summary": f"snippet {index}"} for index in range(3)
+            ],
+        },
+    }
+
+
+def test_handler_runs_the_content_gate_without_evidence() -> None:
+    with pytest.raises(PreviewRejected) as rejected:
+        handle_edit(_job(_content_input()))
+    assert "no frame evidence for the preview" in rejected.value.reasons
+
+
+def test_handler_completes_with_matching_evidence() -> None:
+    job_input = {
+        **_content_input(),
+        "frames": [{"time_s": 5.0, "path": "/frames/f1.jpg", "caption": "room tone"}],
+        "audio": {
+            "path": "/audio/snippet.wav",
+            "loudness_lufs": -16.5,
+            "transcript": "welcome back",
+        },
+    }
+    result = handle_edit(_job(job_input))
+    assert isinstance(result, HandlerResult)
+    assert result.ops
+    assert all(op["status"] == "pending" for op in result.ops)
+
+
 def test_handler_rejects_and_validates_input() -> None:
     data = GOLDEN["input"]
     base = {
