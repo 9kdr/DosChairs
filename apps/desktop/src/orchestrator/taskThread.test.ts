@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createServicesClient, ServiceError, type FetchFn } from "../lib/services/client";
 import type { AgentJob, AgentJobStatus } from "../lib/services/types";
 import type { RunningTask } from "./RunningTasks";
@@ -8,6 +8,7 @@ import {
   activityForLivePending,
   briefForOpening,
   headlineForSubmitError,
+  initialTurnsFor,
   inputForTurn,
   isThreadDemo,
   noteKey,
@@ -16,7 +17,28 @@ import {
   runTurn,
   shortRequestId,
   textForJob,
+  withOpenTurnError,
 } from "./taskThread";
+import { writeTaskThread } from "./threadStore";
+
+/** Node has no localStorage; stand in with a map behind the same calls. */
+function installMemoryStorage(): Map<string, string> {
+  const backing = new Map<string, string>();
+  vi.stubGlobal("localStorage", {
+    getItem: (key: string) => (backing.has(key) ? backing.get(key)! : null),
+    setItem: (key: string, value: string) => {
+      backing.set(key, value);
+    },
+    removeItem: (key: string) => {
+      backing.delete(key);
+    },
+  });
+  return backing;
+}
+
+beforeEach(() => {
+  installMemoryStorage();
+});
 
 const task: RunningTask = {
   id: "task-3",
@@ -168,6 +190,101 @@ describe("live activity", () => {
     expect(activity.headline).toBe("Agent unreachable");
     expect(activity.progress).toBe(0);
     expect(activity.steps[0]).toMatchObject({ id: "sent", state: "queued" });
+  });
+});
+
+describe("thread restore", () => {
+  it("reopens a task on its stored thread", () => {
+    writeTaskThread({
+      taskId: "task-3",
+      taskName: "Detect silence and jump cuts",
+      lane: "edit",
+      status: "Scanning audio pauses",
+      turns: [
+        {
+          id: "open",
+          role: "assistant",
+          text: "Done (req_0123456789): no previews, no proposed changes.",
+        },
+        { id: "user-1", role: "user", text: "trim the pause" },
+        {
+          id: "assistant-1",
+          role: "assistant",
+          text: "Done (req_abcdef0123): 1 preview, no proposed changes.",
+        },
+      ],
+      savedAt: "2026-11-01T10:00:00.000Z",
+    });
+    const restored = initialTurnsFor(task, false);
+    expect(restored).toHaveLength(3);
+    expect(restored[1]).toMatchObject({ role: "user", text: "trim the pause" });
+  });
+
+  it("starts a fresh live turn when nothing is stored", () => {
+    expect(initialTurnsFor(task, false)).toEqual([
+      { id: "open", role: "assistant", text: "Sending the turn to the agent…" },
+    ]);
+  });
+
+  it("drops in-flight placeholders on restore; they never completed", () => {
+    writeTaskThread({
+      taskId: "task-3",
+      taskName: "Detect silence and jump cuts",
+      lane: "edit",
+      status: "Scanning audio pauses",
+      turns: [
+        {
+          id: "open",
+          role: "assistant",
+          text: "Done (req_0123456789): no previews, no proposed changes.",
+        },
+        { id: "user-9", role: "user", text: "one more pass" },
+        { id: "assistant-9", role: "assistant", text: "Sending the turn to the agent…" },
+      ],
+      savedAt: "2026-11-01T10:00:00.000Z",
+    });
+    const restored = initialTurnsFor(task, false);
+    expect(restored.map((turn) => turn.id)).toEqual(["open", "user-9"]);
+  });
+
+  it("keeps the demo stand-in out of the store either way", () => {
+    writeTaskThread({
+      taskId: "task-3",
+      taskName: "Detect silence and jump cuts",
+      lane: "edit",
+      status: "Scanning audio pauses",
+      turns: [{ id: "open", role: "assistant", text: "stored live text" }],
+      savedAt: "2026-11-01T10:00:00.000Z",
+    });
+    const demo = initialTurnsFor(task, true);
+    expect(demo).toHaveLength(1);
+    expect(demo[0]?.text).toContain("stand-in, not a live agent");
+  });
+});
+
+describe("opening-turn failure", () => {
+  it("shows the error only when the turn never got going", () => {
+    const fresh = withOpenTurnError(
+      [{ id: "open", role: "assistant", text: "Sending the turn to the agent…" }],
+      "Couldn't reach the agent.",
+    );
+    expect(fresh[0]?.text).toBe("Couldn't reach the agent.");
+  });
+
+  it("keeps stored text when the agent is unreachable; the store fills in", () => {
+    const turns = withOpenTurnError(
+      [
+        {
+          id: "open",
+          role: "assistant",
+          text: "Done (req_0123456789): no previews, no proposed changes.",
+        },
+        { id: "user-1", role: "user", text: "trim the pause" },
+      ],
+      "Couldn't reach the agent.",
+    );
+    expect(turns[0]?.text).toContain("Done (req_0123456789)");
+    expect(turns[1]?.text).toBe("trim the pause");
   });
 });
 
