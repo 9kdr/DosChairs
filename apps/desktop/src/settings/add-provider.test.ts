@@ -5,7 +5,6 @@ import {
   buildAddProviderResult,
   defaultProvider,
   isKeyDraftValid,
-  presetRolePick,
   resolveWizardStep,
   type ProviderKeys,
 } from "./add-provider";
@@ -17,47 +16,20 @@ const keys = (
 ): ProviderKeys => ({ meta, openai, anthropic });
 
 describe("ADD_PROVIDER_STEPS", () => {
-  it("walks Provider, Key, Models like T3's add-provider wizard", () => {
-    expect([...ADD_PROVIDER_STEPS]).toEqual(["Provider", "Key", "Models"]);
+  it("walks Provider, Key like T3's add-provider dialog", () => {
+    expect([...ADD_PROVIDER_STEPS]).toEqual(["Provider", "Key"]);
   });
 });
 
 describe("resolveWizardStep", () => {
-  it("moves freely between Provider and Key", () => {
-    expect(
-      resolveWizardStep(0, 1, { keyValid: false }),
-    ).toEqual({ kind: "navigate", step: 1 });
-    expect(
-      resolveWizardStep(1, 0, { keyValid: false }),
-    ).toEqual({ kind: "navigate", step: 0 });
+  it("moves freely between the two steps", () => {
+    expect(resolveWizardStep(1)).toBe(1);
+    expect(resolveWizardStep(0)).toBe(0);
   });
 
-  it("blocks Models until a key is pasted", () => {
-    const blocked = resolveWizardStep(1, 2, { keyValid: false });
-    expect(blocked.kind).toBe("blocked");
-    expect(blocked.step).toBe(1);
-    expect(
-      resolveWizardStep(1, 2, { keyValid: true }),
-    ).toEqual({ kind: "navigate", step: 2 });
-  });
-
-  it("lets a valid draft jump straight from Provider to Models", () => {
-    expect(
-      resolveWizardStep(0, 2, { keyValid: true }),
-    ).toEqual({ kind: "navigate", step: 2 });
-  });
-
-  it("always allows stepping back, and clamps wild targets", () => {
-    expect(
-      resolveWizardStep(2, 0, { keyValid: false }),
-    ).toEqual({ kind: "navigate", step: 0 });
-    expect(
-      resolveWizardStep(0, 9, { keyValid: true }),
-    ).toEqual({ kind: "navigate", step: 2 });
-    expect(resolveWizardStep(2, -4, { keyValid: true })).toEqual({
-      kind: "navigate",
-      step: 0,
-    });
+  it("clamps wild targets", () => {
+    expect(resolveWizardStep(9)).toBe(1);
+    expect(resolveWizardStep(-4)).toBe(0);
   });
 });
 
@@ -117,51 +89,19 @@ describe("defaultProvider", () => {
   });
 });
 
-describe("presetRolePick", () => {
-  it("keeps the saved model when it already routes through the provider", () => {
-    expect(
-      presetRolePick({ provider: "meta", model: "muse-spark-1" }, "meta"),
-    ).toEqual({ mode: "model", model: "muse-spark-1" });
-  });
-
-  it("follows the key otherwise", () => {
-    expect(
-      presetRolePick({ provider: "openai", model: "gpt-x" }, "meta"),
-    ).toEqual({ mode: "follow" });
-    expect(presetRolePick(null, "meta")).toEqual({ mode: "follow" });
-  });
-});
-
 describe("buildAddProviderResult", () => {
   it("is null without a key", () => {
     expect(
-      buildAddProviderResult({
-        provider: "meta",
-        key: "   ",
-        picks: {
-          planner: { mode: "follow" },
-          executor: { mode: "follow" },
-          verifier: { mode: "follow" },
-        },
-      }),
+      buildAddProviderResult({ provider: "meta", key: "   " }),
     ).toBeNull();
   });
 
-  it("trims the key and keeps only explicit role overrides", () => {
+  it("trims the key", () => {
     expect(
       buildAddProviderResult({
         provider: "anthropic",
         key: "  sk-ant-abc123  ",
-        picks: {
-          planner: { mode: "model", model: "claude-x" },
-          executor: { mode: "follow" },
-          verifier: { mode: "model", model: "  " },
-        },
       }),
-    ).toEqual({
-      provider: "anthropic",
-      key: "sk-ant-abc123",
-      overrides: [{ role: "planner", model: "claude-x" }],
-    });
+    ).toEqual({ provider: "anthropic", key: "sk-ant-abc123" });
   });
 });

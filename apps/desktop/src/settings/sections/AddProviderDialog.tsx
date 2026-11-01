@@ -5,13 +5,6 @@ import { CheckIcon, EyeIcon, EyeOffIcon } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import {
-  Select,
-  SelectItem,
-  SelectPopup,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import {
   ADD_PROVIDER_STEPS,
@@ -19,29 +12,20 @@ import {
   buildAddProviderResult,
   defaultProvider,
   isKeyDraftValid,
-  presetRolePick,
   resolveWizardStep,
   type AddProviderResult,
   type ProviderKeys,
-  type RoleModelPick,
 } from "../add-provider";
 import {
-  followChoice,
   isProviderId,
-  KNOWN_MODELS,
   PROVIDERS,
   providerLabel,
-  ROLES,
   type ProviderId,
-  type Role,
-  type RoleId,
 } from "../providers";
-import type { RoleChoice } from "../settings-store";
 
 type AddProviderDialogProps = {
   open: boolean;
   keys: ProviderKeys;
-  savedModels: Record<RoleId, RoleChoice | null>;
   /** The list opens the wizard here; otherwise the first keyless provider. */
   initialProvider?: ProviderId | null;
   onOpenChange: (open: boolean) => void;
@@ -49,16 +33,14 @@ type AddProviderDialogProps = {
 };
 
 /**
- * Add a provider, after T3 Code's AddProviderInstanceDialog: the
- * same wizard — provider cards, then the key (Chair's sign-in),
- * then the models — with API keys instead of accounts. Paste-a-key
+ * Add a provider, after T3 Code's AddProviderInstanceDialog: pick
+ * the provider, then the key (Chair's sign-in). Paste-a-key
  * auto-detects the provider and switches the pick. The parent
  * renders this only while open, so state starts fresh each time.
  */
 export function AddProviderDialog({
   open,
   keys,
-  savedModels,
   initialProvider,
   onOpenChange,
   onAdd,
@@ -70,37 +52,28 @@ export function AddProviderDialog({
   const [keyDraft, setKeyDraft] = useState("");
   const [shown, setShown] = useState(false);
   const [switchedFrom, setSwitchedFrom] = useState<ProviderId | null>(null);
-  const [picks, setPicks] = useState<Record<RoleId, RoleModelPick>>(() =>
-    presetPicks(savedModels, initialProvider ?? defaultProvider(keys)),
-  );
-  const [blockedError, setBlockedError] = useState<string | null>(null);
+  const [keyError, setKeyError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   const keyValid = isKeyDraftValid(keyDraft);
   const draft = applyKeyDraft(keyDraft, provider);
   const label = providerLabel(provider);
-  const known = KNOWN_MODELS[provider];
+  const lastStep = ADD_PROVIDER_STEPS.length - 1;
 
   const pickProvider = (next: ProviderId) => {
     setProvider(next);
-    setPicks(presetPicks(savedModels, next));
-    setBlockedError(null);
+    setKeyError(null);
     setSwitchedFrom(null);
   };
 
   const goTo = (requested: number) => {
-    const nav = resolveWizardStep(step, requested, { keyValid });
-    if (nav.kind === "blocked") {
-      setBlockedError(nav.error);
-      return;
-    }
-    setBlockedError(null);
-    setStep(nav.step);
+    setKeyError(null);
+    setStep(resolveWizardStep(requested));
   };
 
   const onKeyChange = (value: string) => {
     setKeyDraft(value);
-    setBlockedError(null);
+    setKeyError(null);
     if (value.trim() === "") {
       setSwitchedFrom(null);
       return;
@@ -109,17 +82,16 @@ export function AddProviderDialog({
     if (applied.switched) {
       setSwitchedFrom(provider);
       setProvider(applied.provider);
-      setPicks(presetPicks(savedModels, applied.provider));
     }
   };
 
   const finish = async () => {
-    const result = buildAddProviderResult({
-      provider,
-      key: keyDraft,
-      picks,
-    });
-    if (result == null || busy) return;
+    const result = buildAddProviderResult({ provider, key: keyDraft });
+    if (result == null) {
+      setKeyError("Paste a key first.");
+      return;
+    }
+    if (busy) return;
     setBusy(true);
     try {
       await onAdd(result);
@@ -141,7 +113,7 @@ export function AddProviderDialog({
             Add provider
           </Dialog.Title>
           <Dialog.Description className="mt-1 text-sm text-neutral-400">
-            Pick a provider, paste its key, and route the roles through it.
+            Pick a provider and paste its key.
           </Dialog.Description>
 
           <ol
@@ -192,9 +164,9 @@ export function AddProviderDialog({
               </li>
             ))}
           </ol>
-          {blockedError != null ? (
+          {keyError != null ? (
             <p role="alert" className="mt-2 text-xs text-red-400">
-              {blockedError}
+              {keyError}
             </p>
           ) : null}
 
@@ -247,7 +219,7 @@ export function AddProviderDialog({
                   })}
                 </RadioGroup>
               </div>
-            ) : step === 1 ? (
+            ) : (
               <div>
                 <label
                   htmlFor="add-provider-key"
@@ -265,7 +237,7 @@ export function AddProviderDialog({
                     placeholder="Paste a key"
                     onChange={(event) => onKeyChange(event.target.value)}
                     onKeyDown={(event) => {
-                      if (event.key === "Enter") goTo(step + 1);
+                      if (event.key === "Enter") void finish();
                     }}
                     className="flex-1"
                   />
@@ -292,61 +264,6 @@ export function AddProviderDialog({
                   />
                 </p>
               </div>
-            ) : (
-              <div className="flex flex-col gap-5">
-                <div>
-                  <h3 className="text-sm font-medium text-neutral-100">
-                    Models on file for {label}
-                  </h3>
-                  {known.length > 0 ? (
-                    <ul className="mt-2 flex flex-col gap-1">
-                      {known.map((name) => (
-                        <li
-                          key={name}
-                          className="rounded-lg bg-white/[0.03] px-3 py-1.5 font-mono text-xs text-neutral-300 ring-1 ring-white/[0.06]"
-                        >
-                          {name}
-                        </li>
-                      ))}
-                    </ul>
-                  ) : (
-                    <p className="mt-2 text-xs text-neutral-500">
-                      No models on file. Name one per role below and Chair
-                      saves it with the role.
-                    </p>
-                  )}
-                </div>
-                <div>
-                  <h3 className="text-sm font-medium text-neutral-100">
-                    Route the roles
-                  </h3>
-                  <p className="mt-0.5 text-xs text-neutral-500">
-                    A role left on follow keeps its saved pick.
-                  </p>
-                  <div className="mt-2 flex flex-col gap-2">
-                    {ROLES.map((role) => (
-                      <RoleModelPicker
-                        key={`${provider}:${role.id}`}
-                        role={role}
-                        provider={provider}
-                        known={known}
-                        initial={picks[role.id]!}
-                        today={todayLine({
-                          role,
-                          saved: savedModels[role.id],
-                          keys,
-                        })}
-                        onChange={(pick) =>
-                          setPicks((current) => ({
-                            ...current,
-                            [role.id]: pick,
-                          }))
-                        }
-                      />
-                    ))}
-                  </div>
-                </div>
-              </div>
             )}
           </div>
 
@@ -366,7 +283,7 @@ export function AddProviderDialog({
             >
               {step === 0 ? "Cancel" : "Back"}
             </Button>
-            {step < ADD_PROVIDER_STEPS.length - 1 ? (
+            {step < lastStep ? (
               <Button type="button" size="sm" onClick={() => goTo(step + 1)}>
                 Next
               </Button>
@@ -385,17 +302,6 @@ export function AddProviderDialog({
       </Dialog.Portal>
     </Dialog.Root>
   );
-}
-
-function presetPicks(
-  saved: Record<RoleId, RoleChoice | null>,
-  provider: ProviderId,
-): Record<RoleId, RoleModelPick> {
-  return {
-    planner: presetRolePick(saved.planner, provider),
-    executor: presetRolePick(saved.executor, provider),
-    verifier: presetRolePick(saved.verifier, provider),
-  };
 }
 
 function KeyHint({
@@ -433,135 +339,5 @@ function KeyHint({
     <>
       Looks like {article} {label} key.
     </>
-  );
-}
-
-function todayLine(input: {
-  role: Role;
-  saved: RoleChoice | null;
-  keys: ProviderKeys;
-}): string {
-  if (input.saved != null) {
-    return `Today: ${providerLabel(input.saved.provider)} ${input.saved.model}`;
-  }
-  const follow = followChoice(input.keys, input.role);
-  if (follow == null) return "Today: no key saved";
-  return `Today it follows the key: ${follow.model} via ${providerLabel(follow.provider)}`;
-}
-
-const FOLLOW_MODEL = "__follow__";
-const CUSTOM_MODEL = "__custom__";
-
-function RoleModelPicker({
-  role,
-  known,
-  initial,
-  today,
-  onChange,
-}: {
-  role: Role;
-  provider: ProviderId;
-  known: string[];
-  initial: RoleModelPick;
-  today: string;
-  onChange: (pick: RoleModelPick) => void;
-}) {
-  const [mode, setMode] = useState<"follow" | "model">(initial.mode);
-  const [model, setModel] = useState(
-    initial.mode === "model" ? initial.model : "",
-  );
-  const [custom, setCustom] = useState(
-    () => initial.mode === "model" && !known.includes(initial.model),
-  );
-
-  const commit = (nextMode: "follow" | "model", nextModel: string) => {
-    onChange(
-      nextMode === "follow"
-        ? { mode: "follow" }
-        : { mode: "model", model: nextModel },
-    );
-  };
-
-  return (
-    <div className="rounded-xl bg-white/[0.03] px-4 py-3 ring-1 ring-white/[0.06]">
-      <div className="flex items-baseline justify-between gap-3">
-        <p className="text-sm font-medium text-neutral-100">{role.label}</p>
-        <p className="truncate text-xs text-neutral-500">{today}</p>
-      </div>
-      <div className="mt-2 flex items-center gap-2">
-        {!custom ? (
-          <Select
-            value={
-              mode === "follow" ? FOLLOW_MODEL : model === "" ? null : model
-            }
-            onValueChange={(value) => {
-              if (value === FOLLOW_MODEL || value == null) {
-                setMode("follow");
-                setModel("");
-                commit("follow", "");
-              } else if (value === CUSTOM_MODEL) {
-                setCustom(true);
-                setMode("model");
-                setModel("");
-                commit("model", "");
-              } else {
-                setMode("model");
-                setModel(value);
-                commit("model", value);
-              }
-            }}
-            items={Object.fromEntries([
-              [FOLLOW_MODEL, "Follow the key"],
-              ...known.map((name) => [name, name]),
-              [CUSTOM_MODEL, "Custom…"],
-            ])}
-          >
-            <SelectTrigger
-              aria-label={`${role.label} model on the new key`}
-              className="flex-1"
-            >
-              <SelectValue />
-            </SelectTrigger>
-            <SelectPopup>
-              <SelectItem value={FOLLOW_MODEL}>Follow the key</SelectItem>
-              {known.map((name) => (
-                <SelectItem key={name} value={name}>
-                  {name}
-                </SelectItem>
-              ))}
-              <SelectItem value={CUSTOM_MODEL}>Custom…</SelectItem>
-            </SelectPopup>
-          </Select>
-        ) : (
-          <>
-            <Input
-              value={model}
-              autoComplete="off"
-              spellCheck={false}
-              aria-label={`${role.label} model name`}
-              placeholder="Model name"
-              onChange={(event) => {
-                setModel(event.target.value);
-                commit("model", event.target.value);
-              }}
-              className="flex-1"
-            />
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={() => {
-                setCustom(false);
-                setMode("follow");
-                setModel("");
-                commit("follow", "");
-              }}
-            >
-              List
-            </Button>
-          </>
-        )}
-      </div>
-    </div>
   );
 }

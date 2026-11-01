@@ -16,6 +16,8 @@ export type UseSettings = {
   loaded: boolean;
   saveKey: (provider: ProviderId, key: string | null) => Promise<void>;
   saveModel: (role: RoleId, choice: RoleChoice | null) => Promise<void>;
+  saveProviderEnabled: (provider: ProviderId, enabled: boolean) => Promise<void>;
+  saveCustomModels: (provider: ProviderId, models: string[]) => Promise<void>;
   saveOrchestrator: (name: string | null) => Promise<void>;
   saveEditorConnection: (
     id: EditorId,
@@ -59,6 +61,18 @@ export function useSettings(store?: SettingsStore): UseSettings {
     },
     [resolved],
   );
+  const saveProviderEnabled = useCallback(
+    async (provider: ProviderId, enabled: boolean) => {
+      setSettings(await resolved.saveProviderEnabled(provider, enabled));
+    },
+    [resolved],
+  );
+  const saveCustomModels = useCallback(
+    async (provider: ProviderId, models: string[]) => {
+      setSettings(await resolved.saveCustomModels(provider, models));
+    },
+    [resolved],
+  );
 
   const saveOrchestrator = useCallback(
     async (name: string | null) => {
@@ -80,9 +94,20 @@ export function useSettings(store?: SettingsStore): UseSettings {
       loaded,
       saveKey,
       saveModel,
+      saveProviderEnabled,
+      saveCustomModels,
       saveOrchestrator,
       saveEditorConnection,
     }),
-    [settings, loaded, saveKey, saveModel, saveOrchestrator, saveEditorConnection],
+    [
+      settings,
+      loaded,
+      saveKey,
+      saveModel,
+      saveProviderEnabled,
+      saveCustomModels,
+      saveOrchestrator,
+      saveEditorConnection,
+    ],
   );
 }

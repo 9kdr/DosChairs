@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  addCustomModel,
   detectProvider,
   followChoice,
   followProvider,
@@ -7,6 +8,7 @@ import {
   maskKey,
   providerConnection,
   providerLabel,
+  removeCustomModel,
   ROLES,
   type ProviderId,
 } from "./providers";
@@ -132,5 +134,52 @@ describe("followChoice", () => {
     expect(
       followChoice({ meta: null, openai: null, anthropic: null }, planner),
     ).toBeNull();
+  });
+});
+
+describe("addCustomModel", () => {
+  it("appends a trimmed id", () => {
+    expect(
+      addCustomModel({
+        custom: ["mine-1"],
+        known: ["muse-spark-1"],
+        draft: "  mine-2  ",
+      }),
+    ).toEqual(["mine-1", "mine-2"]);
+  });
+
+  it("is null for a blank draft", () => {
+    expect(
+      addCustomModel({ custom: [], known: [], draft: "   " }),
+    ).toBeNull();
+  });
+
+  it("is null when the id is already known or custom", () => {
+    expect(
+      addCustomModel({
+        custom: [],
+        known: ["muse-spark-1"],
+        draft: "muse-spark-1",
+      }),
+    ).toBeNull();
+    expect(
+      addCustomModel({
+        custom: ["mine-1"],
+        known: [],
+        draft: "mine-1",
+      }),
+    ).toBeNull();
+  });
+});
+
+describe("removeCustomModel", () => {
+  it("drops the named entry", () => {
+    expect(removeCustomModel(["mine-1", "mine-2"], "mine-1")).toEqual([
+      "mine-2",
+    ]);
+  });
+
+  it("is null when the entry is not custom", () => {
+    expect(removeCustomModel(["mine-1"], "muse-spark-1")).toBeNull();
   });
 });

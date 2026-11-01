@@ -85,6 +85,32 @@ export const KNOWN_MODELS: Record<ProviderId, string[]> = {
   anthropic: [],
 };
 
+/**
+ * Next custom-model list after typing a draft: trimmed, skipped when
+ * blank, already known for this provider, or already custom. Null
+ * when the draft adds nothing, so the caller can leave the store alone.
+ */
+export function addCustomModel(input: {
+  custom: string[];
+  known: string[];
+  draft: string;
+}): string[] | null {
+  const name = input.draft.trim();
+  if (name === "") return null;
+  if (input.known.includes(name)) return null;
+  if (input.custom.includes(name)) return null;
+  return [...input.custom, name];
+}
+
+/** Custom-model list without one entry. Null when nothing changes. */
+export function removeCustomModel(
+  custom: string[],
+  model: string,
+): string[] | null {
+  if (!custom.includes(model)) return null;
+  return custom.filter((name) => name !== model);
+}
+
 const MASK_TAIL = 4;
 
 /**
