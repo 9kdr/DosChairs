@@ -188,6 +188,7 @@ function PasteKeyCard({ onSave }: PasteKeyCardProps) {
   const detected = trimmed === "" ? null : detectProvider(trimmed);
   const provider = detected ?? picked;
   const label = PROVIDERS.find((entry) => entry.id === provider)?.label ?? provider;
+  const article = label === "Anthropic" ? "an" : "a";
 
   const save = async () => {
     if (trimmed === "" || busy) return;
@@ -249,7 +250,7 @@ function PasteKeyCard({ onSave }: PasteKeyCardProps) {
           {trimmed === ""
             ? "Detection never sends the key anywhere."
             : detected != null
-              ? `Looks like a ${label} key.`
+              ? `Looks like ${article} ${label} key.`
               : "Unknown format — file it under:"}
         </p>
         {trimmed !== "" && detected == null ? (
