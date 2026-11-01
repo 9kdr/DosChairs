@@ -19,7 +19,8 @@ type SettingsScreenProps = {
  * 896 column (208 + 32 + 656).
  */
 export function SettingsScreen({ onBack }: SettingsScreenProps) {
-  const { settings, loaded, saveKey, saveModel } = useSettings();
+  const { settings, loaded, saveKey, saveModel, saveEditorConnection } =
+    useSettings();
   const { agent, agentHealth, refresh } = useServiceHealth();
   const [section, setSection] = useState<SectionId>("keys");
   const agentUp =
@@ -71,7 +72,12 @@ export function SettingsScreen({ onBack }: SettingsScreenProps) {
               saveModel={saveModel}
             />
           ) : section === "editors" ? (
-            <EditorsSection />
+            <EditorsSection
+              connections={settings.editors}
+              agentUp={agentUp}
+              saveConnection={saveEditorConnection}
+              refresh={refresh}
+            />
           ) : (
             <PreferencesSection />
           )}

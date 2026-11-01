@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import type { EditorId } from "../home/data";
 import type { ProviderId, RoleId } from "./providers";
 import {
   createSettingsStore,
   defaultBackend,
   EMPTY_SETTINGS,
   type AppSettings,
+  type EditorConnection,
   type RoleChoice,
   type SettingsStore,
 } from "./settings-store";
@@ -15,6 +17,10 @@ export type UseSettings = {
   saveKey: (provider: ProviderId, key: string | null) => Promise<void>;
   saveModel: (role: RoleId, choice: RoleChoice | null) => Promise<void>;
   saveOrchestrator: (name: string | null) => Promise<void>;
+  saveEditorConnection: (
+    id: EditorId,
+    connection: EditorConnection | null,
+  ) => Promise<void>;
 };
 
 /**
@@ -61,8 +67,22 @@ export function useSettings(store?: SettingsStore): UseSettings {
     [resolved],
   );
 
+  const saveEditorConnection = useCallback(
+    async (id: EditorId, connection: EditorConnection | null) => {
+      setSettings(await resolved.saveEditorConnection(id, connection));
+    },
+    [resolved],
+  );
+
   return useMemo(
-    () => ({ settings, loaded, saveKey, saveModel, saveOrchestrator }),
-    [settings, loaded, saveKey, saveModel, saveOrchestrator],
+    () => ({
+      settings,
+      loaded,
+      saveKey,
+      saveModel,
+      saveOrchestrator,
+      saveEditorConnection,
+    }),
+    [settings, loaded, saveKey, saveModel, saveOrchestrator, saveEditorConnection],
   );
 }

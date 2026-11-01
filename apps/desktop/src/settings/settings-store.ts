@@ -6,20 +6,27 @@
  * falls back to localStorage. Either way nothing touches project files.
  */
 import { isProviderId, isRoleId, type ProviderId, type RoleId } from "./providers";
+import { isEditorId } from "./editors";
+import type { EditorId } from "../home/data";
 
 export type RoleChoice = { provider: ProviderId; model: string };
+
+/** Null endpoint = linked with no path (Resolve finds Studio itself). */
+export type EditorConnection = { endpoint: string | null };
 
 export type AppSettings = {
   keys: Record<ProviderId, string | null>;
   models: Record<RoleId, RoleChoice | null>;
   /** The orchestrator pick from the composer input bar. Null keeps Chair. */
   orchestrator: string | null;
+  editors: Record<EditorId, EditorConnection | null>;
 };
 
 export const EMPTY_SETTINGS: AppSettings = {
   keys: { meta: null, openai: null, anthropic: null },
   models: { planner: null, executor: null, verifier: null },
   orchestrator: null,
+  editors: { resolve: null, kdenlive: null, otio: null },
 };
 
 export type SettingsBackend = {
@@ -37,8 +44,9 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 export function parseSettings(doc: unknown): AppSettings {
   const keys = { ...EMPTY_SETTINGS.keys };
   const models = { ...EMPTY_SETTINGS.models };
+  const editors = { ...EMPTY_SETTINGS.editors };
   let orchestrator: string | null = null;
-  if (!isRecord(doc)) return { keys, models, orchestrator };
+  if (!isRecord(doc)) return { keys, models, orchestrator, editors };
   if (isRecord(doc.keys)) {
     for (const [id, value] of Object.entries(doc.keys)) {
       if (isProviderId(id) && (typeof value === "string" || value === null)) {
@@ -59,7 +67,14 @@ export function parseSettings(doc: unknown): AppSettings {
   if (typeof doc.orchestrator === "string" && doc.orchestrator.length > 0) {
     orchestrator = doc.orchestrator;
   }
-  return { keys, models, orchestrator };
+  if (isRecord(doc.editors)) {
+    for (const [id, value] of Object.entries(doc.editors)) {
+      if (isEditorId(id) && (value === null || isEditorConnection(value))) {
+        editors[id] = value;
+      }
+    }
+  }
+  return { keys, models, orchestrator, editors };
 }
 
 function isRoleChoice(value: unknown): value is RoleChoice {
@@ -68,6 +83,13 @@ function isRoleChoice(value: unknown): value is RoleChoice {
     isProviderId(value.provider) &&
     typeof value.model === "string" &&
     value.model.length > 0
+  );
+}
+
+function isEditorConnection(value: unknown): value is EditorConnection {
+  return (
+    isRecord(value) &&
+    (typeof value.endpoint === "string" || value.endpoint === null)
   );
 }
 
@@ -103,6 +125,25 @@ export function createSettingsStore(backend: SettingsBackend) {
       const next: AppSettings = {
         ...current,
         orchestrator: name && name.length > 0 ? name : null,
+      };
+      await backend.write(next);
+      return next;
+    },
+    async saveEditorConnection(
+      id: EditorId,
+      connection: EditorConnection | null,
+    ): Promise<AppSettings> {
+      const current = await this.load();
+      let nextConnection = connection;
+      if (nextConnection != null) {
+        const endpoint = nextConnection.endpoint?.trim() ?? null;
+        nextConnection = {
+          endpoint: endpoint != null && endpoint.length > 0 ? endpoint : null,
+        };
+      }
+      const next: AppSettings = {
+        ...current,
+        editors: { ...current.editors, [id]: nextConnection },
       };
       await backend.write(next);
       return next;

@@ -106,6 +106,36 @@ describe("settings store", () => {
     });
   });
 
+  it("links and unlinks editors", async () => {
+    const store = createSettingsStore(memoryBackend());
+    const linked = await store.saveEditorConnection("kdenlive", {
+      endpoint: " /tmp/cut.kdenlive ",
+    });
+    expect(linked.editors.kdenlive).toEqual({
+      endpoint: "/tmp/cut.kdenlive",
+    });
+    const resolve = await store.saveEditorConnection("resolve", {
+      endpoint: null,
+    });
+    expect(resolve.editors.resolve).toEqual({ endpoint: null });
+    await expect(
+      store.saveEditorConnection("kdenlive", null),
+    ).resolves.toMatchObject({ editors: { kdenlive: null } });
+  });
+
+  it("drops malformed editor links when parsing", () => {
+    const parsed = parseSettings({
+      editors: {
+        resolve: { endpoint: null },
+        kdenlive: { endpoint: 42 },
+        unknown: { endpoint: "x" },
+      },
+    });
+    expect(parsed.editors.resolve).toEqual({ endpoint: null });
+    expect(parsed.editors.kdenlive).toBeNull();
+    expect(parsed.editors.otio).toBeNull();
+  });
+
   it("returns empty settings when the backend throws", async () => {
     const broken: SettingsBackend = {
       async read() {
