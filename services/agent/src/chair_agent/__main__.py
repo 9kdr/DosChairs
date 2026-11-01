@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import unquote, urlsplit
 
+from chair_agent.assets import build_assets
 from chair_agent.client import configured_models, key_configured
 from chair_agent.jobs import (
     Job,
@@ -39,6 +40,13 @@ class Handler(BaseHTTPRequestHandler):
         if project_id is not None:
             try:
                 self._send(200, build_review(self.controller, project_id))
+            except ReviewUnavailable as error:
+                self._send(503, _error(error.code, str(error)))
+            return
+        project_id = _assets_path(self.path)
+        if project_id is not None:
+            try:
+                self._send(200, build_assets(project_id))
             except ReviewUnavailable as error:
                 self._send(503, _error(error.code, str(error)))
             return
@@ -102,7 +110,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("content-type", "application/json")
         self.send_header("content-length", str(len(raw)))
         # The desktop window is a different origin; without this the
-        # browser blocks health reads and the service always looks down.
+        # browser blocks reads and the service always looks down.
         # Responses here never carry secrets (see the health test).
         self.send_header("access-control-allow-origin", "*")
         self.end_headers()
@@ -115,6 +123,13 @@ class Handler(BaseHTTPRequestHandler):
 def _review_path(path: str) -> str | None:
     parts = urlsplit(path).path.strip("/").split("/")
     if len(parts) == 3 and parts[0] == "projects" and parts[1] and parts[2] == "review":
+        return unquote(parts[1])
+    return None
+
+
+def _assets_path(path: str) -> str | None:
+    parts = urlsplit(path).path.strip("/").split("/")
+    if len(parts) == 3 and parts[0] == "projects" and parts[1] and parts[2] == "assets":
         return unquote(parts[1])
     return None
 

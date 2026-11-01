@@ -102,6 +102,7 @@ export function ProjectShell({ projectId, projectName, editorId, onHome }: Proje
             <ReviewBoard store={project} />
           ) : section === "orchestrator" ? (
             <OrchestratorBoard
+              projectId={projectId}
               command={command}
               history={project.history}
               createdTasks={createdTasks}
