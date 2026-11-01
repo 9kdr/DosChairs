@@ -14,6 +14,7 @@ export type UseSettings = {
   loaded: boolean;
   saveKey: (provider: ProviderId, key: string | null) => Promise<void>;
   saveModel: (role: RoleId, choice: RoleChoice | null) => Promise<void>;
+  saveOrchestrator: (name: string | null) => Promise<void>;
 };
 
 /**
@@ -53,8 +54,15 @@ export function useSettings(store?: SettingsStore): UseSettings {
     [resolved],
   );
 
+  const saveOrchestrator = useCallback(
+    async (name: string | null) => {
+      setSettings(await resolved.saveOrchestrator(name));
+    },
+    [resolved],
+  );
+
   return useMemo(
-    () => ({ settings, loaded, saveKey, saveModel }),
-    [settings, loaded, saveKey, saveModel],
+    () => ({ settings, loaded, saveKey, saveModel, saveOrchestrator }),
+    [settings, loaded, saveKey, saveModel, saveOrchestrator],
   );
 }

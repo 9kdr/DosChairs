@@ -1,8 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
+  detectProvider,
+  followChoice,
+  followProvider,
   keySourceLabel,
   maskKey,
   providerConnection,
+  ROLES,
+  type ProviderId,
 } from "./providers";
 
 describe("maskKey", () => {
@@ -55,5 +60,68 @@ describe("keySourceLabel", () => {
       "in the app + the environment",
     );
     expect(keySourceLabel({ appKey: false, envKey: false })).toBe("");
+  });
+});
+
+describe("detectProvider", () => {
+  it("names Anthropic and OpenAI keys by prefix", () => {
+    expect(detectProvider("sk-ant-abc123")).toBe("anthropic");
+    expect(detectProvider("sk-proj-xyz")).toBe("openai");
+  });
+
+  it("leaves anything else unknown for the person to pick", () => {
+    expect(detectProvider("test-key")).toBeNull();
+    expect(detectProvider("")).toBeNull();
+    expect(detectProvider("  sk-ant-padded  ")).toBe("anthropic");
+  });
+});
+
+describe("followProvider", () => {
+  const keys = (
+    meta: string | null,
+    openai: string | null = null,
+    anthropic: string | null = null,
+  ): Record<ProviderId, string | null> => ({ meta, openai, anthropic });
+
+  it("follows the first provider in order with a saved key", () => {
+    expect(followProvider(keys("m1"))).toBe("meta");
+    expect(followProvider(keys(null, "o1"))).toBe("openai");
+    expect(followProvider(keys(null, "o1", "a1"))).toBe("openai");
+  });
+
+  it("is null with no keys", () => {
+    expect(followProvider(keys(null))).toBeNull();
+  });
+});
+
+describe("followChoice", () => {
+  const planner = ROLES[0]!;
+
+  it("routes to the follow provider's first known model", () => {
+    expect(
+      followChoice(
+        { meta: "m1", openai: null, anthropic: null },
+        planner,
+      ),
+    ).toEqual({ provider: "meta", model: "muse-wonder-1.0", defaulted: false });
+  });
+
+  it("keeps the role default when the provider has no known models", () => {
+    expect(
+      followChoice(
+        { meta: null, openai: "o1", anthropic: null },
+        planner,
+      ),
+    ).toEqual({
+      provider: "openai",
+      model: planner.defaultModel,
+      defaulted: true,
+    });
+  });
+
+  it("is null with no keys", () => {
+    expect(
+      followChoice({ meta: null, openai: null, anthropic: null }, planner),
+    ).toBeNull();
   });
 });

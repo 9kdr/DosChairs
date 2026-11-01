@@ -126,3 +126,56 @@ export function keySourceLabel(input: {
   if (input.envKey) return "in the environment";
   return "";
 }
+
+/**
+ * Name a key's provider from its format alone — no network probe, so
+ * detection never spends the key or sends it anywhere. `sk-ant-…`
+ * belongs to Anthropic, other `sk-…` keys to OpenAI; anything else
+ * is unknown and the person picks the provider. No prefix is
+ * claimed for Meta: its format is not documented in this repo.
+ */
+export function detectProvider(key: string): ProviderId | null {
+  const trimmed = key.trim();
+  if (trimmed.startsWith("sk-ant-")) return "anthropic";
+  if (trimmed.startsWith("sk-")) return "openai";
+  return null;
+}
+
+/**
+ * The provider follow-mode roles route through: the first provider
+ * in primary-to-fallback order with a saved key. Fixed priority —
+ * deterministic with two keys, no timestamps.
+ */
+export function followProvider(
+  keys: Record<ProviderId, string | null>,
+): ProviderId | null {
+  for (const provider of PROVIDERS) {
+    if (keys[provider.id] != null) return provider.id;
+  }
+  return null;
+}
+
+export type FollowChoice = {
+  provider: ProviderId;
+  model: string;
+  /** True when the provider has no known models and the role default fills in. */
+  defaulted: boolean;
+};
+
+/**
+ * Where a role with no explicit pick routes: the follow provider's
+ * first known model, or the role's default model name when the
+ * provider has no known models. Null when no key is saved.
+ */
+export function followChoice(
+  keys: Record<ProviderId, string | null>,
+  role: Role,
+): FollowChoice | null {
+  const provider = followProvider(keys);
+  if (provider == null) return null;
+  const known = KNOWN_MODELS[provider];
+  if (known.length > 0) {
+    return { provider, model: known[0]!, defaulted: false };
+  }
+  return { provider, model: role.defaultModel, defaulted: true };
+}

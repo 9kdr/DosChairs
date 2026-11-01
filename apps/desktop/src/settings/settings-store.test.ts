@@ -46,6 +46,14 @@ describe("parseSettings", () => {
     expect(parsed.models.executor).toBeNull();
     expect(parsed.models.verifier).toBeNull();
   });
+
+  it("keeps a valid orchestrator pick and drops garbage", () => {
+    expect(parseSettings({ orchestrator: "Chair fast" }).orchestrator).toBe(
+      "Chair fast",
+    );
+    expect(parseSettings({ orchestrator: "" }).orchestrator).toBeNull();
+    expect(parseSettings({ orchestrator: 42 }).orchestrator).toBeNull();
+  });
 });
 
 describe("settings store", () => {
@@ -86,6 +94,16 @@ describe("settings store", () => {
       model: "muse-wonder-1.0",
     });
     await expect(store.load()).resolves.toEqual(next);
+  });
+
+  it("saves the orchestrator pick", async () => {
+    const store = createSettingsStore(memoryBackend());
+    const next = await store.saveOrchestrator("Chair fast");
+    expect(next.orchestrator).toBe("Chair fast");
+    await expect(store.load()).resolves.toEqual(next);
+    await expect(store.saveOrchestrator("")).resolves.toMatchObject({
+      orchestrator: null,
+    });
   });
 
   it("returns empty settings when the backend throws", async () => {

@@ -12,11 +12,14 @@ export type RoleChoice = { provider: ProviderId; model: string };
 export type AppSettings = {
   keys: Record<ProviderId, string | null>;
   models: Record<RoleId, RoleChoice | null>;
+  /** The orchestrator pick from the composer input bar. Null keeps Chair. */
+  orchestrator: string | null;
 };
 
 export const EMPTY_SETTINGS: AppSettings = {
   keys: { meta: null, openai: null, anthropic: null },
   models: { planner: null, executor: null, verifier: null },
+  orchestrator: null,
 };
 
 export type SettingsBackend = {
@@ -34,7 +37,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 export function parseSettings(doc: unknown): AppSettings {
   const keys = { ...EMPTY_SETTINGS.keys };
   const models = { ...EMPTY_SETTINGS.models };
-  if (!isRecord(doc)) return { keys, models };
+  let orchestrator: string | null = null;
+  if (!isRecord(doc)) return { keys, models, orchestrator };
   if (isRecord(doc.keys)) {
     for (const [id, value] of Object.entries(doc.keys)) {
       if (isProviderId(id) && (typeof value === "string" || value === null)) {
@@ -52,7 +56,10 @@ export function parseSettings(doc: unknown): AppSettings {
       }
     }
   }
-  return { keys, models };
+  if (typeof doc.orchestrator === "string" && doc.orchestrator.length > 0) {
+    orchestrator = doc.orchestrator;
+  }
+  return { keys, models, orchestrator };
 }
 
 function isRoleChoice(value: unknown): value is RoleChoice {
@@ -87,6 +94,15 @@ export function createSettingsStore(backend: SettingsBackend) {
       const next: AppSettings = {
         ...current,
         models: { ...current.models, [role]: choice },
+      };
+      await backend.write(next);
+      return next;
+    },
+    async saveOrchestrator(name: string | null): Promise<AppSettings> {
+      const current = await this.load();
+      const next: AppSettings = {
+        ...current,
+        orchestrator: name && name.length > 0 ? name : null,
       };
       await backend.write(next);
       return next;

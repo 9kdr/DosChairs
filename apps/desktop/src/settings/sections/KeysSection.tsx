@@ -13,6 +13,8 @@ import type { AgentHealth } from "@/lib/services/types";
 import { cn } from "@/lib/utils";
 import {
   CONNECTION_LABEL,
+  detectProvider,
+  followChoice,
   keySourceLabel,
   KNOWN_MODELS,
   maskKey,
@@ -20,6 +22,7 @@ import {
   providerConnection,
   ROLES,
   type ConnectionState,
+  type FollowChoice,
   type Provider,
   type ProviderId,
   type Role,
@@ -111,6 +114,7 @@ export function KeysSection({
           A key saved here wins; otherwise the agent falls back to .env.
         </p>
         <div className="mt-3 space-y-2">
+          <PasteKeyCard onSave={(provider, key) => saveKey(provider, key)} />
           {PROVIDERS.map((provider) => (
             <KeyCard
               key={provider.id}
@@ -136,23 +140,141 @@ export function KeysSection({
           Models
         </h3>
         <p className="mt-1 text-xs text-neutral-500">
-          Saved in the app. The agent reads CHAIR_*_MODEL from its
-          environment today.
+          Saved in the app. Roles without a pick follow the saved key;
+          the agent reads CHAIR_*_MODEL from its environment today.
         </p>
         <div className="mt-3 space-y-2">
-          {ROLES.map((role) => (
-            <ModelCard
-              key={role.id}
-              role={role}
-              saved={settings.models[role.id]}
-              effective={agentHealth?.models[role.id] ?? null}
-              agentUp={agentUp}
-              onSave={(choice) => saveModel(role.id, choice)}
-              onReset={() => saveModel(role.id, null)}
-            />
-          ))}
+          {ROLES.map((role) => {
+            const follow = followChoice(settings.keys, role);
+            const followKey =
+              follow != null ? settings.keys[follow.provider] : null;
+            return (
+              <ModelCard
+                key={role.id}
+                role={role}
+                saved={settings.models[role.id]}
+                follow={follow}
+                followMask={followKey != null ? maskKey(followKey) : null}
+                effective={agentHealth?.models[role.id] ?? null}
+                agentUp={agentUp}
+                onSave={(choice) => saveModel(role.id, choice)}
+                onReset={() => saveModel(role.id, null)}
+              />
+            );
+          })}
         </div>
       </section>
+    </div>
+  );
+}
+
+type PasteKeyCardProps = {
+  onSave: (provider: ProviderId, key: string) => Promise<void>;
+};
+
+/**
+ * The front door for keys: paste one, Chair names its provider
+ * from the format and files it there. Detection runs on the
+ * pasted string locally — nothing is sent anywhere to identify it.
+ */
+function PasteKeyCard({ onSave }: PasteKeyCardProps) {
+  const [draft, setDraft] = useState("");
+  const [shown, setShown] = useState(false);
+  const [picked, setPicked] = useState<ProviderId>("meta");
+  const [stamped, setStamped] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const trimmed = draft.trim();
+  const detected = trimmed === "" ? null : detectProvider(trimmed);
+  const provider = detected ?? picked;
+  const label = PROVIDERS.find((entry) => entry.id === provider)?.label ?? provider;
+
+  const save = async () => {
+    if (trimmed === "" || busy) return;
+    setBusy(true);
+    try {
+      await onSave(provider, trimmed);
+      setStamped(`Saved to ${label} · ${maskKey(trimmed)}`);
+      setDraft("");
+      setShown(false);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="rounded-2xl bg-white/[0.03] px-5 py-4 ring-1 ring-white/[0.06]">
+      <h4 className="text-sm font-medium text-neutral-100">Add a key</h4>
+      <p className="mt-0.5 text-xs text-neutral-500">
+        Paste a key — Chair names its provider and routes the roles
+        through it.
+      </p>
+      <div className="mt-3 flex items-center gap-2">
+        <Input
+          type={shown ? "text" : "password"}
+          value={draft}
+          autoComplete="off"
+          spellCheck={false}
+          aria-label="Paste an API key"
+          placeholder="Paste a key"
+          onChange={(event) => {
+            setDraft(event.target.value);
+            setStamped(null);
+          }}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") void save();
+          }}
+          className="flex-1"
+        />
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-sm"
+          aria-label={shown ? "Hide key" : "Show key"}
+          onClick={() => setShown((current) => !current)}
+        >
+          {shown ? <EyeOffIcon /> : <EyeIcon />}
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          disabled={trimmed === "" || busy}
+          onClick={() => void save()}
+        >
+          Save
+        </Button>
+      </div>
+      <div className="mt-2 flex h-5 items-center justify-between gap-3 text-xs">
+        <p className="truncate text-neutral-500">
+          {trimmed === ""
+            ? "Detection never sends the key anywhere."
+            : detected != null
+              ? `Looks like a ${label} key.`
+              : "Unknown format — file it under:"}
+        </p>
+        {trimmed !== "" && detected == null ? (
+          <Select
+            value={picked}
+            onValueChange={(value) => {
+              if (value === "meta" || value === "openai" || value === "anthropic") {
+                setPicked(value);
+              }
+            }}
+            items={{ meta: "Meta", openai: "OpenAI", anthropic: "Anthropic" }}
+          >
+            <SelectTrigger aria-label="Provider for this key" className="h-6 w-32 text-xs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectPopup>
+              <SelectItem value="meta">Meta</SelectItem>
+              <SelectItem value="openai">OpenAI</SelectItem>
+              <SelectItem value="anthropic">Anthropic</SelectItem>
+            </SelectPopup>
+          </Select>
+        ) : stamped != null ? (
+          <p className="shrink-0 text-neutral-400">{stamped}</p>
+        ) : null}
+      </div>
     </div>
   );
 }
@@ -274,22 +396,51 @@ const CUSTOM_MODEL = "__custom__";
 type ModelCardProps = {
   role: Role;
   saved: RoleChoice | null;
+  follow: FollowChoice | null;
+  followMask: string | null;
   effective: string | null;
   agentUp: boolean | null;
   onSave: (choice: RoleChoice) => Promise<void>;
   onReset: () => Promise<void>;
 };
 
+/** Where this role routes, in words: follow the key or an override. */
+function routeLine(input: {
+  role: Role;
+  saved: RoleChoice | null;
+  follow: FollowChoice | null;
+  followMask: string | null;
+}): string {
+  if (input.saved != null) {
+    const label =
+      PROVIDERS.find((entry) => entry.id === input.saved?.provider)?.label ??
+      input.saved.provider;
+    return `Override: ${label} ${input.saved.model} · Reset follows the key again`;
+  }
+  if (input.follow == null || input.followMask == null) {
+    return `${input.role.defaultModel} · no key saved`;
+  }
+  const follow = input.follow;
+  const mask = input.followMask;
+  const label =
+    PROVIDERS.find((entry) => entry.id === follow.provider)?.label ??
+    follow.provider;
+  const model = follow.defaulted ? `${follow.model} (default)` : follow.model;
+  return `${model} via ${label} key ${mask}`;
+}
+
 function ModelCard({
   role,
   saved,
+  follow,
+  followMask,
   effective,
   agentUp,
   onSave,
   onReset,
 }: ModelCardProps) {
   const [provider, setProvider] = useState<ProviderId>(
-    saved?.provider ?? "meta",
+    saved?.provider ?? follow?.provider ?? "meta",
   );
   const [model, setModel] = useState(saved?.model ?? "");
   const [custom, setCustom] = useState(
@@ -345,6 +496,9 @@ function ModelCard({
           {role.envVar}
         </code>
       </div>
+      <p className="mt-0.5 truncate text-xs text-neutral-500">
+        {routeLine({ role, saved, follow, followMask })}
+      </p>
       <div className="mt-3 flex items-center gap-2">
         <Select
           value={provider}
