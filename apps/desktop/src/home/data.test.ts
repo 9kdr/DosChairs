@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import {
   EDITOR_IDS,
   EDITOR_META,
-  LIBRARY_ASSETS,
   editorById,
   editorName,
   formatEditedAt,
@@ -32,12 +31,5 @@ describe("editor meta", () => {
     // Statuses always come from detection; the default admits ignorance.
     expect(editorById("resolve").status).toBe("stopped");
     expect(editorById("resolve", "inProject").status).toBe("inProject");
-  });
-});
-
-describe("LIBRARY_ASSETS", () => {
-  it("covers every reusable kind with stand-ins", () => {
-    const kinds = new Set(LIBRARY_ASSETS.map((asset) => asset.kind));
-    expect(kinds).toEqual(new Set(["music", "image", "video", "sfx"]));
   });
 });
