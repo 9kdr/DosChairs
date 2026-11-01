@@ -1,22 +1,32 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { createServicesClient, ServiceError, type FetchFn } from "../lib/services/client";
+import {
+  createServicesClient,
+  ServiceError,
+  type FetchFn,
+  type ServicesClient,
+} from "../lib/services/client";
 import type { AgentJob, AgentJobStatus } from "../lib/services/types";
 import type { RunningTask } from "./RunningTasks";
 import {
   activityForLiveError,
   activityForLiveJob,
   activityForLivePending,
-  briefForOpening,
   headlineForSubmitError,
   initialTurnsFor,
   inputForTurn,
   isThreadDemo,
+  liveJobEntries,
+  liveRowsForJobs,
   noteKey,
+  openingBrief,
   openingKey,
   openTurnScope,
   replyForSubmitError,
+  resetLiveJobs,
   runTurn,
   shortRequestId,
+  stopLiveTask,
+  taskForLiveJob,
   textForJob,
   withOpenTurnError,
 } from "./taskThread";
@@ -39,6 +49,7 @@ function installMemoryStorage(): Map<string, string> {
 
 beforeEach(() => {
   installMemoryStorage();
+  resetLiveJobs();
 });
 
 const task: RunningTask = {
@@ -89,10 +100,13 @@ describe("turn identity", () => {
     expect(extra.key).not.toBe(primary.key);
   });
 
-  it("briefs the opening turn from the task itself", () => {
-    const brief = briefForOpening(task);
-    expect(brief).toContain("Detect silence and jump cuts");
-    expect(brief).toContain("Scanning audio pauses");
+  it("briefs the opening turn from the stable prompt, not the live status", () => {
+    const prompted: RunningTask = {
+      ...task,
+      plan: { brief: "detect the silence", lanes: ["edit"] },
+    };
+    expect(openingBrief(prompted)).toBe("detect the silence");
+    expect(openingBrief(task)).toBe("Detect silence and jump cuts");
   });
 
   it("declares missing media context empty instead of inventing it", () => {
@@ -367,5 +381,152 @@ describe("runTurn", () => {
         total_frames: 900,
       },
     });
+  });
+
+  it("records the submitted turn so the live list can poll it", async () => {
+    const fetchFn: FetchFn = async (input, init) =>
+      input.endsWith("/jobs") && init?.method === "POST"
+        ? {
+            ok: true,
+            status: 200,
+            json: async () => ({
+              request_id: "req_live0000000001",
+              status: "queued",
+              status_url: "http://127.0.0.1:8787/jobs/req_live0000000001",
+              cancel_url: "http://127.0.0.1:8787/jobs/req_live0000000001/cancel",
+            }),
+          }
+        : {
+            ok: true,
+            status: 200,
+            json: async () => job("completed", { request_id: "req_live0000000001" }),
+          };
+    const client = createServicesClient({ fetchFn });
+    const finished = await runTurn(client, {
+      task,
+      brief: "remove the silence",
+      key: noteKey("task-3", 9),
+      changesetId: "cs-task-3-9",
+      delayForAttempt: () => 0,
+    });
+    expect(finished.request_id).toBe("req_live0000000001");
+    expect(liveJobEntries()).toEqual([["req_live0000000001", task]]);
+  });
+});
+
+describe("live task list", () => {
+  const prompted: RunningTask = {
+    id: "task-prompt-7",
+    name: "trim the silence",
+    status: "Running",
+    lane: "edit",
+    plan: { brief: "trim the silence", lanes: ["edit"] },
+  };
+
+  it("maps a live job to its task row with lane and status", () => {
+    const row = taskForLiveJob(
+      job("in_progress", { request_id: "req_live1", input: { lane: "colour" } }),
+      prompted,
+    )!;
+    expect(row).toMatchObject({
+      id: "task-prompt-7",
+      name: "trim the silence",
+      status: "The agent is working",
+      lane: "colour",
+      jobId: "req_live1",
+      jobStatus: "in_progress",
+    });
+    expect(row.plan).toEqual(prompted.plan);
+    const queued = taskForLiveJob(job("queued", { request_id: "req_live2" }), prompted)!;
+    expect(queued).toMatchObject({
+      status: "Queued on the agent",
+      lane: "edit",
+      jobId: "req_live2",
+      jobStatus: "queued",
+    });
+  });
+
+  it("keeps the task lane when the job names none usable", () => {
+    expect(taskForLiveJob(job("queued", { input: { lane: "grade" } }), prompted)!.lane).toBe(
+      "edit",
+    );
+    expect(taskForLiveJob(job("queued", { input: {} }), prompted)!.lane).toBe("edit");
+  });
+
+  it("drops terminal and unknown jobs; empty in, empty out", () => {
+    const terminal = (["completed", "failed", "moderated", "canceled"] as const).map(
+      (status, index) => ({
+        requestId: `req_terminal${index}`,
+        task: prompted,
+        job: job(status, { request_id: `req_terminal${index}` }),
+      }),
+    );
+    const merged = liveRowsForJobs([
+      ...terminal,
+      { requestId: "req_unknown", task: prompted, job: null },
+    ]);
+    expect(merged.rows).toEqual([]);
+    expect(merged.forget).toHaveLength(5);
+    // Terminal jobs never resubmit; unknown ones may come back under the same key.
+    expect(merged.settle).toHaveLength(4);
+    expect(liveRowsForJobs([])).toEqual({ rows: [], forget: [], settle: [] });
+  });
+
+  it("keeps one row per task when turns overlap", () => {
+    const merged = liveRowsForJobs([
+      {
+        requestId: "req_first",
+        task: prompted,
+        job: job("queued", { request_id: "req_first" }),
+      },
+      {
+        requestId: "req_second",
+        task: prompted,
+        job: job("in_progress", { request_id: "req_second" }),
+      },
+    ]);
+    expect(merged.rows).toHaveLength(1);
+    expect(merged.rows[0]).toMatchObject({ id: prompted.id, jobId: "req_second" });
+    expect(merged.forget).toEqual([]);
+    expect(merged.settle).toEqual([]);
+  });
+
+  it("reuses the opening job when the thread opens a live row", () => {
+    const scope = openTurnScope(prompted.id, prompted.lane, true);
+    const creationInput = inputForTurn(prompted, openingBrief(prompted), scope.changesetId);
+    const row = taskForLiveJob(
+      job("in_progress", { request_id: "req_live1", input: { lane: "edit" } }),
+      prompted,
+    )!;
+    const reopen = openTurnScope(row.id, row.lane, true);
+    expect(reopen.key).toBe(scope.key);
+    expect(inputForTurn(row, openingBrief(row), reopen.changesetId)).toEqual(creationInput);
+  });
+});
+
+describe("stopLiveTask", () => {
+  const live: RunningTask = {
+    id: "task-prompt-7",
+    name: "trim the silence",
+    status: "Queued on the agent",
+    lane: "edit",
+    jobId: "req_live1",
+    jobStatus: "queued",
+  };
+
+  it("cancels the row's live job", async () => {
+    const cancelAgentJob = vi.fn(async () => job("canceled", { request_id: "req_live1" }));
+    const client = { cancelAgentJob } as unknown as ServicesClient;
+    const stopped = await stopLiveTask(client, live);
+    expect(cancelAgentJob).toHaveBeenCalledWith("req_live1");
+    expect(stopped?.status).toBe("canceled");
+  });
+
+  it("cancels nothing when the row has no live job", async () => {
+    const cancelAgentJob = vi.fn(async () => job("canceled"));
+    const client = { cancelAgentJob } as unknown as ServicesClient;
+    const { jobId: _jobId, jobStatus: _jobStatus, ...unsubmitted } = live;
+    expect(await stopLiveTask(client, unsubmitted)).toBeNull();
+    expect(cancelAgentJob).not.toHaveBeenCalled();
   });
 });
