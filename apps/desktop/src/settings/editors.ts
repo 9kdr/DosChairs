@@ -7,7 +7,7 @@
  * Python, so this file repeats them. When a manifest changes,
  * update both and keep the versions in step.
  */
-import type { EditorId } from "../home/data";
+import type { EditorId, EditorInfo, EditorStatus } from "../home/data";
 
 export function isEditorId(value: unknown): value is EditorId {
   return value === "resolve" || value === "kdenlive" || value === "otio";
@@ -116,15 +116,28 @@ export const EDITOR_CONNECTION_LABEL: Record<EditorConnectionState, string> = {
 };
 
 /**
- * Connection state per editor: linked in the app plus the agent
- * answering. Same shape as the provider dots — "connected" means
- * Chair has what it needs and the agent just answered.
+ * Connection state per editor: linked in the app, the agent
+ * answering, and detection still seeing the editor. Same shape as
+ * the provider dots — "connected" means Chair has what it needs,
+ * the agent just answered, and detection did not report stopped.
+ * Unknown detection falls back to the agent check.
  */
 export function editorConnection(input: {
   linked: boolean;
   agentUp: boolean | null;
+  detected?: EditorStatus | null;
 }): EditorConnectionState {
   if (!input.linked) return "never-configured";
   if (input.agentUp == null) return "checking";
-  return input.agentUp ? "connected" : "unreachable";
+  if (!input.agentUp) return "unreachable";
+  if (input.detected === "stopped") return "unreachable";
+  return "connected";
+}
+
+/** Detected status for one editor, or null when detection never answered. */
+export function detectedStatus(
+  editors: EditorInfo[] | null | undefined,
+  id: EditorId,
+): EditorStatus | null {
+  return editors?.find((editor) => editor.id === id)?.status ?? null;
 }

@@ -5,7 +5,14 @@ import types
 from pathlib import Path
 
 import pytest
-from chair_resolve.read import ResolveClosedError, read_current_timeline, timeline_from_resolve
+from chair_resolve import read as resolve_read
+from chair_resolve.read import (
+    ResolveClosedError,
+    read_current_timeline,
+    resolve_app,
+    scripting_module_paths,
+    timeline_from_resolve,
+)
 
 ROOT = Path(__file__).resolve().parents[3]
 SCHEMA = json.loads((ROOT / "schemas" / "timeline.schema.json").read_text())
@@ -332,3 +339,21 @@ def test_open_resolve_without_a_timeline_errors_clearly(monkeypatch: pytest.Monk
     monkeypatch.setitem(sys.modules, "DaVinciResolveScript", module)
     with pytest.raises(ResolveClosedError, match="no current timeline"):
         read_current_timeline()
+
+
+def test_resolve_app_finds_scripting_without_pythonpath(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Studio scripting resolves from its install location (#196)."""
+    (tmp_path / "DaVinciResolveScript.py").write_text(
+        'def scriptapp(name):\n    return ("app", name)\n'
+    )
+    monkeypatch.delitem(sys.modules, "DaVinciResolveScript", raising=False)
+    monkeypatch.setattr(sys, "path", [])
+    monkeypatch.setattr(resolve_read, "scripting_module_paths", lambda: [str(tmp_path)])
+    assert resolve_app() == ("app", "Resolve")
+
+
+def test_scripting_module_paths_only_lists_installed_dirs() -> None:
+    for path in scripting_module_paths():
+        assert Path(path).is_dir()
