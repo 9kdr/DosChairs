@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { lanesForPrompt, planPrompt, setupTask } from "./taskSetup";
+import type { RunningTask } from "./RunningTasks";
+import {
+  gatedAgentText,
+  lanesForPrompt,
+  planPrompt,
+  setupTask,
+  spawnSubagents,
+} from "./taskSetup";
 
 describe("lanesForPrompt", () => {
   it("defaults bare prompts to edit", () => {
@@ -36,5 +43,32 @@ describe("setupTask", () => {
   it("keeps one stable id per command", () => {
     expect(setupTask("grade it", 7).id).toBe(setupTask("grade it", 7).id);
     expect(setupTask("grade it", 7).id).not.toBe(setupTask("grade it", 8).id);
+  });
+});
+
+describe("spawnSubagents", () => {
+  it("spawns one subagent per wanted lane, edit runnable", () => {
+    const task = setupTask("cut the silence and grade the hook", 42);
+    const agents = spawnSubagents(task);
+    expect(agents.map((agent) => agent.lane)).toEqual(["edit", "colour"]);
+    expect(agents.map((agent) => agent.runnable)).toEqual([true, false]);
+    expect(agents[0]).toMatchObject({ label: "Edit", tools: expect.any(Array) });
+  });
+
+  it("keeps one edit turn for tasks without a plan", () => {
+    const bare: RunningTask = { id: "task-2", name: "Halation", status: "x", lane: "effects" };
+    expect(spawnSubagents(bare).map((agent) => agent.lane)).toEqual(["edit"]);
+    expect(
+      spawnSubagents({ ...bare, plan: { brief: "x", lanes: [] } }).map((a) => a.lane),
+    ).toEqual(["edit"]);
+  });
+
+  it("reports gated lanes honestly without submitting", () => {
+    const task = setupTask("grade the hook", 7);
+    const [agent] = spawnSubagents(task);
+    expect(agent?.runnable).toBe(false);
+    expect(gatedAgentText(agent!)).toContain("Colour subagent isn't connected yet");
+    expect(gatedAgentText(agent!)).toContain("grade");
+    expect(gatedAgentText(agent!)).toContain("Nothing changed");
   });
 });

@@ -12,6 +12,7 @@ import {
   isThreadDemo,
   noteKey,
   openingKey,
+  openTurnScope,
   replyForSubmitError,
   runTurn,
   shortRequestId,
@@ -48,6 +49,22 @@ describe("turn identity", () => {
   it("scopes each note turn to its task and note", () => {
     expect(noteKey("task-3", 7)).not.toBe(noteKey("task-3", 8));
     expect(noteKey("task-3", 7)).not.toBe(noteKey("task-1", 7));
+  });
+
+  it("keeps the primary lane on the resumable opening key", () => {
+    const primary = openTurnScope("task-3", "edit", true);
+    expect(primary).toMatchObject({
+      id: "open-edit",
+      key: openingKey("task-3"),
+      changesetId: "cs-task-3-open",
+    });
+    const extra = openTurnScope("task-3", "colour", false);
+    expect(extra).toMatchObject({
+      id: "open-colour",
+      key: `${openingKey("task-3")}:colour`,
+      changesetId: "cs-task-3-open-colour",
+    });
+    expect(extra.key).not.toBe(primary.key);
   });
 
   it("briefs the opening turn from the task itself", () => {

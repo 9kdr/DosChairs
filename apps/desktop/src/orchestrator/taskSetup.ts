@@ -50,3 +50,47 @@ export function setupTask(prompt: string, commandId: number): RunningTask {
     plan,
   };
 }
+
+/** Tool names mirror the agent's tool registry; lanes run what it can plan. */
+export const LANE_TOOLS: Record<TaskLane, string[]> = {
+  edit: ["measure_audio", "transcribe", "editor_op", "render_preview"],
+  effects: ["sam3_mask", "sam_audio", "motion_graphics"],
+  colour: ["grade", "render_preview"],
+};
+
+/** Lanes the agent loop can run today. Others report honestly, unconnected. */
+export const RUNNABLE_LANES: ReadonlySet<TaskLane> = new Set(["edit"]);
+
+export const AGENT_LABEL: Record<TaskLane, string> = {
+  edit: "Edit",
+  effects: "Effects",
+  colour: "Colour",
+};
+
+export type Subagent = {
+  lane: TaskLane;
+  label: string;
+  tools: string[];
+  runnable: boolean;
+};
+
+/** One subagent per wanted lane. Tasks without a plan keep one edit turn. */
+export function spawnSubagents(task: RunningTask): Subagent[] {
+  const wanted = task.plan?.lanes;
+  const lanes: readonly TaskLane[] = wanted?.length ? wanted : ["edit"];
+  return lanes.map((lane) => ({
+    lane,
+    label: AGENT_LABEL[lane],
+    tools: LANE_TOOLS[lane],
+    runnable: RUNNABLE_LANES.has(lane),
+  }));
+}
+
+/** Honest line for a lane with no connected tools. Submits nothing. */
+export function gatedAgentText(agent: Subagent): string {
+  const tools = agent.tools.join(", ");
+  return (
+    `${agent.label} subagent isn't connected yet — ${tools} ` +
+    `${agent.tools.length === 1 ? "is" : "are"} still on the way. Nothing changed.`
+  );
+}
