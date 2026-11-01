@@ -15,6 +15,7 @@ from chair_agent.client import (
     ModelClient,
     build_brief_planner_messages,
     build_client,
+    build_client_for_model,
     key_configured,
     load_settings,
 )
@@ -136,6 +137,7 @@ def plan_brief(
     *,
     client: ModelClient | None = None,
     env: Mapping[str, str] | None = None,
+    model: str | None = None,
 ) -> Plan:
     """Turn a brief into an ordered plan of tool steps.
 
@@ -146,7 +148,13 @@ def plan_brief(
         raise ValueError("brief must be a non-empty string")
 
     active_client = client
-    if active_client is None and key_configured(env):
+    if active_client is None:
+        try:
+            active_client = build_client_for_model(model, env=env)
+        except Exception:
+            active_client = None
+
+    if active_client is None and key_configured("meta", env=env):
         settings = load_settings(env)
         if settings.models.planner:
             try:
@@ -161,3 +169,4 @@ def plan_brief(
             return plan_rules(brief)
 
     return plan_rules(brief)
+

@@ -24,16 +24,10 @@ const LINE = 22;
 const MAX_ROWS = 4;
 const ZWSP = "\u200B";
 
-const MODELS = ["Chair", "Chair fast", "Chair precise"] as const;
-const PRESETS: ReadonlySet<string> = new Set(MODELS);
-
-export const ORCHESTRATOR_DEFAULT = "Chair";
-
 /**
- * Orchestrator picker options: enabled models from saved keys first,
- * then the Chair presets. A provider with no key, switched off, or
- * with every model switched off adds nothing — the list never
- * invents names, and a disabled model never appears.
+ * Orchestrator picker options: enabled models from saved keys of enabled providers.
+ * Providers with no key or switched off add nothing.
+ * Invented presets are removed.
  */
 export function orchestratorOptions(
   keys: Record<ProviderId, string | null>,
@@ -43,7 +37,7 @@ export function orchestratorOptions(
     disabledModels?: Record<ProviderId, string[]>;
   },
 ): string[] {
-  const detected = PROVIDERS.filter(
+  return PROVIDERS.filter(
     (provider) =>
       keys[provider.id] != null && opts?.enabled?.[provider.id] !== false,
   ).flatMap((provider) =>
@@ -53,12 +47,16 @@ export function orchestratorOptions(
       disabled: opts?.disabledModels?.[provider.id],
     }).map((name) => `${name} (${provider.label})`),
   );
-  return [...detected, ...MODELS];
 }
 
-/** The stored pick when it is still offered, else the Chair default. */
-export function resolveOrchestrator(stored: string | null, options: readonly string[]): string {
-  return stored != null && options.includes(stored) ? stored : ORCHESTRATOR_DEFAULT;
+/** The stored pick when it is still offered, else the first available model, or null. */
+export function resolveOrchestrator(
+  stored: string | null,
+  options: readonly string[],
+): string | null {
+  if (stored != null && options.includes(stored)) return stored;
+  const firstSupported = options.find((opt) => !opt.endsWith("(Anthropic)"));
+  return firstSupported ?? options[0] ?? null;
 }
 
 export type ChatDraft = {
@@ -374,9 +372,9 @@ export function ChatPrompt({
   placeholder = "Ask Chair, or / for an action",
 }: ChatPromptProps) {
   const [parts, setParts] = useState<Piece[]>(() => normalize([]));
-  const [model, setModel] = useState<string>(ORCHESTRATOR_DEFAULT);
-  // Orchestrator pick: detected models from saved keys first, then the
-  // Chair presets. The choice persists in app settings.
+  const [model, setModel] = useState<string | null>(null);
+  // Orchestrator pick: real models from saved keys of enabled providers.
+  // The choice persists in app settings.
   const { settings, loaded, saveOrchestrator } = useSettings();
   const options = useMemo(
     () =>
@@ -392,7 +390,6 @@ export function ChatPrompt({
       settings.disabledModels,
     ],
   );
-  const detected = useMemo(() => options.filter((item) => !PRESETS.has(item)), [options]);
   useEffect(() => {
     if (!loaded) return;
     setModel(resolveOrchestrator(settings.orchestrator, options));
@@ -672,7 +669,7 @@ export function ChatPrompt({
   const sendText = (text: string) => {
     const trimmed = text.trim();
     if (!trimmed && files.length === 0) return;
-    onSend({ text: trimmed, files, model });
+    onSend({ text: trimmed, files, model: model ?? "" });
     clearComposer();
   };
 
@@ -1127,11 +1124,15 @@ export function ChatPrompt({
                             type="button"
                             size="sm"
                             variant="ghost"
-                            className="max-w-36"
+                            className="max-w-44"
                           />
                         }
                       >
-                        <span className="truncate">{model}</span>
+                        <span className="truncate">
+                          {options.length === 0
+                            ? "No models · Settings"
+                            : (model ?? "Select model")}
+                        </span>
                         <ChevronDown />
                       </MenuTrigger>
                       <MenuPopup
@@ -1139,24 +1140,38 @@ export function ChatPrompt({
                         align="start"
                         className="rounded-2xl border-white/10 bg-[#1a1a1a] text-neutral-100 shadow-raised ring-1 ring-white/10 before:hidden"
                       >
-                        <MenuRadioGroup
-                          value={model}
-                          onValueChange={(value) => {
-                            pickModel(value);
-                            editorRef.current?.focus();
-                          }}
-                        >
-                          {detected.map((item) => (
-                            <MenuRadioItem key={item} value={item} closeOnClick>
-                              {item}
-                            </MenuRadioItem>
-                          ))}
-                          {MODELS.map((item) => (
-                            <MenuRadioItem key={item} value={item} closeOnClick>
-                              {item}
-                            </MenuRadioItem>
-                          ))}
-                        </MenuRadioGroup>
+                        {options.length === 0 ? (
+                          <div className="px-3 py-2 text-xs text-neutral-400">
+                            No models available. Add a key in Settings.
+                          </div>
+                        ) : (
+                          <MenuRadioGroup
+                            value={model ?? undefined}
+                            onValueChange={(value) => {
+                              pickModel(value);
+                              editorRef.current?.focus();
+                            }}
+                          >
+                            {options.map((item) => {
+                              const isUnsupported = item.endsWith("(Anthropic)");
+                              return (
+                                <MenuRadioItem
+                                  key={item}
+                                  value={item}
+                                  disabled={isUnsupported}
+                                  closeOnClick={!isUnsupported}
+                                >
+                                  <span>{item}</span>
+                                  {isUnsupported ? (
+                                    <span className="ml-1 text-xs text-neutral-500">
+                                      (unsupported)
+                                    </span>
+                                  ) : null}
+                                </MenuRadioItem>
+                              );
+                            })}
+                          </MenuRadioGroup>
+                        )}
                       </MenuPopup>
                     </Menu>
                   </div>

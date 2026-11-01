@@ -21,6 +21,8 @@ export type AgentHealth = {
   models: Record<string, string | null>;
   /** Meta key seen in the agent environment. Presence only, never the key. */
   key_configured?: boolean;
+  /** Key presence per provider, never the key values. */
+  keys_configured?: Record<string, boolean>;
 };
 
 export type AgentArtifact = {

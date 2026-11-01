@@ -8,7 +8,7 @@ from typing import Any
 from urllib.parse import unquote, urlsplit
 
 from chair_agent.assets import EditorUnlinkedError, build_assets, import_asset
-from chair_agent.client import configured_models, key_configured
+from chair_agent.client import configured_models, keys_configured, set_key
 from chair_agent.jobs import (
     Job,
     JobConflict,
@@ -60,7 +60,33 @@ class Handler(BaseHTTPRequestHandler):
         except JobNotFound:
             self._send(404, _error("job_not_found", "unknown request id"))
 
+    def do_OPTIONS(self) -> None:
+        self.send_response(204)
+        self.send_header("access-control-allow-origin", "*")
+        self.send_header("access-control-allow-methods", "GET, POST, OPTIONS")
+        self.send_header("access-control-allow-headers", "content-type, idempotency-key")
+        self.end_headers()
+
     def do_POST(self) -> None:
+        if self.path == "/keys":
+            try:
+                body = self._body()
+            except ValueError:
+                self._send(400, _error("invalid_json", "request body must be JSON"))
+                return
+            if "keys" in body and isinstance(body["keys"], dict):
+                for prov, val in body["keys"].items():
+                    set_key(prov, val if isinstance(val, str) else None)
+            elif "provider" in body and isinstance(body["provider"], str):
+                val = body.get("key")
+                set_key(body["provider"], val if isinstance(val, str) else None)
+            else:
+                for prov in ("meta", "openai", "anthropic"):
+                    if prov in body:
+                        val = body[prov]
+                        set_key(prov, val if isinstance(val, str) else None)
+            self._send(200, {"ok": True, "keys_configured": keys_configured()})
+            return
         if self.path == "/jobs":
             try:
                 body = self._body()
@@ -179,12 +205,15 @@ def _cancel_path(path: str) -> str | None:
 
 
 def _health() -> dict[str, Any]:
+    keys_status = keys_configured()
     return {
         "service": "agent",
         "ok": True,
         "tools": [tool.model_dump() for tool in TOOLS],
         "models": configured_models(),
-        "key_configured": key_configured(),
+        "key_configured": keys_status.get("meta", False),
+        "keys_configured": keys_status,
+        "keys": keys_status,
     }
 
 

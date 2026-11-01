@@ -24,25 +24,20 @@ const NONE_OFF: Record<ProviderId, string[]> = {
 };
 
 describe("orchestrator picker", () => {
-  it("lists Chair presets when no key is saved", () => {
-    expect(orchestratorOptions(NO_KEYS)).toEqual(["Chair", "Chair fast", "Chair precise"]);
+  it("returns empty list when no key is saved", () => {
+    expect(orchestratorOptions(NO_KEYS)).toEqual([]);
   });
 
-  it("lists detected models from saved keys first", () => {
+  it("lists models from saved keys of enabled providers", () => {
     const options = orchestratorOptions({ ...NO_KEYS, meta: "key" });
-    expect(options.slice(0, 2)).toEqual([
+    expect(options).toEqual([
       "muse-wonder-1.0 (Meta)",
       "muse-spark-1 (Meta)",
     ]);
-    expect(options.slice(2)).toEqual(["Chair", "Chair fast", "Chair precise"]);
   });
 
   it("adds nothing for a provider with no known models", () => {
-    expect(orchestratorOptions({ ...NO_KEYS, openai: "sk-x" })).toEqual([
-      "Chair",
-      "Chair fast",
-      "Chair precise",
-    ]);
+    expect(orchestratorOptions({ ...NO_KEYS, openai: "sk-x" })).toEqual([]);
   });
 
   it("lists custom models after the known ones", () => {
@@ -54,7 +49,7 @@ describe("orchestrator picker", () => {
         disabledModels: NONE_OFF,
       },
     );
-    expect(options.slice(0, 1)).toEqual(["gpt-x (OpenAI)"]);
+    expect(options).toEqual(["gpt-x (OpenAI)"]);
   });
 
   it("hides disabled models", () => {
@@ -66,12 +61,7 @@ describe("orchestrator picker", () => {
         disabledModels: { ...NONE_OFF, meta: ["muse-spark-1"] },
       },
     );
-    expect(options).toEqual([
-      "muse-wonder-1.0 (Meta)",
-      "Chair",
-      "Chair fast",
-      "Chair precise",
-    ]);
+    expect(options).toEqual(["muse-wonder-1.0 (Meta)"]);
   });
 
   it("hides a provider that is switched off", () => {
@@ -83,16 +73,14 @@ describe("orchestrator picker", () => {
         disabledModels: NONE_OFF,
       },
     );
-    expect(options).toEqual(["Chair", "Chair fast", "Chair precise"]);
+    expect(options).toEqual([]);
   });
 
-  it("keeps a stored pick that is still offered, else Chair", () => {
+  it("keeps a stored pick that is still offered, else first supported or null", () => {
     const options = orchestratorOptions({ ...NO_KEYS, meta: "key" });
     expect(resolveOrchestrator("muse-spark-1 (Meta)", options)).toBe("muse-spark-1 (Meta)");
-    expect(resolveOrchestrator("Chair fast", options)).toBe("Chair fast");
-    expect(resolveOrchestrator("muse-spark-1 (Meta)", orchestratorOptions(NO_KEYS))).toBe(
-      "Chair",
-    );
-    expect(resolveOrchestrator(null, options)).toBe("Chair");
+    expect(resolveOrchestrator("muse-spark-1 (Meta)", orchestratorOptions(NO_KEYS))).toBe(null);
+    expect(resolveOrchestrator(null, options)).toBe("muse-wonder-1.0 (Meta)");
+    expect(resolveOrchestrator(null, [])).toBe(null);
   });
 });

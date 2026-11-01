@@ -109,7 +109,7 @@ export function KeysSection({
           <div className="flex flex-col md:flex-row">
             <div
               aria-label="Provider list"
-              className="shrink-0 divide-y divide-white/[0.06] border-b border-white/[0.06] md:w-60 md:border-r md:border-b-0"
+              className="shrink-0 divide-y divide-white/[0.06] border-b border-white/[0.06] w-[200px] md:w-[200px] md:border-r md:border-b-0"
             >
               {PROVIDERS.map((provider) => {
                 const appKey = settings.keys[provider.id] != null;
@@ -321,7 +321,6 @@ function KeyBlock({
   onSave,
   onClear,
 }: KeyBlockProps) {
-  const [replacing, setReplacing] = useState(false);
   const [draft, setDraft] = useState("");
   const [shown, setShown] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -336,7 +335,6 @@ function KeyBlock({
       await onSave(key);
       setDraft("");
       setShown(false);
-      setReplacing(false);
     } finally {
       setBusy(false);
     }
@@ -347,12 +345,12 @@ function KeyBlock({
     setBusy(true);
     try {
       await onClear();
+      setDraft("");
+      setShown(false);
     } finally {
       setBusy(false);
     }
   };
-
-  const editing = saved == null || replacing;
 
   return (
     <div className="mt-4">
@@ -365,83 +363,53 @@ function KeyBlock({
         </p>
       ) : null}
       <div className="mt-2 flex items-center gap-2">
-        {editing ? (
-          <>
-            <Input
-              type={shown ? "text" : "password"}
-              value={draft}
-              autoComplete="off"
-              spellCheck={false}
-              aria-label={`${provider.label} API key`}
-              placeholder={
-                saved ? `Stored key ${maskKey(saved)}, enter a new value to replace` : "Paste a key"
-              }
-              onChange={(event) => setDraft(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") void save();
-              }}
-              className="flex-1"
-            />
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon-sm"
-              aria-label={shown ? "Hide key" : "Show key"}
-              onClick={() => setShown((current) => !current)}
-            >
-              {shown ? <EyeOffIcon /> : <EyeIcon />}
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              disabled={trimKeyDraft(draft) == null || busy}
-              onClick={() => void save()}
-            >
-              Save
-            </Button>
-            {saved ? (
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                disabled={busy}
-                onClick={() => {
-                  setReplacing(false);
-                  setDraft("");
-                  setShown(false);
-                }}
-              >
-                Cancel
-              </Button>
-            ) : null}
-          </>
-        ) : (
-          <>
-            <p className="min-w-0 flex-1 truncate font-mono text-xs text-neutral-400">
-              {maskKey(saved)}
-            </p>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              disabled={busy}
-              onClick={() => setReplacing(true)}
-            >
-              Replace
-            </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              disabled={busy}
-              onClick={() => void clear()}
-            >
-              Clear
-            </Button>
-          </>
-        )}
+        <Input
+          type={shown ? "text" : "password"}
+          value={draft}
+          autoComplete="off"
+          spellCheck={false}
+          aria-label={`${provider.label} API key`}
+          placeholder={
+            saved
+              ? `Stored key ${maskKey(saved)}, enter a new value to replace`
+              : "Paste a key"
+          }
+          onChange={(event) => setDraft(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") void save();
+          }}
+          className="flex-1"
+        />
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-sm"
+          aria-label={shown ? "Hide key" : "Show key"}
+          onClick={() => setShown((current) => !current)}
+        >
+          {shown ? <EyeOffIcon /> : <EyeIcon />}
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          disabled={trimKeyDraft(draft) == null || busy}
+          onClick={() => void save()}
+        >
+          Save
+        </Button>
+        {saved != null ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            disabled={busy}
+            onClick={() => void clear()}
+          >
+            Clear
+          </Button>
+        ) : null}
       </div>
-      {editing && hint != null ? (
+      {hint != null ? (
         <p className="mt-1 text-xs text-neutral-500">{hint}</p>
       ) : null}
     </div>
