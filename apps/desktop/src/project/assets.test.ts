@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { ServiceError, type FetchFn } from "@/lib/services/client";
 import {
+  ASSETS_POLL_MS,
   assetsFromJson,
   bytesToBase64,
   fetchProjectAssets,
   fileToBase64,
   importProjectAsset,
+  startPolling,
 } from "./assets";
 
 type StubResponse = { ok: boolean; status: number; payload: unknown };
@@ -191,6 +193,68 @@ describe("importProjectAsset", () => {
     await expect(importProjectAsset("kdenlive:film", "up.mov", "aGk=", { fetchFn })).rejects.toThrow(
       /import needs an asset/,
     );
+  });
+});
+
+describe("startPolling", () => {
+  function harness(options: { visible?: boolean; intervalMs?: number } = {}) {
+    let tick: (() => void) | null = null;
+    let scheduledMs = 0;
+    const cancelled: unknown[] = [];
+    let calls = 0;
+    const poller = startPolling(() => {
+      calls += 1;
+    }, {
+      intervalMs: options.intervalMs,
+      visible: () => options.visible ?? true,
+      schedule: (fn, ms) => {
+        tick = fn;
+        scheduledMs = ms;
+        return "timer";
+      },
+      cancel: (timer) => {
+        cancelled.push(timer);
+      },
+    });
+    return {
+      poller,
+      fire: () => tick?.(),
+      scheduledMs: () => scheduledMs,
+      cancelled,
+      calls: () => calls,
+    };
+  }
+
+  it("schedules ticks at the shelf cadence by default", () => {
+    const poll = harness();
+
+    expect(poll.scheduledMs()).toBe(ASSETS_POLL_MS);
+    poll.fire();
+    poll.fire();
+    expect(poll.calls()).toBe(2);
+  });
+
+  it("honours a custom interval", () => {
+    const poll = harness({ intervalMs: 250 });
+
+    expect(poll.scheduledMs()).toBe(250);
+  });
+
+  it("skips ticks while hidden instead of queueing them", () => {
+    const poll = harness({ visible: false });
+
+    poll.fire();
+    poll.fire();
+
+    expect(poll.calls()).toBe(0);
+  });
+
+  it("stops by cancelling the scheduled timer", () => {
+    const poll = harness();
+
+    poll.poller.stop();
+
+    expect(poll.cancelled).toEqual(["timer"]);
   });
 });
 

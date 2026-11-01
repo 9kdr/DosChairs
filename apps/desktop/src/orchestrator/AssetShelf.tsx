@@ -602,7 +602,7 @@ export function AssetShelf({
           });
         }
       }
-      if (landed > 0) listing.retry();
+      if (landed > 0) listing.refresh();
       if (staged.length === 0) return;
       setImports((current) => [...staged, ...current]);
       const first = staged[0];
