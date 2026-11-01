@@ -80,6 +80,23 @@ export function briefForOpening(task: RunningTask): string {
   return `${task.name}. ${task.status}.`;
 }
 
+/**
+ * The task's proxy media for one turn. Loaded media resolves to real
+ * context; a task with no footage stays declared absent with empty values
+ * instead of inventing media context.
+ */
+export function mediaForTurn(task: RunningTask): {
+  proxy_url: string;
+  base_revision: string;
+  total_frames: number;
+} {
+  return {
+    proxy_url: task.media?.proxyUrl ?? "",
+    base_revision: task.media?.baseRevision ?? "",
+    total_frames: task.media?.totalFrames ?? 0,
+  };
+}
+
 export function inputForTurn(
   task: RunningTask,
   brief: string,
@@ -91,11 +108,7 @@ export function inputForTurn(
     lane: task.lane,
     target_id: task.id,
     changeset_id: changesetId,
-    // Declared absent, not stand-in: the thread has no proxy loaded, so it
-    // says so with empty values instead of inventing media context.
-    proxy_url: "",
-    base_revision: "",
-    total_frames: 0,
+    ...mediaForTurn(task),
     spans: [],
     preview_urls: [],
   };

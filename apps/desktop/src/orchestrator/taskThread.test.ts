@@ -88,6 +88,19 @@ describe("turn identity", () => {
       preview_urls: [],
     });
   });
+
+  it("resolves the task's loaded proxy media into the turn", () => {
+    const loaded: RunningTask = {
+      ...task,
+      media: { proxyUrl: "file:///proxies/silence.mp4", baseRevision: "rev-9", totalFrames: 900 },
+    };
+    const input = inputForTurn(loaded, "trim the pause", "cs-task-3-open");
+    expect(input).toMatchObject({
+      proxy_url: "file:///proxies/silence.mp4",
+      base_revision: "rev-9",
+      total_frames: 900,
+    });
+  });
 });
 
 describe("thread copy", () => {
@@ -207,8 +220,12 @@ describe("runTurn", () => {
     };
     const client = createServicesClient({ fetchFn });
     const updates: AgentJobStatus[] = [];
+    const loaded: RunningTask = {
+      ...task,
+      media: { proxyUrl: "file:///proxies/silence.mp4", baseRevision: "rev-9", totalFrames: 900 },
+    };
     const finished = await runTurn(client, {
-      task,
+      task: loaded,
       brief: "remove the silence",
       key: noteKey("task-3", 7),
       changesetId: "cs-task-3-7",
@@ -225,7 +242,13 @@ describe("runTurn", () => {
     const body = submit?.init?.body;
     expect(JSON.parse(typeof body === "string" ? body : "{}")).toMatchObject({
       task: "edit",
-      input: { brief: "remove the silence", task_id: "task-3" },
+      input: {
+        brief: "remove the silence",
+        task_id: "task-3",
+        proxy_url: "file:///proxies/silence.mp4",
+        base_revision: "rev-9",
+        total_frames: 900,
+      },
     });
   });
 });
