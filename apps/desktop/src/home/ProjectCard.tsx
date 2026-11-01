@@ -55,7 +55,10 @@ export function ProjectCard({
         render={
           <div
             ref={cardRef}
-            className={cn("flex w-full flex-col gap-2 text-left", "rounded-xl")}
+            className={cn(
+              "group flex w-full flex-col gap-2 text-left",
+              "rounded-xl",
+            )}
             data-emphasized={emphasized || undefined}
           />
         }
@@ -80,7 +83,7 @@ export function ProjectCard({
           />
 
           {/* Quiet overflow control */}
-          <div className="absolute top-2 right-2 z-20 pointer-events-auto">
+          <div className="absolute top-2 right-2 z-20 pointer-events-none group-hover:pointer-events-auto group-focus-within:pointer-events-auto group-data-[emphasized]:pointer-events-auto">
             <Menu>
               <MenuTrigger
                 type="button"
@@ -88,9 +91,11 @@ export function ProjectCard({
                 className={cn(
                   "flex size-7 items-center justify-center rounded-lg text-neutral-400 outline-none transition-colors",
                   "bg-[#1a1a1a]/80 shadow-raised ring-1 ring-white/[0.08] backdrop-blur-md",
+                  "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 group-data-[emphasized]:opacity-100",
                   "hover:bg-[#1a1a1a] hover:text-neutral-100",
                   "focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-[#111111]",
                   "data-[popup-open]:bg-[#1a1a1a] data-[popup-open]:text-neutral-100",
+                  "data-[popup-open]:opacity-100 data-[popup-open]:pointer-events-auto",
                 )}
               >
                 <MoreHorizontal className="size-4" />
