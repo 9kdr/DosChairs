@@ -97,8 +97,6 @@ def plan_with_model(brief: str, client: ModelClient) -> Plan:
     messages = build_brief_planner_messages(brief)
     completion = client.plan(messages)
     data = _parse_completion_json(completion.text)
-    if not isinstance(data, dict):
-        raise ValueError("model response must be a JSON object")
 
     raw_intents = data.get("intents")
     if not isinstance(raw_intents, list) or not raw_intents:
