@@ -122,11 +122,11 @@ export function SettingsScreen({ onBack }: SettingsScreenProps) {
 function LoadingBlocks() {
   return (
     <div aria-label="Loading settings" className="flex flex-col gap-8">
-      <div className="h-[92px] rounded-2xl bg-white/[0.03] ring-1 ring-white/[0.06]" />
+      <div className="h-[92px] rounded-[28px] bg-surface shadow-raised ring-1 ring-white/8" />
       <div className="flex flex-col gap-2">
         <div className="h-4 w-16 rounded bg-white/[0.06]" />
-        <div className="h-[132px] rounded-2xl bg-white/[0.03] ring-1 ring-white/[0.06]" />
-        <div className="h-[132px] rounded-2xl bg-white/[0.03] ring-1 ring-white/[0.06]" />
+        <div className="h-[132px] rounded-[28px] bg-surface shadow-raised ring-1 ring-white/8" />
+        <div className="h-[132px] rounded-[28px] bg-surface shadow-raised ring-1 ring-white/8" />
       </div>
     </div>
   );

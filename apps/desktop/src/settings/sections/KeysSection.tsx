@@ -1,8 +1,8 @@
-import { Switch } from "@base-ui/react/switch";
 import { EyeIcon, EyeOffIcon, PlusIcon, XIcon } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
 import type { AgentHealth } from "@/lib/services/types";
 import { cn } from "@/lib/utils";
 import type { AddProviderResult } from "../add-provider";
@@ -84,7 +84,7 @@ export function KeysSection({
       </div>
 
       <section aria-label="Providers">
-        <div className="rounded-2xl bg-white/[0.03] ring-1 ring-white/[0.06]">
+        <div className="rounded-[28px] bg-surface text-neutral-100 shadow-raised ring-1 ring-white/8">
           <div className="flex items-center justify-between gap-3 border-b border-white/[0.06] px-5 py-3">
             <p className="text-sm text-neutral-400">
               {PROVIDERS.length} providers
@@ -180,7 +180,7 @@ function ProviderRow({
   return (
     <div
       className={cn(
-        "flex items-center gap-3 px-5 py-3",
+        "flex items-center gap-3 px-5 py-3 transition-colors hover:bg-white/[0.04]",
         !enabled && "opacity-60",
       )}
     >
@@ -188,7 +188,7 @@ function ProviderRow({
         type="button"
         onClick={onSelect}
         aria-current={active}
-        className="flex min-w-0 flex-1 cursor-pointer items-center gap-3 text-left outline-none"
+        className="flex min-w-0 flex-1 cursor-pointer items-center gap-3 rounded-lg text-left outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/60"
       >
         <span
           aria-hidden="true"
@@ -211,14 +211,12 @@ function ProviderRow({
           </span>
         </span>
       </button>
-      <Switch.Root
+      <Switch
         checked={enabled}
         onCheckedChange={(next) => onToggle(next)}
         aria-label={`${provider.label} enabled`}
-        className="group relative h-5 w-9 shrink-0 cursor-pointer rounded-full bg-neutral-700 outline-none transition-colors focus-visible:ring-2 focus-visible:ring-emerald-400/60 data-[checked]:bg-emerald-500"
-      >
-        <Switch.Thumb className="absolute top-0.5 left-0.5 block size-4 rounded-full bg-white transition-transform group-data-[checked]:translate-x-4" />
-      </Switch.Root>
+        className="cursor-pointer data-checked:bg-emerald-500"
+      />
     </div>
   );
 }
@@ -496,7 +494,7 @@ function ModelsBlock({
           {known.map((name) => (
             <li
               key={name}
-              className="rounded-lg bg-white/[0.03] px-3 py-1.5 font-mono text-xs text-neutral-300 ring-1 ring-white/[0.06]"
+              className="rounded-xl bg-white/[0.03] px-3 py-1.5 font-mono text-xs text-neutral-300 shadow-rim ring-1 ring-white/[0.06]"
             >
               {name}
             </li>
@@ -504,7 +502,7 @@ function ModelsBlock({
           {customModels.map((name) => (
             <li
               key={name}
-              className="flex items-center gap-2 rounded-lg bg-white/[0.03] px-3 py-1.5 ring-1 ring-white/[0.06]"
+              className="flex items-center gap-2 rounded-xl bg-white/[0.03] px-3 py-1.5 shadow-rim ring-1 ring-white/[0.06]"
             >
               <span className="min-w-0 flex-1 truncate font-mono text-xs text-neutral-300">
                 {name}
