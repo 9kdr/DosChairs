@@ -1,11 +1,12 @@
 import { useEffect, useRef } from "react";
 import type { DragEvent, KeyboardEvent, MouseEvent, PointerEvent } from "react";
-import { Loader2, Undo2, Waypoints } from "lucide-react";
+import { Loader2, Square, Undo2, Waypoints } from "lucide-react";
 import { DitherShader } from "@/lib/dither";
 import type { DitherColor } from "@/lib/dither";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { historyForTask } from "../project/store";
+import { createServicesClient } from "@/lib/services/client";
 
 export type TaskLane = "edit" | "effects" | "colour";
 
@@ -21,6 +22,20 @@ export function canUndoTask(task: RunningTask): boolean {
   return task.status.toLowerCase() === "completed" && historyForTask(task.id).length > 0;
 }
 
+const NON_STOPPABLE_STATUSES = new Set([
+  "completed",
+  "failed",
+  "queued",
+  "canceled",
+  "cancelled",
+  "moderated",
+]);
+
+/** True when a task is running and can be stopped (non-terminal, non-queued). */
+export function canStopTask(task: RunningTask): boolean {
+  return Boolean(task.status) && !NON_STOPPABLE_STATUSES.has(task.status.trim().toLowerCase());
+}
+
 export interface RunningTasksProps {
   className?: string;
   tasks?: readonly RunningTask[];
@@ -28,6 +43,7 @@ export interface RunningTasksProps {
   frozen?: boolean;
   onOpen?: (task: RunningTask) => void;
   onUndo?: (task: RunningTask) => void;
+  onStop?: (task: RunningTask) => void;
 }
 
 const LANE_LABEL: Record<TaskLane, string> = {
@@ -118,12 +134,14 @@ function TaskRow({
   frozen,
   onOpen,
   onUndo,
+  onStop,
 }: {
   task: RunningTask;
   seed: number;
   frozen: boolean;
   onOpen: () => void;
   onUndo?: () => void;
+  onStop?: () => void;
 }) {
   const isDraggingRef = useRef(false);
   const dragTimeoutRef = useRef<number | null>(null);
@@ -311,6 +329,23 @@ function TaskRow({
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-1.5">
+          {canStopTask(task) ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              aria-label={`Stop ${task.name}`}
+              onClick={(event) => {
+                event.stopPropagation();
+                onStop?.();
+              }}
+              onKeyDown={(event) => event.stopPropagation()}
+              className="bg-[#1a1a1a] text-neutral-400 opacity-0 ring-1 ring-white/10 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100 hover:text-neutral-100 focus-visible:opacity-100"
+            >
+              <Square />
+              Stop task
+            </Button>
+          ) : null}
           {onUndo && canUndoTask(task) ? (
             <Button
               type="button"
@@ -345,6 +380,7 @@ export function RunningTasks({
   frozen = false,
   onOpen,
   onUndo,
+  onStop,
 }: RunningTasksProps) {
   return (
     <div
@@ -375,6 +411,10 @@ export function RunningTasks({
             frozen={frozen}
             onOpen={() => onOpen?.(task)}
             onUndo={onUndo ? () => onUndo(task) : undefined}
+            onStop={() => {
+              onStop?.(task);
+              void createServicesClient().cancelAgentJob(task.id).catch(() => {});
+            }}
           />
         ))}
         {tasks.length === 0 ? (
