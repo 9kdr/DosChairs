@@ -61,6 +61,9 @@ def test_build_covers_short_transcripts() -> None:
     plan = build_beat_sheet(BRIEF, _segments(2))
     assert [beat.role for beat in plan.beats] == ["hook", "setup", "turn", "payoff", "outro"]
     assert all(beat.intent for beat in plan.beats)
+    assert all(beat.start_sec is not None for beat in plan.beats)
+    markers = beats_to_markers(approve(plan), rate=24.0)
+    assert len(markers) == 5
 
 
 def test_edit_changes_one_beat_and_returns_to_draft() -> None:
@@ -100,10 +103,12 @@ def test_approve_needs_all_five_roles() -> None:
 
 def test_markers_need_approval_and_start_times() -> None:
     draft = build_beat_sheet(BRIEF, _segments())
-    with pytest.raises(InvalidStoryPlan):
+    with pytest.raises(InvalidStoryPlan, match="approve the beat sheet"):
         beats_to_markers(draft, rate=24.0)
     untimed = build_beat_sheet(BRIEF, [{"text": "No times here."}])
-    with pytest.raises(InvalidStoryPlan):
+    with pytest.raises(
+        InvalidStoryPlan, match="set start times or supply timed transcript segments"
+    ):
         beats_to_markers(approve(untimed), rate=24.0)
     with pytest.raises(ValueError):
         beats_to_markers(_approved(), rate=0)
