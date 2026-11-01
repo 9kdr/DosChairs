@@ -10,7 +10,11 @@ same, so the shelf renders an empty state instead of fakes.
 Ids shaped like the /projects detector's (editor:slug) also merge the
 linked editor's library: Resolve's media pool while that Studio project is
 open, or the media files sitting next to the .kdenlive/.otio project file.
-POST /projects/:id/assets is the explicit Import action, the one write
+For a linked Resolve project with Studio open, the listing also pushes
+Chair-local files that are not in the pool up into it (best-effort: a
+refusal still serves the listing), so a file dropped in Chair's folder
+appears once, as the pool entry, and never re-imports. POST
+/projects/:id/assets is the explicit Import action, the other write
 against the editor: the file lands in that same library (Resolve: media
 pool import; file editors: alongside the project file), never overwriting.
 Unlinked editors and a closed Studio keep the Chair-local listing and
@@ -165,6 +169,8 @@ def build_assets(
     editor, slug = _editor_link(project_id)
     if editor is not None and slug is not None:
         paths = _editor_files(editor, slug, root, studio)
+        if editor == "resolve" and assets:
+            paths = _back_sync_resolve(slug, project_dir, assets, paths, studio)
         if paths:
             assets, folders = _merge_editor_assets(
                 assets, folders, project_dir, paths, proxy_root
@@ -271,20 +277,75 @@ def _open_project_name(app: Any) -> str | None:
     return name.strip() or None if isinstance(name, str) else None
 
 
+def _resolve_open_app(slug: str, studio: Any) -> Any | None:
+    """The Studio app when this project is open, else None."""
+    app = _resolve_app(studio)
+    if app is None:
+        return None
+    name = _open_project_name(app)
+    if name is None or _project_slug(name) != slug:
+        return None
+    return app
+
+
 def _resolve_pool_files(slug: str, studio: Any) -> list[Path]:
     """Media pool files when Studio has this project open, else []."""
     if _media_pool_files is None:
         return []
-    app = _resolve_app(studio)
+    app = _resolve_open_app(slug, studio)
     if app is None:
-        return []
-    name = _open_project_name(app)
-    if name is None or _project_slug(name) != slug:
         return []
     try:
         return [Path(path) for path in _media_pool_files(app)]
     except _ResolveClosedError:
         return []
+
+
+def _back_sync_resolve(
+    slug: str,
+    project_dir: Path,
+    assets: list[dict[str, Any]],
+    paths: list[Path],
+    studio: Any,
+) -> list[Path]:
+    """Push Chair-local files missing from the pool up into it.
+
+    Resolve only, while that Studio project is open; anything else keeps
+    the pool listing untouched. Best-effort and side-effect-free on
+    failure: a refused import still serves the listing, and imported
+    paths join it so the merge shows each synced file once, as the pool
+    entry. The next read finds them in the pool and imports nothing
+    again, so a synced file never re-imports in a loop.
+    """
+    if _studio_import_media is None:
+        return paths
+    app = _resolve_open_app(slug, studio)
+    if app is None:
+        return paths
+    known: set[str] = set()
+    for path in paths:
+        try:
+            known.add(str(path.resolve()))
+        except OSError:
+            continue
+    synced = list(paths)
+    for asset in assets:
+        source = _local_source(project_dir, asset["id"])
+        if source is None or source in known:
+            continue
+        if _try_import(source, app):
+            known.add(source)
+            synced.append(Path(source))
+    return synced
+
+
+def _try_import(source: str, app: Any) -> bool:
+    """Import one path into the pool; a refusal only reports False."""
+    try:
+        _studio_import_media(source, app)
+    except Exception:
+        return False
+    return True
 
 
 def _merge_editor_assets(
