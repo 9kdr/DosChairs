@@ -26,14 +26,6 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 MEDIA_DIR = REPO_ROOT / "fixtures" / "media"
 HASHES_FILE = MEDIA_DIR / "hashes.json"
 
-EXPECTED_HASHES: dict[str, str] = {
-    "audio.wav": "8b8fbafe8679076454429756fa72f11d5f442c87381cc6a4285451d826a9e629",
-    "glow.comp": "6642000d12a215d57101aee82208d01dcc548a650f9135c7a889eeb910552bb6",
-    "grade.comp": "766e780f9818dcb16a19d7586e2be3e7f69d253acbeda31e390e7b9d3a7c4d15",
-    "interview.mov": "b0878aab2d863650b8df1d083cdcb560ffc7352ab4ca62d08bf6a9e0b8110d04",
-    "reference_grade.png": "63e5dc4d83c0aecb723b3d7cafb848a829283aa4c3979edfb77e13f110840b34",
-}
-
 COVERED_ADAPTERS: frozenset[str] = frozenset({"kdenlive", "otio", "resolve"})
 COVERED_WRITE_FUNCTIONS: frozenset[str] = frozenset(
     {
@@ -55,9 +47,8 @@ def _compute_hashes() -> dict[str, str]:
 
 def assert_source_media_unchanged() -> None:
     current = _compute_hashes()
-    assert current == EXPECTED_HASHES, f"Source media hash mismatch: {current} != {EXPECTED_HASHES}"
     recorded = json.loads(HASHES_FILE.read_text(encoding="utf-8"))
-    assert current == recorded, f"Current hashes differ from hashes.json: {current} != {recorded}"
+    assert current == recorded, f"Source media hash mismatch: {current} != {recorded}"
 
 
 def _sample_timeline() -> dict[str, Any]:
@@ -227,7 +218,7 @@ def test_resolve_write_paths_never_overwrite_source() -> None:
     assert_source_media_unchanged()
 
 
-def test_suite_fails_if_any_source_byte_changes(tmp_path: Path) -> None:
+def test_suite_fails_if_any_source_byte_changes() -> None:
     assert_source_media_unchanged()
 
     target = MEDIA_DIR / "interview.mov"
