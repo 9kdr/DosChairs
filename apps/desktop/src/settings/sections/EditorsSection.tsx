@@ -23,7 +23,7 @@ function unreachableCopy(id: EditorId, detected: EditorStatus | null): string {
 }
 
 function editorDot(state: EditorConnectionState): string {
-  if (state === "connected") return "bg-emerald-400";
+  if (state === "connected") return "bg-neutral-100";
   if (state === "unreachable") return "bg-amber-400";
   if (state === "checking") return "animate-pulse bg-neutral-500"; // taste-skill-ignore: pulse matches the live dot in service-status while a check is in flight.
   return "bg-neutral-600";
@@ -54,12 +54,9 @@ export function EditorsSection({
 }: EditorsSectionProps) {
   return (
     <div className="flex flex-col gap-8">
-      <div>
-        <h2 className="text-xl font-semibold text-neutral-100">Editors</h2>
-        <p className="mt-1 text-sm text-neutral-400">
-          Which editing app Chair hands the cut to.
-        </p>
-      </div>
+      <p className="text-sm text-neutral-400">
+        Which editing app Chair hands the cut to.
+      </p>
       <div className="space-y-2">
         {EDITORS.map((editor) => (
           <EditorCard

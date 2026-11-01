@@ -18,12 +18,14 @@ import {
   liveJobEntries,
   liveRowsForJobs,
   noteKey,
+  noteTurnText,
   openingBrief,
   openingKey,
   openTurnScope,
   replyForSubmitError,
   resetLiveJobs,
   runTurn,
+  selectionForNote,
   shortRequestId,
   stopLiveTask,
   taskForLiveJob,
@@ -501,6 +503,99 @@ describe("live task list", () => {
     const reopen = openTurnScope(row.id, row.lane, true);
     expect(reopen.key).toBe(scope.key);
     expect(inputForTurn(row, openingBrief(row), reopen.changesetId)).toEqual(creationInput);
+  });
+});
+
+describe("turn model and files", () => {
+  it("carries the draft model and files on the turn input", () => {
+    const input = inputForTurn(task, "trim the pause", "cs-task-3-7", {
+      model: "muse-spark-1 (Meta)",
+      files: ["silence.mp4"],
+    });
+    expect(input).toMatchObject({
+      brief: "trim the pause",
+      model: "muse-spark-1 (Meta)",
+      files: ["silence.mp4"],
+    });
+  });
+
+  it("leaves model and files off opening turns", () => {
+    const input = inputForTurn(task, "trim the pause", "cs-task-3-open");
+    expect(input).not.toHaveProperty("model");
+    expect(input).not.toHaveProperty("files");
+  });
+
+  it("pairs a composer draft with the note it sent", () => {
+    const draft = { text: "trim the pause", files: ["a.mp4"], model: "Chair fast" };
+    expect(selectionForNote({ id: 7, text: "trim the pause" }, draft)).toEqual({
+      files: ["a.mp4"],
+      model: "Chair fast",
+    });
+    expect(selectionForNote({ id: 7, text: "other words" }, draft)).toBeNull();
+    expect(selectionForNote({ id: 7, text: "trim the pause" }, null)).toBeNull();
+  });
+
+  it("names attachments in the user turn and the brief", () => {
+    expect(noteTurnText({ id: 7, text: "trim the pause" })).toBe("trim the pause");
+    expect(noteTurnText({ id: 7, text: "  trim the pause  ", files: ["a.mp4"] })).toBe(
+      "trim the pause\nAttached files: a.mp4",
+    );
+    expect(noteTurnText({ id: 7, text: "   ", files: ["a.mp4", "b.webm"] })).toBe(
+      "Attached files: a.mp4, b.webm",
+    );
+    expect(noteTurnText({ id: 7, text: "   " })).toBe("");
+  });
+
+  it("names the turn model on live and terminal copy", () => {
+    const queued = textForJob(job("queued", { input: { model: "Chair fast" } }));
+    expect(queued).toContain("Model: Chair fast.");
+    const done = textForJob(
+      job("completed", { input: { model: "muse-spark-1 (Meta)" } }),
+    );
+    expect(done).toContain("Model: muse-spark-1 (Meta).");
+    expect(textForJob(job("completed"))).not.toContain("Model:");
+  });
+
+  it("submits note turns with model and files in the body", async () => {
+    let body: unknown = null;
+    const fetchFn: FetchFn = async (input, init) => {
+      if (input.endsWith("/jobs") && init?.method === "POST") {
+        body = JSON.parse(typeof init?.body === "string" ? init.body : "{}");
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            request_id: "req_model00000001",
+            status: "queued",
+            status_url: "http://127.0.0.1:8787/jobs/req_model00000001",
+            cancel_url: "http://127.0.0.1:8787/jobs/req_model00000001/cancel",
+          }),
+        };
+      }
+      return {
+        ok: true,
+        status: 200,
+        json: async () => job("completed", { request_id: "req_model00000001" }),
+      };
+    };
+    const client = createServicesClient({ fetchFn });
+    await runTurn(client, {
+      task,
+      brief: "remove the silence",
+      key: noteKey("task-3", 7),
+      changesetId: "cs-task-3-7",
+      model: "Chair fast",
+      files: ["a.mp4"],
+      delayForAttempt: () => 0,
+    });
+    expect(body).toMatchObject({
+      task: "edit",
+      input: {
+        brief: "remove the silence",
+        model: "Chair fast",
+        files: ["a.mp4"],
+      },
+    });
   });
 });
 

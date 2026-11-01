@@ -1,11 +1,11 @@
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ArrowLeft, Undo2 } from "lucide-react";
-import { ChatPrompt } from "@/components/chat-prompt";
+import { ChatPrompt, type ChatDraft } from "@/components/chat-prompt";
 import { SmoothScrollTarget } from "@/components/smooth-scroll";
 import { Button } from "@/components/ui/button";
 import type { RunningTask } from "./RunningTasks";
 import { TaskActivityPanel } from "./TaskActivity";
-import { useTaskThread } from "./taskThread";
+import { selectionForNote, useTaskThread, type TaskNote } from "./taskThread";
 import {
   canUndoTask,
   historyForTask,
@@ -25,7 +25,8 @@ export const UNDO_PROMPT = "Undo this task's changes.";
 /**
  * A full thread for one running task. Turns run live on the agent; undo
  * prompts propose rewinding the task's accepted tail as one gated
- * changeset. Sending does not change the timeline.
+ * changeset. Each turn carries the composer's model pick and attachments.
+ * Sending does not change the timeline.
  */
 export function TaskChat({
   task,
@@ -37,7 +38,7 @@ export function TaskChat({
   onUndoEntry,
 }: {
   task: RunningTask;
-  note: { id: number; text: string } | null;
+  note: TaskNote | null;
   history: readonly HistoryEntry[];
   onClose: () => void;
   onSend: (text: string) => void;
@@ -53,7 +54,24 @@ export function TaskChat({
         : null,
     [history, onUndoRequest, task],
   );
-  const { turns, activity } = useTaskThread(task, note, resolveLocalReply);
+  // The shell's note channel carries text only, so composer drafts pair up
+  // here: each send stashes its draft, and the note it produces picks the
+  // draft's files and model back up for the live turn.
+  const pendingDraft = useRef<ChatDraft | null>(null);
+  const [threadNote, setThreadNote] = useState<TaskNote | null>(null);
+  useEffect(() => {
+    if (note === null) {
+      setThreadNote(null);
+      return;
+    }
+    const selection = selectionForNote(note, pendingDraft.current);
+    pendingDraft.current = null;
+    setThreadNote((current) => {
+      if (current?.id === note.id) return current;
+      return selection === null ? { ...note } : { ...note, ...selection };
+    });
+  }, [note]);
+  const { turns, activity } = useTaskThread(task, threadNote, resolveLocalReply);
   const endRef = useRef<HTMLDivElement>(null);
   const threadRef = useRef<HTMLDivElement>(null);
 
@@ -135,7 +153,10 @@ export function TaskChat({
               onOpen={() => {}}
               onClose={() => {}}
               onSend={(draft) => {
-                if (draft.text.trim()) onSend(draft.text);
+                // The composer only sends with text or files; stash the
+                // whole draft so the note pairs its files and model back.
+                pendingDraft.current = draft;
+                onSend(draft.text);
               }}
             />
           </div>

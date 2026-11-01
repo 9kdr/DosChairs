@@ -16,7 +16,17 @@ export type EditorConnection = { endpoint: string | null };
 
 export type AppSettings = {
   keys: Record<ProviderId, string | null>;
+  /**
+   * Legacy per-role routing. The settings UI no longer writes it,
+   * but old docs still parse so nothing saved is lost.
+   */
   models: Record<RoleId, RoleChoice | null>;
+  /** Per-provider on/off from the Providers list. */
+  enabled: Record<ProviderId, boolean>;
+  /** Model ids the person typed per provider, beyond the known ones. */
+  customModels: Record<ProviderId, string[]>;
+  /** Model ids switched off per provider — hidden from picker and routing. */
+  disabledModels: Record<ProviderId, string[]>;
   /** The orchestrator pick from the composer input bar. Null keeps Chair. */
   orchestrator: string | null;
   editors: Record<EditorId, EditorConnection | null>;
@@ -25,6 +35,9 @@ export type AppSettings = {
 export const EMPTY_SETTINGS: AppSettings = {
   keys: { meta: null, openai: null, anthropic: null },
   models: { planner: null, executor: null, verifier: null },
+  enabled: { meta: true, openai: true, anthropic: true },
+  customModels: { meta: [], openai: [], anthropic: [] },
+  disabledModels: { meta: [], openai: [], anthropic: [] },
   orchestrator: null,
   editors: { resolve: null, kdenlive: null, otio: null },
 };
@@ -44,9 +57,29 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 export function parseSettings(doc: unknown): AppSettings {
   const keys = { ...EMPTY_SETTINGS.keys };
   const models = { ...EMPTY_SETTINGS.models };
+  const enabled = { ...EMPTY_SETTINGS.enabled };
+  const customModels: Record<ProviderId, string[]> = {
+    meta: [],
+    openai: [],
+    anthropic: [],
+  };
+  const disabledModels: Record<ProviderId, string[]> = {
+    meta: [],
+    openai: [],
+    anthropic: [],
+  };
   const editors = { ...EMPTY_SETTINGS.editors };
   let orchestrator: string | null = null;
-  if (!isRecord(doc)) return { keys, models, orchestrator, editors };
+  if (!isRecord(doc))
+    return {
+      keys,
+      models,
+      enabled,
+      customModels,
+      disabledModels,
+      orchestrator,
+      editors,
+    };
   if (isRecord(doc.keys)) {
     for (const [id, value] of Object.entries(doc.keys)) {
       if (isProviderId(id) && (typeof value === "string" || value === null)) {
@@ -64,6 +97,33 @@ export function parseSettings(doc: unknown): AppSettings {
       }
     }
   }
+  if (isRecord(doc.enabled)) {
+    for (const [id, value] of Object.entries(doc.enabled)) {
+      if (isProviderId(id) && typeof value === "boolean") {
+        enabled[id] = value;
+      }
+    }
+  }
+  if (isRecord(doc.customModels)) {
+    for (const [id, value] of Object.entries(doc.customModels)) {
+      if (isProviderId(id) && Array.isArray(value)) {
+        customModels[id] = value.filter(
+          (name): name is string =>
+            typeof name === "string" && name.trim().length > 0,
+        );
+      }
+    }
+  }
+  if (isRecord(doc.disabledModels)) {
+    for (const [id, value] of Object.entries(doc.disabledModels)) {
+      if (isProviderId(id) && Array.isArray(value)) {
+        disabledModels[id] = value.filter(
+          (name): name is string =>
+            typeof name === "string" && name.trim().length > 0,
+        );
+      }
+    }
+  }
   if (typeof doc.orchestrator === "string" && doc.orchestrator.length > 0) {
     orchestrator = doc.orchestrator;
   }
@@ -74,7 +134,15 @@ export function parseSettings(doc: unknown): AppSettings {
       }
     }
   }
-  return { keys, models, orchestrator, editors };
+  return {
+    keys,
+    models,
+    enabled,
+    customModels,
+    disabledModels,
+    orchestrator,
+    editors,
+  };
 }
 
 function isRoleChoice(value: unknown): value is RoleChoice {
@@ -99,7 +167,23 @@ export function createSettingsStore(backend: SettingsBackend) {
       try {
         return parseSettings(await backend.read());
       } catch {
-        return { ...EMPTY_SETTINGS, keys: { ...EMPTY_SETTINGS.keys } };
+        return {
+          ...EMPTY_SETTINGS,
+          keys: { ...EMPTY_SETTINGS.keys },
+          models: { ...EMPTY_SETTINGS.models },
+          enabled: { ...EMPTY_SETTINGS.enabled },
+          customModels: {
+            meta: [],
+            openai: [],
+            anthropic: [],
+          },
+          disabledModels: {
+            meta: [],
+            openai: [],
+            anthropic: [],
+          },
+          editors: { ...EMPTY_SETTINGS.editors },
+        };
       }
     },
     async saveKey(provider: ProviderId, key: string | null): Promise<AppSettings> {
@@ -116,6 +200,60 @@ export function createSettingsStore(backend: SettingsBackend) {
       const next: AppSettings = {
         ...current,
         models: { ...current.models, [role]: choice },
+      };
+      await backend.write(next);
+      return next;
+    },
+    async saveProviderEnabled(
+      provider: ProviderId,
+      enabled: boolean,
+    ): Promise<AppSettings> {
+      const current = await this.load();
+      const next: AppSettings = {
+        ...current,
+        enabled: { ...current.enabled, [provider]: enabled },
+      };
+      await backend.write(next);
+      return next;
+    },
+    async saveCustomModels(
+      provider: ProviderId,
+      models: string[],
+    ): Promise<AppSettings> {
+      const current = await this.load();
+      const seen = new Set<string>();
+      const cleaned: string[] = [];
+      for (const name of models) {
+        const trimmed = name.trim();
+        if (trimmed === "" || seen.has(trimmed)) continue;
+        seen.add(trimmed);
+        cleaned.push(trimmed);
+      }
+      const next: AppSettings = {
+        ...current,
+        customModels: { ...current.customModels, [provider]: cleaned },
+      };
+      await backend.write(next);
+      return next;
+    },
+    async saveModelEnabled(
+      provider: ProviderId,
+      model: string,
+      enabled: boolean,
+    ): Promise<AppSettings> {
+      const current = await this.load();
+      const name = model.trim();
+      const prev = current.disabledModels[provider];
+      const nextList = enabled
+        ? prev.filter((entry) => entry !== name && entry !== model)
+        : prev.includes(model) || (name !== "" && prev.includes(name))
+          ? prev
+          : name === ""
+            ? prev
+            : [...prev, name];
+      const next: AppSettings = {
+        ...current,
+        disabledModels: { ...current.disabledModels, [provider]: nextList },
       };
       await backend.write(next);
       return next;

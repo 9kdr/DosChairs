@@ -78,6 +78,17 @@ type FolderItem = {
   assetIds: readonly string[];
 };
 
+/** Ghost-dot tone for an outgoing shelf drag: media kind, folder, or piece. */
+export type ShelfDragTone = AssetKind | "folder" | "piece";
+
+/** One card in an outgoing shelf drag. Folders ride as asset refs. */
+export type ShelfDragItem = {
+  id: string;
+  label: string;
+  tone: ShelfDragTone;
+  refKind: "asset" | "piece";
+};
+
 const KIND_ICON: Record<AssetKind, LucideIcon> = {
   video: Film,
   image: Image,
@@ -224,11 +235,12 @@ function paneVariants(reduce: boolean | null): Variants {
   };
 }
 
-const GHOST_INK: Record<AssetKind | "folder", string> = {
+const GHOST_INK: Record<ShelfDragTone, string> = {
   video: "#60a5fa",
   image: "#fbbf24",
   audio: "#34d399",
   folder: "#d4d4d4",
+  piece: "#a3a3a3",
 };
 
 function KindMark({ kind, dense = false }: { kind: AssetKind | null; dense?: boolean }) {
@@ -262,6 +274,44 @@ function kindFor(name: string): AssetKind {
   if (["png", "jpg", "jpeg", "webp", "gif", "tif", "tiff"].includes(ext)) return "image";
   if (["wav", "mp3", "aif", "aiff", "flac", "m4a"].includes(ext)) return "audio";
   return "video";
+}
+
+/**
+ * Group rule for a shelf drag: the held card alone, unless it sits inside a
+ * multi-select — then every selected card rides, each with its own ref kind.
+ */
+export function dragItemsFor(
+  chosen: readonly string[],
+  assets: readonly { id: string; name: string; kind: AssetKind }[],
+  folders: readonly { id: string; name: string }[],
+  pieces: readonly { id: string; name: string }[],
+  id: string,
+  label: string,
+  tone: ShelfDragTone,
+): ShelfDragItem[] {
+  const single: ShelfDragItem = {
+    id,
+    label,
+    tone,
+    refKind: tone === "piece" ? "piece" : "asset",
+  };
+  if (!chosen.includes(id) || chosen.length < 2) return [single];
+  const group: ShelfDragItem[] = [];
+  for (const sid of chosen) {
+    const asset = assets.find((item) => item.id === sid);
+    if (asset) {
+      group.push({ id: sid, label: asset.name, tone: asset.kind, refKind: "asset" });
+      continue;
+    }
+    const folderItem = folders.find((item) => item.id === sid);
+    if (folderItem) {
+      group.push({ id: sid, label: folderItem.name, tone: "folder", refKind: "asset" });
+      continue;
+    }
+    const piece = pieces.find((item) => item.id === sid);
+    if (piece) group.push({ id: sid, label: piece.name, tone: "piece", refKind: "piece" });
+  }
+  return group.length > 0 ? group : [single];
 }
 
 type SearchFieldProps = {
@@ -753,33 +803,20 @@ export function AssetShelf({
     stopListen.current = () => window.removeEventListener("pointerdown", onDown, true);
   };
 
-  const dragItemsFor = (id: string, label: string, tone: AssetKind | "folder") => {
-    const chosen = selectedIdsRef.current;
-    if (!chosen.includes(id) || chosen.length < 2) return [{ id, label, tone }];
-    const group: { id: string; label: string; tone: AssetKind | "folder" }[] = [];
-    for (const sid of chosen) {
-      const asset = assets.find((item) => item.id === sid);
-      if (asset) {
-        group.push({ id: sid, label: asset.name, tone: asset.kind });
-        continue;
-      }
-      const folderItem = folders.find((item) => item.id === sid);
-      if (folderItem) group.push({ id: sid, label: folderItem.name, tone: "folder" });
-    }
-    return group.length > 0 ? group : [{ id, label, tone }];
-  };
-
-  const beginDrag = (
-    event: DragEvent,
-    id: string,
-    label: string,
-    tone: AssetKind | "folder",
-  ) => {
+  const beginDrag = (event: DragEvent, id: string, label: string, tone: ShelfDragTone) => {
     suppressClick.current = true;
-    const group = dragItemsFor(id, label, tone);
+    const group = dragItemsFor(
+      selectedIdsRef.current,
+      assets,
+      folders,
+      pieces,
+      id,
+      label,
+      tone,
+    );
     writeChairRefs(
       event.dataTransfer,
-      group.map((item) => ({ kind: "asset" as const, id: item.id, label: item.label })),
+      group.map((item) => ({ kind: item.refKind, id: item.id, label: item.label })),
     );
     const root = listRef.current;
     for (const item of group) {
@@ -1142,10 +1179,14 @@ export function AssetShelf({
                               onSelect={(event) =>
                                 activate(() => selectClick(item.id, event.shiftKey))
                               }
-                              onDragStart={(event) => {
-                                if (item.scope !== "assets") return;
-                                beginDrag(event, item.id, item.name, item.kind);
-                              }}
+                              onDragStart={(event) =>
+                                beginDrag(
+                                  event,
+                                  item.id,
+                                  item.name,
+                                  item.scope === "assets" ? item.kind : "piece",
+                                )
+                              }
                               onDragEnd={finishDrag}
                             />
                             <ShelfCardActions
@@ -1279,10 +1320,14 @@ export function AssetShelf({
                               onSelect={(event) =>
                               activate(() => selectClick(item.id, event.shiftKey))
                             }
-                              onDragStart={(event) => {
-                                if (item.scope !== "assets") return;
-                                beginDrag(event, item.id, item.name, item.kind);
-                              }}
+                              onDragStart={(event) =>
+                                beginDrag(
+                                  event,
+                                  item.id,
+                                  item.name,
+                                  item.scope === "assets" ? item.kind : "piece",
+                                )
+                              }
                               onDragEnd={finishDrag}
                             />
                             <ShelfCardActions
@@ -1503,9 +1548,8 @@ function Tile({
 }) {
   const kind = item.scope === "assets" ? item.kind : null;
   const Icon = kind ? KIND_ICON[kind] : Puzzle;
-  const draggable = item.scope === "assets";
   const proxied = item.scope === "assets" && item.proxy === "ready";
-  const cardDrag = pressStartsDrag({ selected, draggable });
+  const cardDrag = pressStartsDrag({ selected, draggable: true });
   return (
     <Button
       type="button"
@@ -1525,7 +1569,6 @@ function Tile({
         "h-auto flex-col gap-1.5 px-1.5 pt-1.5 pb-2 sm:h-auto",
       )}
     >
-      {draggable ? (
       <DragHandle
         passive={cardDrag}
         className={cn(
@@ -1546,17 +1589,6 @@ function Tile({
         )}
         {proxied ? <ProxyBadge className="absolute top-1 left-1" /> : null}
       </DragHandle>
-      ) : (
-      <span
-        className={cn(
-          "flex aspect-video w-full items-center justify-center overflow-hidden rounded-lg",
-          "bg-white/8",
-          PLACEHOLDER,
-        )}
-      >
-        <Icon className="size-6 text-neutral-300" aria-hidden="true" />
-      </span>
-      )}
       <span className="block w-full truncate text-center text-xs font-medium">
         {item.name}
       </span>
@@ -1583,8 +1615,7 @@ function Row({
 }) {
   const kind = item.scope === "assets" ? item.kind : null;
   const kindLabel = kind ? KIND_LABEL[kind] : "Piece";
-  const draggable = item.scope === "assets";
-  const cardDrag = pressStartsDrag({ selected, draggable });
+  const cardDrag = pressStartsDrag({ selected, draggable: true });
   const name = <span className="min-w-0 flex-1 truncate text-left font-medium">{item.name}</span>;
   const proxied = item.scope === "assets" && item.proxy === "ready";
   const proxy = proxied ? <ProxyBadge /> : null;
@@ -1632,17 +1663,13 @@ function Row({
         </DragHandle>
       ) : (
         <>
-          {draggable ? (
-            <DragHandle
-              className="shrink-0 cursor-grab active:cursor-grabbing"
-              onDragStart={onDragStart}
-              onDragEnd={onDragEnd}
-            >
-              <KindMark kind={kind} dense={dense} />
-            </DragHandle>
-          ) : (
+          <DragHandle
+            className="shrink-0 cursor-grab active:cursor-grabbing"
+            onDragStart={onDragStart}
+            onDragEnd={onDragEnd}
+          >
             <KindMark kind={kind} dense={dense} />
-          )}
+          </DragHandle>
           {name}
           {proxy}
           {meta}

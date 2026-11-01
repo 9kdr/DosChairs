@@ -107,12 +107,26 @@ def handle_edit(
     Canned spans and preview URLs in the job input run as before; when
     they are absent, live dispatch runs the finding tools and renders
     the preview instead. The beat sheet, style profile, and frame/audio
-    evidence ride along when the job input carries them. A rejected
-    preview fails the job so the UI never shows it.
+    evidence ride along when the job input carries them. The turn's
+    selected model and attachment names ride along too: validated here
+    and kept on the job record, so the thread can prove which model a
+    live turn ran with. (The v1 pipeline itself is rule-based and makes
+    no model calls; a model-backed planner reads `input.model` as-is.)
+    A rejected preview fails the job so the UI never shows it.
     """
     brief = job.input.get("brief", "")
     if not isinstance(brief, str) or not brief.strip():
         raise ValueError("job input needs a non-empty 'brief' string")
+    if "model" in job.input:
+        model = job.input["model"]
+        if not isinstance(model, str) or not model.strip():
+            raise ValueError("job input 'model' must be a non-empty string")
+    if "files" in job.input:
+        files = job.input["files"]
+        if not isinstance(files, list) or not all(
+            isinstance(name, str) and name.strip() for name in files
+        ):
+            raise ValueError("job input 'files' must be a list of file names")
     context = LoopContext.model_validate(
         {key: job.input.get(key) for key in
          ("proxy_url", "base_revision", "target_id", "changeset_id", "total_frames")}

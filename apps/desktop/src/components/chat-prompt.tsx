@@ -12,7 +12,7 @@ import { Menu, MenuPopup, MenuRadioGroup, MenuRadioItem, MenuTrigger } from "@/c
 import { acceptsChairRef, readChairRefs, type ChairRef } from "@/lib/chair-ref";
 import { cn } from "@/lib/utils";
 import { filterActions, type Action } from "@/orchestrator/actions";
-import { KNOWN_MODELS, PROVIDERS } from "@/settings/providers";
+import { enabledModels, PROVIDERS, type ProviderId } from "@/settings/providers";
 import { useSettings } from "@/settings/useSettings";
 
 const CLOSED_WIDTH = 452;
@@ -25,6 +25,41 @@ const MAX_ROWS = 4;
 const ZWSP = "\u200B";
 
 const MODELS = ["Chair", "Chair fast", "Chair precise"] as const;
+const PRESETS: ReadonlySet<string> = new Set(MODELS);
+
+export const ORCHESTRATOR_DEFAULT = "Chair";
+
+/**
+ * Orchestrator picker options: enabled models from saved keys first,
+ * then the Chair presets. A provider with no key, switched off, or
+ * with every model switched off adds nothing — the list never
+ * invents names, and a disabled model never appears.
+ */
+export function orchestratorOptions(
+  keys: Record<ProviderId, string | null>,
+  opts?: {
+    enabled?: Record<ProviderId, boolean>;
+    customModels?: Record<ProviderId, string[]>;
+    disabledModels?: Record<ProviderId, string[]>;
+  },
+): string[] {
+  const detected = PROVIDERS.filter(
+    (provider) =>
+      keys[provider.id] != null && opts?.enabled?.[provider.id] !== false,
+  ).flatMap((provider) =>
+    enabledModels({
+      provider: provider.id,
+      custom: opts?.customModels?.[provider.id],
+      disabled: opts?.disabledModels?.[provider.id],
+    }).map((name) => `${name} (${provider.label})`),
+  );
+  return [...detected, ...MODELS];
+}
+
+/** The stored pick when it is still offered, else the Chair default. */
+export function resolveOrchestrator(stored: string | null, options: readonly string[]): string {
+  return stored != null && options.includes(stored) ? stored : ORCHESTRATOR_DEFAULT;
+}
 
 export type ChatDraft = {
   text: string;
@@ -192,8 +227,9 @@ const VIDEO_EXT = new Set(["mov", "mp4", "mxf", "webm", "mkv", "avi"]);
 const IMAGE_EXT = new Set(["png", "jpg", "jpeg", "webp", "gif", "tif", "tiff"]);
 const AUDIO_EXT = new Set(["wav", "mp3", "aac", "flac", "aiff", "aif", "m4a", "ogg"]);
 
-function chipTone(kind: "asset" | "task", label: string): ChipTone {
+function chipTone(kind: "asset" | "task" | "piece", label: string): ChipTone {
   if (kind === "task") return "task";
+  if (kind === "piece") return "piece";
   const ext = label.split(".").pop()?.toLowerCase() ?? "";
   if (VIDEO_EXT.has(ext)) return "video";
   if (IMAGE_EXT.has(ext)) return "image";
@@ -338,23 +374,28 @@ export function ChatPrompt({
   placeholder = "Ask Chair, or / for an action",
 }: ChatPromptProps) {
   const [parts, setParts] = useState<Piece[]>(() => normalize([]));
-  const [model, setModel] = useState<string>("Chair");
+  const [model, setModel] = useState<string>(ORCHESTRATOR_DEFAULT);
   // Orchestrator pick: detected models from saved keys first, then the
   // Chair presets. The choice persists in app settings.
   const { settings, loaded, saveOrchestrator } = useSettings();
-  const detected = useMemo(
+  const options = useMemo(
     () =>
-      PROVIDERS.filter((provider) => settings.keys[provider.id] != null).flatMap(
-        (provider) =>
-          KNOWN_MODELS[provider.id].map((name) => `${name} (${provider.label})`),
-      ),
-    [settings.keys],
+      orchestratorOptions(settings.keys, {
+        enabled: settings.enabled,
+        customModels: settings.customModels,
+        disabledModels: settings.disabledModels,
+      }),
+    [
+      settings.keys,
+      settings.enabled,
+      settings.customModels,
+      settings.disabledModels,
+    ],
   );
-  const options = useMemo(() => [...detected, ...MODELS], [detected]);
+  const detected = useMemo(() => options.filter((item) => !PRESETS.has(item)), [options]);
   useEffect(() => {
     if (!loaded) return;
-    const stored = settings.orchestrator;
-    setModel(stored != null && options.includes(stored) ? stored : "Chair");
+    setModel(resolveOrchestrator(settings.orchestrator, options));
   }, [loaded, settings.orchestrator, options]);
   const pickModel = (value: string | null) => {
     if (value == null || !options.includes(value)) return;

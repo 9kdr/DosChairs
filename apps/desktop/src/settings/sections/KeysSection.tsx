@@ -1,37 +1,32 @@
-import { EyeIcon, EyeOffIcon } from "lucide-react";
+import { EyeIcon, EyeOffIcon, PlusIcon, XIcon } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import {
-  Select,
-  SelectItem,
-  SelectPopup,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import type { AgentHealth } from "@/lib/services/types";
 import { cn } from "@/lib/utils";
+import type { AddProviderResult } from "../add-provider";
 import {
+  addCustomModel,
   CONNECTION_LABEL,
-  detectProvider,
-  followChoice,
+  keyDetectionHint,
   keySourceLabel,
   KNOWN_MODELS,
   maskKey,
   PROVIDERS,
   providerConnection,
-  ROLES,
+  removeCustomModel,
+  trimKeyDraft,
   type ConnectionState,
-  type FollowChoice,
   type Provider,
   type ProviderId,
-  type Role,
-  type RoleId,
 } from "../providers";
-import type { AppSettings, RoleChoice } from "../settings-store";
+import type { AppSettings } from "../settings-store";
+import { AddProviderDialog } from "./AddProviderDialog";
+import { ProviderLogo } from "./ProviderLogo";
 
 function connectionDot(state: ConnectionState): string {
-  if (state === "live") return "bg-emerald-400";
+  if (state === "live") return "bg-neutral-100";
   if (state === "saved") return "bg-amber-400";
   if (state === "checking") return "animate-pulse bg-neutral-500"; // taste-skill-ignore: pulse matches the live dot in service-status while a check is in flight.
   return "bg-neutral-600";
@@ -42,245 +37,272 @@ type KeysSectionProps = {
   agentUp: boolean | null;
   agentHealth: AgentHealth | undefined;
   saveKey: (provider: ProviderId, key: string | null) => Promise<void>;
-  saveModel: (role: RoleId, choice: RoleChoice | null) => Promise<void>;
+  saveProviderEnabled: (provider: ProviderId, enabled: boolean) => Promise<void>;
+  saveCustomModels: (provider: ProviderId, models: string[]) => Promise<void>;
+  saveModelEnabled: (
+    provider: ProviderId,
+    model: string,
+    enabled: boolean,
+  ) => Promise<void>;
 };
 
 /**
- * Keys and models for the agent: the #171 screen, moved into the
- * section panel. Saved keys render masked; the full value only ever
- * sits in the password field it was typed into.
+ * Providers, after T3 Code's provider settings: one box with the
+ * providers down the left and the selected provider's key and
+ * models on the right. Each row carries its own on/off switch.
+ * Saved keys render masked; the full value only ever sits in the
+ * field it was typed into.
  */
 export function KeysSection({
   settings,
   agentUp,
   agentHealth,
   saveKey,
-  saveModel,
+  saveProviderEnabled,
+  saveCustomModels,
+  saveModelEnabled,
 }: KeysSectionProps) {
-  return (
-    <div className="flex flex-col gap-8">
-      <div>
-        <h2 className="text-xl font-semibold text-neutral-100">
-          Keys and models
-        </h2>
-        <p className="mt-1 text-sm text-neutral-400">
-          Keys and models for the agent.
-        </p>
-      </div>
+  const [selected, setSelected] = useState<ProviderId>("meta");
+  const [addOpen, setAddOpen] = useState(false);
+  const [addInitial, setAddInitial] = useState<ProviderId | null>(null);
 
-      <div
-        aria-label="Provider connection"
-        className="grid grid-cols-3 divide-x divide-white/[0.06] rounded-2xl bg-white/[0.03] ring-1 ring-white/[0.06]"
-      >
-        {PROVIDERS.map((provider) => {
-          const appKey = settings.keys[provider.id] != null;
-          const envKey =
-            provider.id === "meta" &&
-            agentUp === true &&
-            agentHealth?.key_configured === true;
-          const state = providerConnection({ appKey, envKey, agentUp });
-          const source = keySourceLabel({ appKey, envKey });
-          return (
-            <div key={provider.id} className="min-w-0 px-4 py-3">
-              <p className="flex items-center gap-2 text-sm font-medium text-neutral-100">
-                <span
-                  aria-hidden="true"
-                  className={cn(
-                    "size-1.5 shrink-0 rounded-full",
-                    connectionDot(state),
-                  )}
-                />
-                <span className="truncate">{provider.label}</span>
-              </p>
-              <p className="mt-1 truncate text-xs text-neutral-400">
-                {CONNECTION_LABEL[state]}
-              </p>
-              <p className="truncate text-xs text-neutral-500">
-                {source ? `Key ${source}` : " "}
-              </p>
-            </div>
-          );
-        })}
-      </div>
+  /** Only Meta's key is visible to the agent's environment today. */
+  const metaEnvKey =
+    agentUp === true && agentHealth?.key_configured === true;
 
-      <section aria-labelledby="settings-keys">
-        <h3
-          id="settings-keys"
-          className="text-sm font-medium text-neutral-400"
-        >
-          API keys
-        </h3>
-        <p className="mt-1 text-xs text-neutral-500">
-          A key saved here wins; otherwise the agent falls back to .env.
-        </p>
-        <div className="mt-3 space-y-2">
-          <PasteKeyCard onSave={(provider, key) => saveKey(provider, key)} />
-          {PROVIDERS.map((provider) => (
-            <KeyCard
-              key={provider.id}
-              provider={provider}
-              saved={settings.keys[provider.id]}
-              envKey={
-                provider.id === "meta" &&
-                agentUp === true &&
-                agentHealth?.key_configured === true
-              }
-              onSave={(key) => saveKey(provider.id, key)}
-              onClear={() => saveKey(provider.id, null)}
-            />
-          ))}
-        </div>
-      </section>
-
-      <section aria-labelledby="settings-models">
-        <h3
-          id="settings-models"
-          className="text-sm font-medium text-neutral-400"
-        >
-          Models
-        </h3>
-        <p className="mt-1 text-xs text-neutral-500">
-          Saved in the app. Roles without a pick follow the saved key;
-          the agent reads CHAIR_*_MODEL from its environment today.
-        </p>
-        <div className="mt-3 space-y-2">
-          {ROLES.map((role) => {
-            const follow = followChoice(settings.keys, role);
-            const followKey =
-              follow != null ? settings.keys[follow.provider] : null;
-            return (
-              <ModelCard
-                key={role.id}
-                role={role}
-                saved={settings.models[role.id]}
-                follow={follow}
-                followMask={followKey != null ? maskKey(followKey) : null}
-                effective={agentHealth?.models[role.id] ?? null}
-                agentUp={agentUp}
-                onSave={(choice) => saveModel(role.id, choice)}
-                onReset={() => saveModel(role.id, null)}
-              />
-            );
-          })}
-        </div>
-      </section>
-    </div>
-  );
-}
-
-type PasteKeyCardProps = {
-  onSave: (provider: ProviderId, key: string) => Promise<void>;
-};
-
-/**
- * The front door for keys: paste one, Chair names its provider
- * from the format and files it there. Detection runs on the
- * pasted string locally — nothing is sent anywhere to identify it.
- */
-function PasteKeyCard({ onSave }: PasteKeyCardProps) {
-  const [draft, setDraft] = useState("");
-  const [shown, setShown] = useState(false);
-  const [picked, setPicked] = useState<ProviderId>("meta");
-  const [stamped, setStamped] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-
-  const trimmed = draft.trim();
-  const detected = trimmed === "" ? null : detectProvider(trimmed);
-  const provider = detected ?? picked;
-  const label = PROVIDERS.find((entry) => entry.id === provider)?.label ?? provider;
-  const article = label === "Anthropic" ? "an" : "a";
-
-  const save = async () => {
-    if (trimmed === "" || busy) return;
-    setBusy(true);
-    try {
-      await onSave(provider, trimmed);
-      setStamped(`Saved to ${label} · ${maskKey(trimmed)}`);
-      setDraft("");
-      setShown(false);
-    } finally {
-      setBusy(false);
-    }
+  const openAdd = (initial: ProviderId | null) => {
+    setAddInitial(initial);
+    setAddOpen(true);
   };
 
+  const handleAdd = async (result: AddProviderResult) => {
+    await saveKey(result.provider, result.key);
+    await saveProviderEnabled(result.provider, true);
+    setSelected(result.provider);
+  };
+
+  const detail = PROVIDERS.find((entry) => entry.id === selected) ?? PROVIDERS[0]!;
+
   return (
-    <div className="rounded-2xl bg-white/[0.03] px-5 py-4 ring-1 ring-white/[0.06]">
-      <h4 className="text-sm font-medium text-neutral-100">Add a key</h4>
-      <p className="mt-0.5 text-xs text-neutral-500">
-        Paste a key — Chair names its provider and routes the roles
-        through it.
+    <div className="flex flex-col gap-8">
+      <p className="text-sm text-neutral-400">
+        Keys the agent can spend, and which models each one reaches.
       </p>
-      <div className="mt-3 flex items-center gap-2">
-        <Input
-          type={shown ? "text" : "password"}
-          value={draft}
-          autoComplete="off"
-          spellCheck={false}
-          aria-label="Paste an API key"
-          placeholder="Paste a key"
-          onChange={(event) => {
-            setDraft(event.target.value);
-            setStamped(null);
-          }}
-          onKeyDown={(event) => {
-            if (event.key === "Enter") void save();
-          }}
-          className="flex-1"
+
+      <section aria-label="Providers">
+        <div className="rounded-[28px] bg-surface text-neutral-100 shadow-raised ring-1 ring-white/8">
+          <div className="flex items-center justify-between gap-3 border-b border-white/[0.06] px-5 py-3">
+            <p className="text-sm text-neutral-400">
+              {PROVIDERS.length} providers
+            </p>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              aria-label="Add provider"
+              onClick={() => openAdd(null)}
+            >
+              <PlusIcon />
+            </Button>
+          </div>
+
+          <div className="flex flex-col md:flex-row">
+            <div
+              aria-label="Provider list"
+              className="shrink-0 divide-y divide-white/[0.06] border-b border-white/[0.06] md:w-60 md:border-r md:border-b-0"
+            >
+              {PROVIDERS.map((provider) => {
+                const appKey = settings.keys[provider.id] != null;
+                const envKey = provider.id === "meta" && metaEnvKey;
+                const enabled = settings.enabled[provider.id];
+                const state = providerConnection({ appKey, envKey, agentUp });
+                return (
+                  <ProviderRow
+                    key={provider.id}
+                    provider={provider}
+                    state={state}
+                    enabled={enabled}
+                    active={provider.id === selected}
+                    onSelect={() => setSelected(provider.id)}
+                    onToggle={(next) =>
+                      void saveProviderEnabled(provider.id, next)
+                    }
+                  />
+                );
+              })}
+            </div>
+
+            <div className="min-w-0 flex-1 px-5 py-4">
+              <ProviderDetail
+                key={detail.id}
+                provider={detail}
+                saved={settings.keys[detail.id]}
+                envKey={detail.id === "meta" && metaEnvKey}
+                agentUp={agentUp}
+                customModels={settings.customModels[detail.id]}
+                disabledModels={settings.disabledModels[detail.id]}
+                onSave={(key) => saveKey(detail.id, key)}
+                onClear={() => saveKey(detail.id, null)}
+                onSaveCustomModels={(models) =>
+                  saveCustomModels(detail.id, models)
+                }
+                onToggleModel={(model, enabled) =>
+                  saveModelEnabled(detail.id, model, enabled)
+                }
+              />
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {addOpen ? (
+        <AddProviderDialog
+          open
+          keys={settings.keys}
+          initialProvider={addInitial}
+          onOpenChange={setAddOpen}
+          onAdd={handleAdd}
         />
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon-sm"
-          aria-label={shown ? "Hide key" : "Show key"}
-          onClick={() => setShown((current) => !current)}
-        >
-          {shown ? <EyeOffIcon /> : <EyeIcon />}
-        </Button>
-        <Button
-          type="button"
-          size="sm"
-          disabled={trimmed === "" || busy}
-          onClick={() => void save()}
-        >
-          Save
-        </Button>
-      </div>
-      <div className="mt-2 flex h-5 items-center justify-between gap-3 text-xs">
-        <p className="truncate text-neutral-500">
-          {trimmed === ""
-            ? "Detection never sends the key anywhere."
-            : detected != null
-              ? `Looks like ${article} ${label} key.`
-              : "Unknown format — file it under:"}
-        </p>
-        {trimmed !== "" && detected == null ? (
-          <Select
-            value={picked}
-            onValueChange={(value) => {
-              if (value === "meta" || value === "openai" || value === "anthropic") {
-                setPicked(value);
-              }
-            }}
-            items={{ meta: "Meta", openai: "OpenAI", anthropic: "Anthropic" }}
-          >
-            <SelectTrigger aria-label="Provider for this key" className="h-6 w-32 text-xs">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectPopup>
-              <SelectItem value="meta">Meta</SelectItem>
-              <SelectItem value="openai">OpenAI</SelectItem>
-              <SelectItem value="anthropic">Anthropic</SelectItem>
-            </SelectPopup>
-          </Select>
-        ) : stamped != null ? (
-          <p className="shrink-0 text-neutral-400">{stamped}</p>
-        ) : null}
-      </div>
+      ) : null}
     </div>
   );
 }
 
-type KeyCardProps = {
+type ProviderRowProps = {
+  provider: Provider;
+  state: ConnectionState;
+  enabled: boolean;
+  active: boolean;
+  onSelect: () => void;
+  onToggle: (enabled: boolean) => void;
+};
+
+/** One provider in the left column: status, name, and on/off switch. */
+function ProviderRow({
+  provider,
+  state,
+  enabled,
+  active,
+  onSelect,
+  onToggle,
+}: ProviderRowProps) {
+  return (
+    <div
+      className={cn(
+        "flex items-center gap-3 px-5 py-3 transition-colors hover:bg-white/[0.04]",
+        !enabled && "opacity-60",
+      )}
+    >
+      <button
+        type="button"
+        onClick={onSelect}
+        aria-current={active}
+        className="flex min-w-0 flex-1 cursor-pointer items-center gap-3 rounded-lg text-left outline-none focus-visible:ring-2 focus-visible:ring-white/40"
+      >
+        <span
+          aria-hidden="true"
+          className={cn(
+            "size-1.5 shrink-0 rounded-full",
+            enabled ? connectionDot(state) : "bg-neutral-600",
+          )}
+        />
+        <ProviderLogo id={provider.id} />
+        <span className="min-w-0 flex-1">
+          <span
+            className={cn(
+              "border-b pb-px text-sm font-medium text-neutral-100",
+              active ? "border-neutral-100" : "border-transparent",
+            )}
+          >
+            {provider.label}
+          </span>
+          <span className="mt-0.5 block truncate text-xs text-neutral-500">
+            {enabled ? CONNECTION_LABEL[state] : "Off"}
+          </span>
+        </span>
+      </button>
+      <Switch
+        checked={enabled}
+        onCheckedChange={(next) => onToggle(next)}
+        aria-label={`${provider.label} enabled`}
+      />
+    </div>
+  );
+}
+
+type ProviderDetailProps = {
+  provider: Provider;
+  saved: string | null;
+  envKey: boolean;
+  agentUp: boolean | null;
+  customModels: string[];
+  disabledModels: string[];
+  onSave: (key: string) => Promise<void>;
+  onClear: () => Promise<void>;
+  onSaveCustomModels: (models: string[]) => Promise<void>;
+  onToggleModel: (model: string, enabled: boolean) => Promise<void>;
+};
+
+/** The open provider: its key, then its models. Nothing else. */
+function ProviderDetail({
+  provider,
+  saved,
+  envKey,
+  agentUp,
+  customModels,
+  disabledModels,
+  onSave,
+  onClear,
+  onSaveCustomModels,
+  onToggleModel,
+}: ProviderDetailProps) {
+  const state = providerConnection({
+    appKey: saved != null,
+    envKey,
+    agentUp,
+  });
+  const source = keySourceLabel({ appKey: saved != null, envKey });
+
+  return (
+    <div aria-label={`${provider.label} details`}>
+      <div className="flex items-baseline justify-between gap-3">
+        <h3 className="flex items-center gap-2 text-sm font-medium text-neutral-100">
+          <ProviderLogo id={provider.id} className="size-5" />
+          {provider.label}
+        </h3>
+        <p className="flex shrink-0 items-center gap-2 text-xs text-neutral-400">
+          <span
+            aria-hidden="true"
+            className={cn("size-1.5 rounded-full", connectionDot(state))}
+          />
+          {CONNECTION_LABEL[state]}
+        </p>
+      </div>
+      <p className="mt-0.5 text-xs text-neutral-500">
+        {source ? `Key ${source} · ` : null}
+        <code className="font-mono">{provider.envVar}</code>
+      </p>
+
+      <KeyBlock
+        provider={provider}
+        saved={saved}
+        envKey={envKey}
+        onSave={onSave}
+        onClear={onClear}
+      />
+
+      <ModelsBlock
+        provider={provider}
+        customModels={customModels}
+        disabledModels={disabledModels}
+        onSaveCustomModels={onSaveCustomModels}
+        onToggleModel={onToggleModel}
+      />
+    </div>
+  );
+}
+
+type KeyBlockProps = {
   provider: Provider;
   saved: string | null;
   envKey: boolean;
@@ -288,21 +310,33 @@ type KeyCardProps = {
   onClear: () => Promise<void>;
 };
 
-function KeyCard({ provider, saved, envKey, onSave, onClear }: KeyCardProps) {
+/**
+ * The provider's API key: typed inline when missing — Enter or
+ * Save commits — masked once saved, replaceable, clearable.
+ */
+function KeyBlock({
+  provider,
+  saved,
+  envKey,
+  onSave,
+  onClear,
+}: KeyBlockProps) {
+  const [replacing, setReplacing] = useState(false);
   const [draft, setDraft] = useState("");
   const [shown, setShown] = useState(false);
-  const [stamped, setStamped] = useState(false);
   const [busy, setBusy] = useState(false);
 
+  const hint = keyDetectionHint(draft, provider.id);
+
   const save = async () => {
-    const key = draft.trim();
-    if (!key || busy) return;
+    const key = trimKeyDraft(draft);
+    if (key == null || busy) return;
     setBusy(true);
     try {
       await onSave(key);
       setDraft("");
       setShown(false);
-      setStamped(true);
+      setReplacing(false);
     } finally {
       setBusy(false);
     }
@@ -313,304 +347,289 @@ function KeyCard({ provider, saved, envKey, onSave, onClear }: KeyCardProps) {
     setBusy(true);
     try {
       await onClear();
-      setStamped(false);
     } finally {
       setBusy(false);
     }
   };
+
+  const editing = saved == null || replacing;
 
   return (
-    <div className="rounded-2xl bg-white/[0.03] px-5 py-4 ring-1 ring-white/[0.06]">
-      <div className="flex items-baseline justify-between gap-3">
-        <h4 className="text-sm font-medium text-neutral-100">
-          {provider.label}
-        </h4>
-        <code className="shrink-0 font-mono text-xs text-neutral-500">
-          {provider.envVar}
-        </code>
-      </div>
-      <p className="mt-0.5 text-xs text-neutral-500">{provider.blurb}</p>
-      <div className="mt-3 flex items-center gap-2">
-        <Input
-          type={shown ? "text" : "password"}
-          value={draft}
-          autoComplete="off"
-          spellCheck={false}
-          aria-label={`${provider.label} API key`}
-          placeholder={saved ? maskKey(saved) : "Paste a key"}
-          onChange={(event) => {
-            setDraft(event.target.value);
-            setStamped(false);
-          }}
-          onKeyDown={(event) => {
-            if (event.key === "Enter") void save();
-          }}
-          className="flex-1"
-        />
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon-sm"
-          aria-label={shown ? "Hide key" : "Show key"}
-          onClick={() => setShown((current) => !current)}
-        >
-          {shown ? <EyeOffIcon /> : <EyeIcon />}
-        </Button>
-        <Button
-          type="button"
-          size="sm"
-          disabled={draft.trim() === "" || busy}
-          onClick={() => void save()}
-        >
-          Save
-        </Button>
-      </div>
-      <div className="mt-2 flex h-5 items-center justify-between gap-3 text-xs">
-        <p className="truncate text-neutral-500">
-          {saved
-            ? `Saved · ${maskKey(saved)}`
-            : envKey
-              ? "Nothing saved here · the agent sees a key in its environment"
-              : "No key"}
+    <div className="mt-4">
+      <p className="text-sm font-medium text-neutral-100">API key</p>
+      {saved == null ? (
+        <p className="mt-1 text-xs text-neutral-500">
+          {envKey
+            ? "Nothing saved here · the agent sees a key in its environment"
+            : "No key — paste one below"}
         </p>
-        <p className="flex shrink-0 items-center gap-2">
-          {stamped ? <span className="text-neutral-400">Saved</span> : null}
-          {saved ? (
-            <Button
-              type="button"
-              variant="ghost"
-              size="xs"
-              disabled={busy}
-              onClick={() => void clear()}
-            >
-              Clear
-            </Button>
-          ) : null}
-        </p>
-      </div>
-    </div>
-  );
-}
-
-const CUSTOM_MODEL = "__custom__";
-
-type ModelCardProps = {
-  role: Role;
-  saved: RoleChoice | null;
-  follow: FollowChoice | null;
-  followMask: string | null;
-  effective: string | null;
-  agentUp: boolean | null;
-  onSave: (choice: RoleChoice) => Promise<void>;
-  onReset: () => Promise<void>;
-};
-
-/** Where this role routes, in words: follow the key or an override. */
-function routeLine(input: {
-  role: Role;
-  saved: RoleChoice | null;
-  follow: FollowChoice | null;
-  followMask: string | null;
-}): string {
-  if (input.saved != null) {
-    const label =
-      PROVIDERS.find((entry) => entry.id === input.saved?.provider)?.label ??
-      input.saved.provider;
-    return `Override: ${label} ${input.saved.model} · Reset follows the key again`;
-  }
-  if (input.follow == null || input.followMask == null) {
-    return `${input.role.defaultModel} · no key saved`;
-  }
-  const follow = input.follow;
-  const mask = input.followMask;
-  const label =
-    PROVIDERS.find((entry) => entry.id === follow.provider)?.label ??
-    follow.provider;
-  const model = follow.defaulted ? `${follow.model} (default)` : follow.model;
-  return `${model} via ${label} key ${mask}`;
-}
-
-function ModelCard({
-  role,
-  saved,
-  follow,
-  followMask,
-  effective,
-  agentUp,
-  onSave,
-  onReset,
-}: ModelCardProps) {
-  const [provider, setProvider] = useState<ProviderId>(
-    saved?.provider ?? follow?.provider ?? "meta",
-  );
-  const [model, setModel] = useState(saved?.model ?? "");
-  const [custom, setCustom] = useState(
-    () =>
-      saved != null &&
-      !KNOWN_MODELS[saved.provider].includes(saved.model),
-  );
-  const [stamped, setStamped] = useState(false);
-  const [busy, setBusy] = useState(false);
-
-  const known = KNOWN_MODELS[provider];
-
-  const pickProvider = (next: string | null) => {
-    if (next !== "meta" && next !== "openai" && next !== "anthropic") return;
-    setProvider(next);
-    setModel("");
-    setCustom(KNOWN_MODELS[next].length === 0);
-    setStamped(false);
-  };
-
-  const save = async () => {
-    const name = model.trim();
-    if (!name || busy) return;
-    setBusy(true);
-    try {
-      await onSave({ provider, model: name });
-      setModel(name);
-      setStamped(true);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const reset = async () => {
-    if (busy) return;
-    setBusy(true);
-    try {
-      await onReset();
-      setProvider("meta");
-      setModel("");
-      setCustom(false);
-      setStamped(false);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <div className="rounded-2xl bg-white/[0.03] px-5 py-4 ring-1 ring-white/[0.06]">
-      <div className="flex items-baseline justify-between gap-3">
-        <h4 className="text-sm font-medium text-neutral-100">{role.label}</h4>
-        <code className="shrink-0 font-mono text-xs text-neutral-500">
-          {role.envVar}
-        </code>
-      </div>
-      <p className="mt-0.5 truncate text-xs text-neutral-500">
-        {routeLine({ role, saved, follow, followMask })}
-      </p>
-      <div className="mt-3 flex items-center gap-2">
-        <Select
-          value={provider}
-          onValueChange={(value) => pickProvider(value)}
-          items={{ meta: "Meta", openai: "OpenAI", anthropic: "Anthropic" }}
-        >
-          <SelectTrigger aria-label={`${role.label} provider`} className="w-36">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectPopup>
-            <SelectItem value="meta">Meta</SelectItem>
-            <SelectItem value="openai">OpenAI</SelectItem>
-            <SelectItem value="anthropic">Anthropic</SelectItem>
-          </SelectPopup>
-        </Select>
-        {known.length > 0 && !custom ? (
-          <Select
-            value={model === "" ? null : model}
-            onValueChange={(value) => {
-              if (value === CUSTOM_MODEL) {
-                setCustom(true);
-                setModel("");
-              } else {
-                setModel(value ?? "");
-              }
-              setStamped(false);
-            }}
-            items={Object.fromEntries([
-              ...known.map((name) => [name, name]),
-              [CUSTOM_MODEL, "Custom…"],
-            ])}
-          >
-            <SelectTrigger aria-label={`${role.label} model`} className="flex-1">
-              <SelectValue placeholder="Choose a model…" />
-            </SelectTrigger>
-            <SelectPopup>
-              {known.map((name) => (
-                <SelectItem key={name} value={name}>
-                  {name}
-                </SelectItem>
-              ))}
-              <SelectItem value={CUSTOM_MODEL}>Custom…</SelectItem>
-            </SelectPopup>
-          </Select>
-        ) : (
+      ) : null}
+      <div className="mt-2 flex items-center gap-2">
+        {editing ? (
           <>
             <Input
-              value={model}
+              type={shown ? "text" : "password"}
+              value={draft}
               autoComplete="off"
               spellCheck={false}
-              aria-label={`${role.label} model name`}
-              placeholder="Model name"
-              onChange={(event) => {
-                setModel(event.target.value);
-                setStamped(false);
-              }}
+              aria-label={`${provider.label} API key`}
+              placeholder={
+                saved ? `Stored key ${maskKey(saved)}, enter a new value to replace` : "Paste a key"
+              }
+              onChange={(event) => setDraft(event.target.value)}
               onKeyDown={(event) => {
                 if (event.key === "Enter") void save();
               }}
               className="flex-1"
             />
-            {known.length > 0 ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              aria-label={shown ? "Hide key" : "Show key"}
+              onClick={() => setShown((current) => !current)}
+            >
+              {shown ? <EyeOffIcon /> : <EyeIcon />}
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              disabled={trimKeyDraft(draft) == null || busy}
+              onClick={() => void save()}
+            >
+              Save
+            </Button>
+            {saved ? (
               <Button
                 type="button"
                 variant="ghost"
                 size="sm"
+                disabled={busy}
                 onClick={() => {
-                  setCustom(false);
-                  setModel("");
-                  setStamped(false);
+                  setReplacing(false);
+                  setDraft("");
+                  setShown(false);
                 }}
               >
-                List
+                Cancel
               </Button>
             ) : null}
           </>
-        )}
-        <Button
-          type="button"
-          size="sm"
-          disabled={model.trim() === "" || busy}
-          onClick={() => void save()}
-        >
-          Save
-        </Button>
-      </div>
-      <div className="mt-2 flex h-5 items-center justify-between gap-3 text-xs">
-        <p className="truncate text-neutral-500">
-          {agentUp == null
-            ? "Checking the agent…"
-            : agentUp && effective
-              ? `Agent is using ${effective}`
-              : agentUp
-                ? `Agent reports no model · default is ${role.defaultModel}`
-                : `Agent is down · default is ${role.defaultModel}`}
-        </p>
-        <p className="flex shrink-0 items-center gap-2">
-          {stamped ? <span className="text-neutral-400">Saved</span> : null}
-          {saved ? (
+        ) : (
+          <>
+            <p className="min-w-0 flex-1 truncate font-mono text-xs text-neutral-400">
+              {maskKey(saved)}
+            </p>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={busy}
+              onClick={() => setReplacing(true)}
+            >
+              Replace
+            </Button>
             <Button
               type="button"
               variant="ghost"
-              size="xs"
+              size="sm"
               disabled={busy}
-              onClick={() => void reset()}
+              onClick={() => void clear()}
             >
-              Reset
+              Clear
             </Button>
-          ) : null}
-        </p>
+          </>
+        )}
       </div>
+      {editing && hint != null ? (
+        <p className="mt-1 text-xs text-neutral-500">{hint}</p>
+      ) : null}
+    </div>
+  );
+}
+
+type ModelsBlockProps = {
+  provider: Provider;
+  customModels: string[];
+  disabledModels: string[];
+  onSaveCustomModels: (models: string[]) => Promise<void>;
+  onToggleModel: (model: string, enabled: boolean) => Promise<void>;
+};
+
+/**
+ * Models on file for the provider: the known ids, then the typed
+ * ones, then the button to type another. Each row carries its own
+ * on/off switch; a model switched off leaves the picker and role
+ * routing. The list never invents names it has not seen.
+ */
+function ModelsBlock({
+  provider,
+  customModels,
+  disabledModels,
+  onSaveCustomModels,
+  onToggleModel,
+}: ModelsBlockProps) {
+  const [adding, setAdding] = useState(false);
+  const [draft, setDraft] = useState("");
+  const [duplicate, setDuplicate] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  const known = KNOWN_MODELS[provider.id];
+
+  const add = async () => {
+    const next = addCustomModel({ custom: customModels, known, draft });
+    if (next == null || busy) {
+      setDuplicate(draft.trim() !== "");
+      return;
+    }
+    setBusy(true);
+    try {
+      await onSaveCustomModels(next);
+      setDraft("");
+      setDuplicate(false);
+      setAdding(false);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const remove = async (model: string) => {
+    const next = removeCustomModel(customModels, model);
+    if (next == null || busy) return;
+    setBusy(true);
+    try {
+      await onSaveCustomModels(next);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="mt-4 border-t border-white/[0.06] pt-4">
+      <p className="text-sm font-medium text-neutral-100">Models</p>
+      {known.length === 0 && customModels.length === 0 ? (
+        <p className="mt-2 text-xs text-neutral-500">
+          No models on file yet. Add one below.
+        </p>
+      ) : (
+        <ul className="mt-2 flex flex-col gap-1">
+          {known.map((name) => {
+            const off = disabledModels.includes(name);
+            return (
+              <li
+                key={name}
+                className={cn(
+                  "flex items-center gap-2 rounded-xl bg-white/[0.03] px-3 py-1.5 shadow-rim ring-1 ring-white/[0.06]",
+                  off && "opacity-60",
+                )}
+              >
+                <span className="min-w-0 flex-1 truncate font-mono text-xs text-neutral-300">
+                  {name}
+                </span>
+                <Switch
+                  checked={!off}
+                  onCheckedChange={(next) => void onToggleModel(name, next)}
+                  aria-label={`${name} enabled`}
+                />
+              </li>
+            );
+          })}
+          {customModels.map((name) => {
+            const off = disabledModels.includes(name);
+            return (
+              <li
+                key={name}
+                className={cn(
+                  "flex items-center gap-2 rounded-xl bg-white/[0.03] px-3 py-1.5 shadow-rim ring-1 ring-white/[0.06]",
+                  off && "opacity-60",
+                )}
+              >
+                <span className="min-w-0 flex-1 truncate font-mono text-xs text-neutral-300">
+                  {name}
+                </span>
+                <Switch
+                  checked={!off}
+                  onCheckedChange={(next) => void onToggleModel(name, next)}
+                  aria-label={`${name} enabled`}
+                />
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-xs"
+                  aria-label={`Remove ${name}`}
+                  disabled={busy}
+                  onClick={() => void remove(name)}
+                >
+                  <XIcon />
+                </Button>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+      {adding ? (
+        <div className="mt-2">
+          <div className="flex items-center gap-2">
+            <Input
+              value={draft}
+              autoComplete="off"
+              spellCheck={false}
+              aria-label="Custom model id"
+              placeholder="Type a model id"
+              onChange={(event) => {
+                setDraft(event.target.value);
+                setDuplicate(false);
+              }}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") void add();
+                if (event.key === "Escape") {
+                  setAdding(false);
+                  setDraft("");
+                  setDuplicate(false);
+                }
+              }}
+              className="flex-1"
+            />
+            <Button
+              type="button"
+              size="sm"
+              disabled={draft.trim() === "" || busy}
+              onClick={() => void add()}
+            >
+              Add
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              disabled={busy}
+              onClick={() => {
+                setAdding(false);
+                setDraft("");
+                setDuplicate(false);
+              }}
+            >
+              Cancel
+            </Button>
+          </div>
+          {duplicate ? (
+            <p className="mt-1 text-xs text-neutral-500">
+              Already listed for {provider.label}.
+            </p>
+          ) : null}
+        </div>
+      ) : (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="mt-2"
+          onClick={() => setAdding(true)}
+        >
+          <PlusIcon />
+          Add custom model
+        </Button>
+      )}
     </div>
   );
 }

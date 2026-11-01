@@ -4,11 +4,11 @@
  * the drag and the chat prompt that reads it.
  */
 
-/** DataTransfer type for a dragged chair ref (asset or task chip). */
+/** DataTransfer type for a dragged chair ref (asset, task, or piece chip). */
 export const CHAIR_REF = "application/x-chair-ref";
 
 export type ChairRef = {
-  kind: "asset" | "task";
+  kind: "asset" | "task" | "piece";
   id: string;
   label: string;
 };
@@ -31,7 +31,7 @@ export function encodeChairRefs(refs: ChairRef[]): string {
 function parseChairRef(parsed: unknown): ChairRef | null {
   if (!parsed || typeof parsed !== "object") return null;
   const record = parsed as { kind?: unknown; id?: unknown; label?: unknown };
-  if (record.kind !== "asset" && record.kind !== "task") return null;
+  if (record.kind !== "asset" && record.kind !== "task" && record.kind !== "piece") return null;
   if (typeof record.id !== "string" || record.id.length === 0) return null;
   if (typeof record.label !== "string" || record.label.length === 0) return null;
   return { kind: record.kind, id: record.id, label: record.label };
