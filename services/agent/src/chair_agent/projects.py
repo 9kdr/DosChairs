@@ -58,6 +58,27 @@ def current_resolve_project() -> str | None:
     return name.strip() or None if isinstance(name, str) else None
 
 
+def find_project_file(
+    slug: str, editor: str | None = None, root: Path | None = None
+) -> Path | None:
+    """Find a file-based project whose stem slug matches `slug`."""
+    root = root if root is not None else projects_root()
+    editors = (editor,) if editor is not None else ("kdenlive", "otio")
+    try:
+        entries = sorted(
+            (entry for entry in root.iterdir() if entry.is_file()),
+            key=lambda entry: entry.name.casefold(),
+        )
+    except OSError:
+        return None
+    for entry in entries:
+        for ed in editors:
+            if entry.suffix.casefold() in FILE_SUFFIXES.get(ed, ()):
+                if _slug(entry.stem) == slug:
+                    return entry
+    return None
+
+
 def _file_projects(editor: str, root: Path) -> tuple[str, list[dict[str, Any]]]:
     """Projects of one file-based editor found directly inside `root`."""
     try:
