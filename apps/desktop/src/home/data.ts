@@ -4,8 +4,6 @@ export type EditorStatus = "inProject" | "idle" | "stopped";
 
 export type EditorInfo = {
   id: EditorId;
-  name: string;
-  short: string;
   status: EditorStatus;
 };
 
@@ -18,45 +16,26 @@ export type Project = {
   preview: string;
 };
 
-export const EDITORS: readonly EditorInfo[] = [
-  { id: "resolve", name: "DaVinci Resolve", short: "Resolve", status: "inProject" },
-  { id: "kdenlive", name: "Kdenlive", short: "Kdenlive", status: "idle" },
-  { id: "otio", name: "OTIO interchange", short: "OTIO", status: "stopped" },
-];
+export const EDITOR_IDS: readonly EditorId[] = ["resolve", "kdenlive", "otio"];
 
-export const PROJECTS: readonly Project[] = [
-  {
-    id: "proj_talking_head",
-    name: "Talking head rough-cut",
-    editorId: "resolve",
-    editedAt: "2026-10-26T18:40:00.000Z",
-    preview: "Hook · setup · pay-off",
-  },
-  {
-    id: "proj_captions",
-    name: "Caption pass — trailer",
-    editorId: "kdenlive",
-    editedAt: "2026-10-25T09:12:00.000Z",
-    preview: "Subs on V2",
-  },
-  {
-    id: "proj_b_roll",
-    name: "B-roll shelf",
-    editorId: "resolve",
-    editedAt: "2026-10-22T14:05:00.000Z",
-    preview: "12 clips · no audio",
-  },
-  {
-    id: "proj_otio_roundtrip",
-    name: "OTIO round-trip sample",
-    editorId: "otio",
-    editedAt: "2026-10-18T11:30:00.000Z",
-    preview: "Interchange only",
-  },
-];
+/** Display names only — statuses always come from detection. */
+export const EDITOR_META: Record<EditorId, { name: string; short: string }> = {
+  resolve: { name: "DaVinci Resolve", short: "Resolve" },
+  kdenlive: { name: "Kdenlive", short: "Kdenlive" },
+  otio: { name: "OTIO interchange", short: "OTIO" },
+};
 
-export function editorById(id: EditorId): EditorInfo {
-  return EDITORS.find((editor) => editor.id === id) ?? EDITORS[0]!;
+export function editorById(id: EditorId, status: EditorStatus = "stopped"): EditorInfo {
+  if (!EDITOR_IDS.includes(id)) return { id: EDITOR_IDS[0]!, status };
+  return { id, status };
+}
+
+export function editorName(id: EditorId): string {
+  return EDITOR_META[id].name;
+}
+
+export function editorShort(id: EditorId): string {
+  return EDITOR_META[id].short;
 }
 
 /** Rendered files the agent can reuse as-is — never templates or macros. */

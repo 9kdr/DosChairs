@@ -1,5 +1,5 @@
 import { ArrowUp, AudioLines, ChevronDown, Film, ImageIcon, Mic, Paperclip, Puzzle, Slash, Square, Waypoints, X } from "lucide-react";
-import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type {
   ClipboardEvent,
@@ -11,6 +11,8 @@ import { Button } from "@/components/ui/button";
 import { Menu, MenuPopup, MenuRadioGroup, MenuRadioItem, MenuTrigger } from "@/components/ui/menu";
 import { cn } from "@/lib/utils";
 import { filterActions, type Action } from "@/orchestrator/actions";
+import { KNOWN_MODELS, PROVIDERS } from "@/settings/providers";
+import { useSettings } from "@/settings/useSettings";
 
 const CLOSED_WIDTH = 452;
 const OPEN_WIDTH = 520;
@@ -371,7 +373,29 @@ export function ChatPrompt({
   placeholder = "Ask Chair, or / for an action",
 }: ChatPromptProps) {
   const [parts, setParts] = useState<Piece[]>(() => normalize([]));
-  const [model, setModel] = useState<(typeof MODELS)[number]>("Chair");
+  const [model, setModel] = useState<string>("Chair");
+  // Orchestrator pick: detected models from saved keys first, then the
+  // Chair presets. The choice persists in app settings.
+  const { settings, loaded, saveOrchestrator } = useSettings();
+  const detected = useMemo(
+    () =>
+      PROVIDERS.filter((provider) => settings.keys[provider.id] != null).flatMap(
+        (provider) =>
+          KNOWN_MODELS[provider.id].map((name) => `${name} (${provider.label})`),
+      ),
+    [settings.keys],
+  );
+  const options = useMemo(() => [...detected, ...MODELS], [detected]);
+  useEffect(() => {
+    if (!loaded) return;
+    const stored = settings.orchestrator;
+    setModel(stored != null && options.includes(stored) ? stored : "Chair");
+  }, [loaded, settings.orchestrator, options]);
+  const pickModel = (value: string | null) => {
+    if (value == null || !options.includes(value)) return;
+    setModel(value);
+    void saveOrchestrator(value);
+  };
   const [menuOpen, setMenuOpen] = useState(false);
   const [actionsOpen, setActionsOpen] = useState(false);
   const [actionsBox, setActionsBox] = useState<{ left: number; bottom: number } | null>(null);
@@ -1112,12 +1136,15 @@ export function ChatPrompt({
                         <MenuRadioGroup
                           value={model}
                           onValueChange={(value) => {
-                            if (value === "Chair" || value === "Chair fast" || value === "Chair precise") {
-                              setModel(value);
-                            }
+                            pickModel(value);
                             editorRef.current?.focus();
                           }}
                         >
+                          {detected.map((item) => (
+                            <MenuRadioItem key={item} value={item} closeOnClick>
+                              {item}
+                            </MenuRadioItem>
+                          ))}
                           {MODELS.map((item) => (
                             <MenuRadioItem key={item} value={item} closeOnClick>
                               {item}

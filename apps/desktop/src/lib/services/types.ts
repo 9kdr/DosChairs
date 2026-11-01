@@ -19,6 +19,8 @@ export type AgentHealth = {
   ok: boolean;
   tools: AgentTool[];
   models: Record<string, string | null>;
+  /** Meta key seen in the agent environment. Presence only, never the key. */
+  key_configured?: boolean;
 };
 
 export type AgentArtifact = {

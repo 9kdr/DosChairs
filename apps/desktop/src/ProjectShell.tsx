@@ -51,6 +51,7 @@ export function ProjectShell({ projectId, projectName, editorId, onHome }: Proje
   const project = useProject(projectId, projectName);
   const [barOpen, setBarOpen] = useState(false);
   const [command, setCommand] = useState<{ id: number; text: string } | null>(null);
+  const [createdTasks, setCreatedTasks] = useState<RunningTask[]>([]);
   const [taskChat, setTaskChat] = useState<RunningTask | null>(null);
   const [taskNote, setTaskNote] = useState<{ id: number; text: string } | null>(null);
 
@@ -120,8 +121,17 @@ export function ProjectShell({ projectId, projectName, editorId, onHome }: Proje
             <ReviewBoard store={project} />
           ) : section === "orchestrator" ? (
             <OrchestratorBoard
+              projectId={projectId}
               command={command}
               history={project.history}
+              createdTasks={createdTasks}
+              onCreateTask={(task) =>
+                setCreatedTasks((current) =>
+                  current.some((existing) => existing.id === task.id)
+                    ? current
+                    : [task, ...current],
+                )
+              }
               onOpenTask={(task) => {
                 setTaskNote(null);
                 setTaskChat(task);

@@ -1,0 +1,10 @@
+Composition {
+  CurrentTime = 0,
+  Tools = {
+    ColorCorrector = ColorCorrector {
+      Inputs = {
+        MasterRGBGain = Input { Value = 1.1 },
+      },
+    },
+  },
+}

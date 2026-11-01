@@ -14,6 +14,7 @@ import {
   Rows3,
   Search,
   Trash2,
+  TriangleAlert,
   Upload,
   type LucideIcon,
 } from "lucide-react";
@@ -28,12 +29,23 @@ import type {
   Ref,
 } from "react";
 import { SmoothScrollTarget } from "@/components/smooth-scroll";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "@/components/ui/empty";
 import { Input } from "@/components/ui/input";
 import { Menu, MenuPopup, MenuRadioGroup, MenuRadioItem, MenuTrigger } from "@/components/ui/menu";
+import { Spinner } from "@/components/ui/spinner";
 import { Tabs, TabsList, TabsTab } from "@/components/ui/tabs";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
+import { useProjectAssets } from "@/project/assets";
 
 type AssetKind = "video" | "image" | "audio";
 type Scope = "assets" | "pieces";
@@ -47,6 +59,8 @@ type AssetItem = {
   name: string;
   kind: AssetKind;
   previewUrl?: string;
+  /** Whether the sidecar already rendered a preview for this file. */
+  proxy: "ready" | "missing";
 };
 
 type PieceItem = {
@@ -118,31 +132,6 @@ function loadIdList(key: string): string[] {
     return [];
   }
 }
-
-const STARTER_ASSETS: AssetItem[] = [
-  { id: "a1", scope: "assets", name: "A001_C004_1024_RAW.mov", kind: "video" },
-  { id: "a2", scope: "assets", name: "interview_sync_take1.mov", kind: "video" },
-  { id: "a3", scope: "assets", name: "b_roll_desk_overhead.mp4", kind: "video" },
-  { id: "a4", scope: "assets", name: "hero_frame_graded.png", kind: "image" },
-  { id: "a5", scope: "assets", name: "title_card_clean.png", kind: "image" },
-  { id: "a6", scope: "assets", name: "dialogue_clean_stem.wav", kind: "audio" },
-  { id: "a7", scope: "assets", name: "score_temp_v3.mp3", kind: "audio" },
-];
-
-const FOLDERS: readonly FolderItem[] = [
-  { id: "interview", name: "Interview", assetIds: ["a2", "a6"] },
-  { id: "broll", name: "B-roll", assetIds: ["a3", "a4", "a5"] },
-];
-
-const FILED_IDS = new Set(FOLDERS.flatMap((folder) => folder.assetIds));
-
-const PIECES: PieceItem[] = [
-  { id: "p1", scope: "pieces", name: "Lower third" },
-  { id: "p2", scope: "pieces", name: "Caption lockup" },
-  { id: "p3", scope: "pieces", name: "Hook card" },
-  { id: "p4", scope: "pieces", name: "Face hold" },
-  { id: "p5", scope: "pieces", name: "Room grade" },
-];
 
 const CHAIR_REF = "application/x-chair-ref";
 
@@ -321,17 +310,118 @@ function SearchField({
   );
 }
 
+/** The shelf list area before the listing lands. */
+function ShelfLoading({ still }: { still: boolean }) {
+  return (
+    <motion.div
+      aria-label="Loading assets"
+      {...(still ? FADE_STILL : FADE_MOVE)}
+      className="flex items-center gap-2 px-1 py-2"
+    >
+      <Spinner className="size-4 shrink-0 text-neutral-400" />
+      <p className="text-sm text-neutral-400">Loading assets…</p>
+    </motion.div>
+  );
+}
+
+/** The listing failed: one sentence plus a retry, inside the shelf frame. */
+function ShelfError({
+  message,
+  onRetry,
+  still,
+}: {
+  message: string;
+  onRetry: () => void;
+  still: boolean;
+}) {
+  return (
+    <motion.div
+      role="alert"
+      aria-label="Assets failed to load"
+      {...(still ? FADE_STILL : FADE_MOVE)}
+      className="flex flex-col gap-3 px-1 py-2"
+    >
+      <div className="flex items-center gap-2">
+        <TriangleAlert className="size-4 shrink-0 text-amber-300" aria-hidden="true" />
+        <h3 className="text-sm font-semibold tracking-wide text-neutral-100">
+          Couldn&apos;t load the assets
+        </h3>
+      </div>
+      <p className="text-sm leading-6 text-neutral-400">{message}</p>
+      <div>
+        <Button type="button" size="sm" variant="outline" onClick={onRetry}>
+          Try again
+        </Button>
+      </div>
+    </motion.div>
+  );
+}
+
+/** The project has nothing on this shelf tab yet. Frame and header stay. */
+function ShelfEmpty({
+  scope,
+  onRetry,
+  still,
+}: {
+  scope: Scope;
+  onRetry: () => void;
+  still: boolean;
+}) {
+  const Icon = scope === "assets" ? Film : Puzzle;
+  return (
+    <motion.div {...(still ? FADE_STILL : FADE_MOVE)}>
+      <Empty className="py-8 md:py-10">
+        <EmptyHeader>
+          <EmptyMedia variant="icon">
+            <Icon />
+          </EmptyMedia>
+          <EmptyTitle>{scope === "assets" ? "No assets yet" : "No pieces yet"}</EmptyTitle>
+          <EmptyDescription>
+            {scope === "assets"
+              ? "Drop media in this project's folder, or import files to start the shelf."
+              : "Pieces the agent offers land here."}
+          </EmptyDescription>
+        </EmptyHeader>
+        <EmptyContent>
+          <Button type="button" size="sm" variant="outline" onClick={onRetry}>
+            Check again
+          </Button>
+        </EmptyContent>
+      </Empty>
+    </motion.div>
+  );
+}
+
+/** One status mark: the sidecar already rendered a preview for this file. */
+function ProxyBadge({ className }: { className?: string }) {
+  return (
+    <Badge size="sm" variant="success" className={cn("shrink-0", className)}>
+      Proxy
+    </Badge>
+  );
+}
+
 type AssetShelfProps = {
   className?: string;
+  /** Which project's listing to render, through the agent assets endpoint. */
+  projectId: string;
   /** Freeze item motion to the opacity-only variant while the board morphs. */
   frozen?: boolean;
   /** Lock indicator transitions so highlights track 1:1 mid-morph. */
   transitionLock?: boolean;
 };
 
-export function AssetShelf({ className, frozen = false, transitionLock = false }: AssetShelfProps) {
+export function AssetShelf({
+  className,
+  projectId,
+  frozen = false,
+  transitionLock = false,
+}: AssetShelfProps) {
   const reduce = useReducedMotion();
-  const [assets, setAssets] = useState(STARTER_ASSETS);
+  const listing = useProjectAssets(projectId);
+  // Files the user imports this session ride above the listing. They are
+  // session-local: the shelf never writes them into the project.
+  const [imports, setImports] = useState<AssetItem[]>([]);
   const [scope, setScope] = useState<Scope>("assets");
   const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");
   // One sizing shared by assets and pieces, compact unless the user picked
@@ -376,9 +466,30 @@ export function AssetShelf({ className, frozen = false, transitionLock = false }
   }, [searchOpen]);
   const [openFolder, setOpenFolder] = useState<string | null>(null);
   const [shift, setShift] = useState<Shift>("fade");
-  const [selectedIds, setSelectedIds] = useState<string[]>(() =>
-    STARTER_ASSETS[0] ? [STARTER_ASSETS[0].id] : [],
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const folders = listing.folders;
+  const pieces: PieceItem[] = useMemo(
+    () => listing.pieces.map((piece) => ({ ...piece, scope: "pieces" as const })),
+    [listing.pieces],
   );
+  const assets: AssetItem[] = useMemo(
+    () => [...imports, ...listing.assets.map((asset) => ({ ...asset, scope: "assets" as const }))],
+    [imports, listing.assets],
+  );
+  const filedIds = useMemo(
+    () => new Set(folders.flatMap((folder) => folder.assetIds)),
+    [folders],
+  );
+  // First listing in: select the first asset, the way the shelf used to
+  // open on its first row. Once only; clearing the selection sticks.
+  const didAutoselect = useRef(false);
+  useEffect(() => {
+    if (didAutoselect.current || listing.phase !== "ready" || selectedIds.length > 0) return;
+    const first = assets[0];
+    if (!first) return;
+    didAutoselect.current = true;
+    setSelectedIds([first.id]);
+  }, [assets, listing.phase, selectedIds.length]);
   // Hidden items stay in the project but are marked to keep out of model
   // context. Removed items leave the shelf (the file itself is untouched).
   // Both persist so the shelf remembers across sessions.
@@ -429,12 +540,12 @@ export function AssetShelf({ className, frozen = false, transitionLock = false }
   const listMode = reduce || frozen ? "sync" : "popLayout";
 
   const needle = query.trim().toLowerCase();
-  const folder = FOLDERS.find((item) => item.id === openFolder) ?? null;
+  const folder = folders.find((item) => item.id === openFolder) ?? null;
   const paneKey = `${scope}:${view}:${openFolder ?? "root"}`;
 
   const folderRows = useMemo(() => {
     if (scope !== "assets" || folder) return [];
-    return FOLDERS.filter((item) => !removedIds.has(item.id)).filter((item) => {
+    return folders.filter((item) => !removedIds.has(item.id)).filter((item) => {
       const contents = item.assetIds.flatMap((id) => {
         if (removedIds.has(id)) return [];
         const asset = assets.find((entry) => entry.id === id);
@@ -448,11 +559,11 @@ export function AssetShelf({ className, frozen = false, transitionLock = false }
       if (item.name.toLowerCase().includes(needle)) return true;
       return typed.some((asset) => asset.name.toLowerCase().includes(needle));
     });
-  }, [assets, folder, needle, removedIds, scope, typeFilter]);
+  }, [assets, folder, folders, needle, removedIds, scope, typeFilter]);
 
   const visible = useMemo(() => {
     if (scope === "pieces") {
-      return PIECES.filter(
+      return pieces.filter(
         (item) => !removedIds.has(item.id) && item.name.toLowerCase().includes(needle),
       );
     }
@@ -462,12 +573,12 @@ export function AssetShelf({ className, frozen = false, transitionLock = false }
           const asset = assets.find((entry) => entry.id === id);
           return asset ? [asset] : [];
         })
-      : assets.filter((item) => !FILED_IDS.has(item.id) && !removedIds.has(item.id));
+      : assets.filter((item) => !filedIds.has(item.id) && !removedIds.has(item.id));
     return pool.filter((item) => {
       if (typeFilter !== "all" && item.kind !== typeFilter) return false;
       return item.name.toLowerCase().includes(needle);
     });
-  }, [assets, folder, needle, removedIds, scope, typeFilter]);
+  }, [assets, filedIds, folder, needle, pieces, removedIds, scope, typeFilter]);
 
   const importFiles = (list: FileList | null) => {
     if (!list || list.length === 0) return;
@@ -480,10 +591,11 @@ export function AssetShelf({ className, frozen = false, transitionLock = false }
         name: file.name,
         kind,
         previewUrl: kind === "image" ? URL.createObjectURL(file) : undefined,
+        proxy: "missing",
       });
     }
     setShift(openFolder ? "out" : "fade");
-    setAssets((current) => [...next, ...current]);
+    setImports((current) => [...next, ...current]);
     setScope("assets");
     setOpenFolder(null);
     setTypeFilter("all");
@@ -642,7 +754,7 @@ export function AssetShelf({ className, frozen = false, transitionLock = false }
         group.push({ id: sid, label: asset.name, tone: asset.kind });
         continue;
       }
-      const folderItem = FOLDERS.find((item) => item.id === sid);
+      const folderItem = folders.find((item) => item.id === sid);
       if (folderItem) group.push({ id: sid, label: folderItem.name, tone: "folder" });
     }
     return group.length > 0 ? group : [{ id, label, tone }];
@@ -730,7 +842,15 @@ export function AssetShelf({ className, frozen = false, transitionLock = false }
     icon: LayoutGrid,
   };
   const ViewIcon = viewChoice.icon;
-  const empty = folderRows.length === 0 && visible.length === 0;
+  // No data at all for this scope: the empty state. Data that only
+  // filters to nothing keeps the "Nothing matches." line instead.
+  const listedCount = scope === "pieces" ? pieces.length : folders.length + assets.length;
+  const scopeEmpty = listing.phase === "ready" && listedCount === 0;
+  const filteredEmpty =
+    listing.phase === "ready" &&
+    !scopeEmpty &&
+    folderRows.length === 0 &&
+    visible.length === 0;
   const rowGap = view === "more" ? "gap-1" : view === "compact" ? "gap-1.5" : "gap-2";
 
   // Shift-click range selection in render order: folders first, then items.
@@ -959,7 +1079,17 @@ export function AssetShelf({ className, frozen = false, transitionLock = false }
                   selecting && "touch-none",
                 )}
               >
-                {view === "cards" ? (
+                {listing.phase === "loading" ? (
+                  <ShelfLoading still={reduce || frozen} />
+                ) : listing.phase === "error" ? (
+                  <ShelfError
+                    message={listing.error ?? "Could not load the assets."}
+                    onRetry={listing.retry}
+                    still={reduce || frozen}
+                  />
+                ) : scopeEmpty ? (
+                  <ShelfEmpty scope={scope} onRetry={listing.retry} still={reduce || frozen} />
+                ) : view === "cards" ? (
                   <ul className="relative grid grid-cols-2 content-start gap-2">
                     <AnimatePresence mode={listMode} initial={false}>
                       {folderRows.map((item) => (
@@ -1146,7 +1276,7 @@ export function AssetShelf({ className, frozen = false, transitionLock = false }
                   </>
                 )}
                 <AnimatePresence initial={false}>
-                  {empty ? (
+                  {filteredEmpty ? (
                     <motion.p
                       key="empty"
                       className="px-1 text-sm text-neutral-500"
@@ -1335,6 +1465,7 @@ function Tile({
   const kind = item.scope === "assets" ? item.kind : null;
   const Icon = kind ? KIND_ICON[kind] : Puzzle;
   const draggable = item.scope === "assets";
+  const proxied = item.scope === "assets" && item.proxy === "ready";
   return (
     <Button
       type="button"
@@ -1349,7 +1480,7 @@ function Tile({
       {draggable ? (
       <DragHandle
         className={cn(
-          "flex aspect-video w-full cursor-grab items-center justify-center overflow-hidden rounded-lg active:cursor-grabbing",
+          "relative flex aspect-video w-full cursor-grab items-center justify-center overflow-hidden rounded-lg active:cursor-grabbing",
           kind ? KIND_FRAME[kind] : "bg-white/8",
           item.scope === "assets" && item.previewUrl ? undefined : PLACEHOLDER,
         )}
@@ -1364,6 +1495,7 @@ function Tile({
             aria-hidden="true"
           />
         )}
+        {proxied ? <ProxyBadge className="absolute top-1 left-1" /> : null}
       </DragHandle>
       ) : (
       <span
@@ -1405,6 +1537,8 @@ function Row({
   const draggable = item.scope === "assets";
   const dragRow = draggable && selected;
   const name = <span className="min-w-0 flex-1 truncate text-left font-medium">{item.name}</span>;
+  const proxied = item.scope === "assets" && item.proxy === "ready";
+  const proxy = proxied ? <ProxyBadge /> : null;
   const meta = dense ? (
     <span className="shrink-0 text-[10px] font-normal text-neutral-500">{kindLabel}</span>
   ) : null;
@@ -1421,7 +1555,15 @@ function Row({
         SHELF_BUTTON,
         dimmed && "opacity-60",
         dragRow && "cursor-grab active:cursor-grabbing",
-        dense ? "h-8 px-2 text-xs sm:h-8" : "h-8 justify-start! gap-3! px-2.5 text-left sm:h-8",
+        // A badged row reserves the hover-action zone, so the badge
+        // never slides under the hide/remove buttons.
+        dense
+          ? proxied
+            ? "h-8 pr-[68px] pl-2 text-xs sm:h-8"
+            : "h-8 px-2 text-xs sm:h-8"
+          : proxied
+            ? "h-8 justify-start! gap-3! pr-[68px] pl-2.5 text-left sm:h-8"
+            : "h-8 justify-start! gap-3! px-2.5 text-left sm:h-8",
       )}
     >
       {dragRow ? (
@@ -1432,6 +1574,7 @@ function Row({
         >
           <KindMark kind={kind} dense={dense} />
           {name}
+          {proxy}
           {meta}
         </DragHandle>
       ) : (
@@ -1448,6 +1591,7 @@ function Row({
             <KindMark kind={kind} dense={dense} />
           )}
           {name}
+          {proxy}
           {meta}
         </>
       )}

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createServicesClient, ServiceError, type FetchFn } from "../lib/services/client";
 import type { AgentJob, AgentJobStatus } from "../lib/services/types";
 import type { RunningTask } from "./RunningTasks";
@@ -8,15 +8,38 @@ import {
   activityForLivePending,
   briefForOpening,
   headlineForSubmitError,
+  initialTurnsFor,
   inputForTurn,
   isThreadDemo,
   noteKey,
   openingKey,
+  openTurnScope,
   replyForSubmitError,
   runTurn,
   shortRequestId,
   textForJob,
+  withOpenTurnError,
 } from "./taskThread";
+import { writeTaskThread } from "./threadStore";
+
+/** Node has no localStorage; stand in with a map behind the same calls. */
+function installMemoryStorage(): Map<string, string> {
+  const backing = new Map<string, string>();
+  vi.stubGlobal("localStorage", {
+    getItem: (key: string) => (backing.has(key) ? backing.get(key)! : null),
+    setItem: (key: string, value: string) => {
+      backing.set(key, value);
+    },
+    removeItem: (key: string) => {
+      backing.delete(key);
+    },
+  });
+  return backing;
+}
+
+beforeEach(() => {
+  installMemoryStorage();
+});
 
 const task: RunningTask = {
   id: "task-3",
@@ -50,6 +73,22 @@ describe("turn identity", () => {
     expect(noteKey("task-3", 7)).not.toBe(noteKey("task-1", 7));
   });
 
+  it("keeps the primary lane on the resumable opening key", () => {
+    const primary = openTurnScope("task-3", "edit", true);
+    expect(primary).toMatchObject({
+      id: "open-edit",
+      key: openingKey("task-3"),
+      changesetId: "cs-task-3-open",
+    });
+    const extra = openTurnScope("task-3", "colour", false);
+    expect(extra).toMatchObject({
+      id: "open-colour",
+      key: `${openingKey("task-3")}:colour`,
+      changesetId: "cs-task-3-open-colour",
+    });
+    expect(extra.key).not.toBe(primary.key);
+  });
+
   it("briefs the opening turn from the task itself", () => {
     const brief = briefForOpening(task);
     expect(brief).toContain("Detect silence and jump cuts");
@@ -69,6 +108,19 @@ describe("turn identity", () => {
       total_frames: 0,
       spans: [],
       preview_urls: [],
+    });
+  });
+
+  it("resolves the task's loaded proxy media into the turn", () => {
+    const loaded: RunningTask = {
+      ...task,
+      media: { proxyUrl: "file:///proxies/silence.mp4", baseRevision: "rev-9", totalFrames: 900 },
+    };
+    const input = inputForTurn(loaded, "trim the pause", "cs-task-3-open");
+    expect(input).toMatchObject({
+      proxy_url: "file:///proxies/silence.mp4",
+      base_revision: "rev-9",
+      total_frames: 900,
     });
   });
 });
@@ -171,6 +223,101 @@ describe("live activity", () => {
   });
 });
 
+describe("thread restore", () => {
+  it("reopens a task on its stored thread", () => {
+    writeTaskThread({
+      taskId: "task-3",
+      taskName: "Detect silence and jump cuts",
+      lane: "edit",
+      status: "Scanning audio pauses",
+      turns: [
+        {
+          id: "open",
+          role: "assistant",
+          text: "Done (req_0123456789): no previews, no proposed changes.",
+        },
+        { id: "user-1", role: "user", text: "trim the pause" },
+        {
+          id: "assistant-1",
+          role: "assistant",
+          text: "Done (req_abcdef0123): 1 preview, no proposed changes.",
+        },
+      ],
+      savedAt: "2026-11-01T10:00:00.000Z",
+    });
+    const restored = initialTurnsFor(task, false);
+    expect(restored).toHaveLength(3);
+    expect(restored[1]).toMatchObject({ role: "user", text: "trim the pause" });
+  });
+
+  it("starts one fresh live turn per lane when nothing is stored", () => {
+    expect(initialTurnsFor(task, false)).toEqual([
+      { id: "open-edit", role: "assistant", text: "Sending the turn to the agent…" },
+    ]);
+  });
+
+  it("drops in-flight placeholders on restore; they never completed", () => {
+    writeTaskThread({
+      taskId: "task-3",
+      taskName: "Detect silence and jump cuts",
+      lane: "edit",
+      status: "Scanning audio pauses",
+      turns: [
+        {
+          id: "open",
+          role: "assistant",
+          text: "Done (req_0123456789): no previews, no proposed changes.",
+        },
+        { id: "user-9", role: "user", text: "one more pass" },
+        { id: "assistant-9", role: "assistant", text: "Sending the turn to the agent…" },
+      ],
+      savedAt: "2026-11-01T10:00:00.000Z",
+    });
+    const restored = initialTurnsFor(task, false);
+    expect(restored.map((turn) => turn.id)).toEqual(["open", "user-9"]);
+  });
+
+  it("keeps the demo stand-in out of the store either way", () => {
+    writeTaskThread({
+      taskId: "task-3",
+      taskName: "Detect silence and jump cuts",
+      lane: "edit",
+      status: "Scanning audio pauses",
+      turns: [{ id: "open", role: "assistant", text: "stored live text" }],
+      savedAt: "2026-11-01T10:00:00.000Z",
+    });
+    const demo = initialTurnsFor(task, true);
+    expect(demo).toHaveLength(1);
+    expect(demo[0]?.text).toContain("stand-in, not a live agent");
+  });
+});
+
+describe("opening-turn failure", () => {
+  it("shows the error only when the turn never got going", () => {
+    const fresh = withOpenTurnError(
+      [{ id: "open", role: "assistant", text: "Sending the turn to the agent…" }],
+      "Couldn't reach the agent.",
+    );
+    expect(fresh[0]?.text).toBe("Couldn't reach the agent.");
+  });
+
+  it("keeps stored text when the agent is unreachable; the store fills in", () => {
+    const turns = withOpenTurnError(
+      [
+        {
+          id: "open",
+          role: "assistant",
+          text: "Done (req_0123456789): no previews, no proposed changes.",
+        },
+        { id: "user-1", role: "user", text: "trim the pause" },
+      ],
+      "Couldn't reach the agent.",
+    );
+    expect(turns[0]?.text).toContain("Done (req_0123456789)");
+    expect(turns[1]?.text).toBe("trim the pause");
+  });
+});
+
 describe("runTurn", () => {
   it("submits the scoped edit turn and polls it to terminal", async () => {
     const seen: { url: string; init?: RequestInit }[] = [];
@@ -190,8 +337,12 @@ describe("runTurn", () => {
     };
     const client = createServicesClient({ fetchFn });
     const updates: AgentJobStatus[] = [];
+    const loaded: RunningTask = {
+      ...task,
+      media: { proxyUrl: "file:///proxies/silence.mp4", baseRevision: "rev-9", totalFrames: 900 },
+    };
     const finished = await runTurn(client, {
-      task,
+      task: loaded,
       brief: "remove the silence",
       key: noteKey("task-3", 7),
       changesetId: "cs-task-3-7",
@@ -208,7 +359,13 @@ describe("runTurn", () => {
     const body = submit?.init?.body;
     expect(JSON.parse(typeof body === "string" ? body : "{}")).toMatchObject({
       task: "edit",
-      input: { brief: "remove the silence", task_id: "task-3" },
+      input: {
+        brief: "remove the silence",
+        task_id: "task-3",
+        proxy_url: "file:///proxies/silence.mp4",
+        base_revision: "rev-9",
+        total_frames: 900,
+      },
     });
   });
 });
