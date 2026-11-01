@@ -32,6 +32,7 @@ type OrchestratorBoardProps = {
   createdTasks?: readonly RunningTask[];
   onOpenTask?: (task: RunningTask) => void;
   onUndoTask?: (task: RunningTask) => void;
+  onUndoEntry?: (entry: HistoryEntry) => void;
   onCreateTask?: (task: RunningTask) => void;
 };
 
@@ -52,6 +53,7 @@ export function OrchestratorBoard({
   createdTasks = [],
   onOpenTask,
   onUndoTask,
+  onUndoEntry,
   onCreateTask,
 }: OrchestratorBoardProps) {
   const [planOpen, setPlanOpen] = useState(false);
@@ -268,12 +270,13 @@ export function OrchestratorBoard({
               }}
             >
               <RunningTasks
+                history={history}
                 tasks={[...createdTasks, ...STANDIN_TASKS]}
                 onOpen={onOpenTask}
                 onUndo={onUndoTask}
                 frozen={planTweening}
               />
-              <HistoryCard entries={history} />
+              <HistoryCard entries={history} onUndoEntry={onUndoEntry} />
             </div>,
             slotContainer,
           )}

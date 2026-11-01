@@ -30,6 +30,10 @@ export function diffSummary(item: ChangesetItem): string {
       const name = str(obj(patch.marker)?.name);
       return name ? `Adds marker “${name}”.` : "Adds a marker.";
     }
+    case "remove_marker": {
+      const name = str(obj(patch.marker)?.name) ?? target;
+      return name ? `Removes marker “${name}”.` : "Removes a marker.";
+    }
     case "trim": {
       const edge = str(patch.edge) ?? "head";
       const frames = num(patch.frames);
@@ -64,6 +68,8 @@ export function diffSummary(item: ChangesetItem): string {
     }
     case "add_transition":
       return target ? `Adds a transition to ${target}.` : "Adds a transition.";
+    case "remove_transition":
+      return target ? `Removes the transition from ${target}.` : "Removes a transition.";
     case "add_effect": {
       const preset = str(patch.presetName);
       if (preset && target) return `Adds the ${preset} effect to ${target}.`;
@@ -71,8 +77,18 @@ export function diffSummary(item: ChangesetItem): string {
       if (target) return `Adds an effect to ${target}.`;
       return "Adds an effect.";
     }
+    case "remove_effect": {
+      const preset = str(patch.presetName) ?? str(obj(patch.effect)?.presetName);
+      const effectId = str(patch.effectId) ?? str(obj(patch.effect)?.id);
+      if (preset && target) return `Removes the ${preset} effect from ${target}.`;
+      if (effectId && target) return `Removes effect ${effectId} from ${target}.`;
+      if (target) return `Removes an effect from ${target}.`;
+      return "Removes an effect.";
+    }
     case "add_track":
       return target ? `Adds track ${target}.` : "Adds a track.";
+    case "remove_track":
+      return target ? `Removes track ${target}.` : "Removes a track.";
     case "set_gain": {
       const db = num(patch.gainDb) ?? num(patch.db);
       if (db != null && target) return `Sets ${target} gain to ${db} dB.`;
@@ -171,6 +187,30 @@ function TrackStack({ rows, newLast = false }: { rows: number; newLast?: boolean
   );
 }
 
+/** Two clips joined by the lime transition diamond. */
+function TransitionClips() {
+  return (
+    <div className="relative flex min-w-0 flex-1 items-center gap-1">
+      <ClipBar />
+      <ClipBar />
+      <div className="absolute left-1/2 size-4 -translate-x-1/2 rotate-45 rounded-[3px] bg-lime-300" />
+    </div>
+  );
+}
+
+/** A clip carrying its effect pill. */
+function EffectClip({ preset }: { preset?: string }) {
+  return (
+    <div className="relative min-w-0 flex-1">
+      <ClipBar className="w-full" />
+      <span className="absolute top-1/2 right-1 flex max-w-full -translate-y-1/2 items-center gap-1 rounded-full bg-black/70 px-1.5 py-0.5 text-[10px] font-medium text-lime-200 ring-1 ring-lime-300/40">
+        <SparklesIcon className="size-3 shrink-0" />
+        <span className="truncate">{preset ?? "Effect"}</span>
+      </span>
+    </div>
+  );
+}
+
 function Panel({ children }: { children: ReactNode }) {
   return (
     <div className="flex h-16 items-center justify-center gap-1 overflow-hidden rounded-xl bg-black/30 px-3 ring-1 ring-white/[0.06]">
@@ -185,6 +225,8 @@ function panelsForOp(item: ChangesetItem): { before: ReactNode; after: ReactNode
   switch (item.op) {
     case "add_marker":
       return { before: <Ruler />, after: <Ruler pin /> };
+    case "remove_marker":
+      return { before: <Ruler pin />, after: <Ruler /> };
     case "trim": {
       const tail = str(patch.edge) === "tail";
       const kept = <ClipBar className="flex-1" />;
@@ -232,31 +274,25 @@ function panelsForOp(item: ChangesetItem): { before: ReactNode; after: ReactNode
     case "add_transition":
       return {
         before: <><ClipBar /><ClipBar /></>,
-        after: (
-          <div className="relative flex min-w-0 flex-1 items-center gap-1">
-            <ClipBar />
-            <ClipBar />
-            <div className="absolute left-1/2 size-4 -translate-x-1/2 rotate-45 rounded-[3px] bg-lime-300" />
-          </div>
-        ),
+        after: <TransitionClips />,
+      };
+    case "remove_transition":
+      return {
+        before: <TransitionClips />,
+        after: <><ClipBar /><ClipBar /></>,
       };
     case "add_effect": {
       const preset = str(patch.presetName);
-      return {
-        before: <ClipBar />,
-        after: (
-          <div className="relative min-w-0 flex-1">
-            <ClipBar className="w-full" />
-            <span className="absolute top-1/2 right-1 flex max-w-full -translate-y-1/2 items-center gap-1 rounded-full bg-black/70 px-1.5 py-0.5 text-[10px] font-medium text-lime-200 ring-1 ring-lime-300/40">
-              <SparklesIcon className="size-3 shrink-0" />
-              <span className="truncate">{preset ?? "Effect"}</span>
-            </span>
-          </div>
-        ),
-      };
+      return { before: <ClipBar />, after: <EffectClip preset={preset} /> };
+    }
+    case "remove_effect": {
+      const preset = str(patch.presetName) ?? str(obj(patch.effect)?.presetName);
+      return { before: <EffectClip preset={preset} />, after: <ClipBar /> };
     }
     case "add_track":
       return { before: <TrackStack rows={2} />, after: <TrackStack rows={3} newLast /> };
+    case "remove_track":
+      return { before: <TrackStack rows={3} />, after: <TrackStack rows={2} /> };
     case "set_gain": {
       const db = num(patch.gainDb) ?? num(patch.db) ?? 0;
       return { before: <Wave />, after: <Wave tone="new" scale={db >= 0 ? 1.35 : 0.6} /> };

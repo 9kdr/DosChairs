@@ -44,9 +44,13 @@ const OPS: ReadonlySet<string> = new Set([
   "move",
   "set_speed",
   "add_transition",
+  "remove_transition",
   "add_marker",
+  "remove_marker",
   "add_effect",
+  "remove_effect",
   "add_track",
+  "remove_track",
   "set_gain",
   "mute_clip",
 ]);

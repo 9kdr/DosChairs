@@ -47,6 +47,23 @@ describe("diffSummary", () => {
     expect(diffSummary(item("mute_clip", undefined, "clip-b"))).toBe("Mutes clip-b.");
   });
 
+  it("names the removal ops undo proposals emit", () => {
+    expect(
+      diffSummary(item("remove_marker", { marker: { id: "m1", name: "Hook" } }, "m1")),
+    ).toBe("Removes marker “Hook”.");
+    expect(diffSummary(item("remove_marker"))).toBe("Removes a marker.");
+    expect(
+      diffSummary(item("remove_effect", { effectId: "fx-1" }, "clip-b")),
+    ).toBe("Removes effect fx-1 from clip-b.");
+    expect(
+      diffSummary(item("remove_effect", { presetName: "Halation" }, "clip-b")),
+    ).toBe("Removes the Halation effect from clip-b.");
+    expect(
+      diffSummary(item("remove_transition", undefined, "clip-b")),
+    ).toBe("Removes the transition from clip-b.");
+    expect(diffSummary(item("remove_track", undefined, "v2"))).toBe("Removes track v2.");
+  });
+
   it("falls back to plain words when the patch or target is missing", () => {
     expect(diffSummary(item("add_marker"))).toBe("Adds a marker.");
     expect(diffSummary(item("trim"))).toBe("Trims the head of a clip.");

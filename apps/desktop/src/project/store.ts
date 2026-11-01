@@ -1,16 +1,30 @@
 import { useEffect, useState } from "react";
 import type { Changeset, ChangesetItem, EditOp, Timeline } from "@chair/timeline-ir";
+import { buildUndoChangeset, invertItem } from "@chair/timeline-ir";
+import type { HistoryEntry } from "@chair/timeline-ir";
 import { readReviewSnapshot, withStoredDecisions, writeReviewSnapshot } from "./persist";
 import { fetchProjectReview, type ReviewJob } from "./review";
 
+export type { HistoryEntry } from "@chair/timeline-ir";
+
 /**
- * The project store: one open timeline plus one proposed changeset.
- * Opening a project loads the timeline mirror and the pending proposal
- * through the review endpoint; review only flips item status. Nothing
- * here applies an item to the timeline.
+ * The project store: one open timeline plus its proposals. Opening a
+ * project loads the timeline mirror and the pending proposal through the
+ * review endpoint; review only flips item status. Nothing here applies an
+ * item to the timeline. Every accept appends a history entry with the
+ * item's inverse; undo-to-here proposes those inverses as a new pending
+ * changeset that needs its own accept.
  */
 
 export type Decision = "accepted" | "rejected";
+
+/** "Add Clip": the human label for an op, shared by every history view. */
+export function opLabel(op: string): string {
+  return op
+    .split("_")
+    .map((word) => word[0]!.toUpperCase() + word.slice(1))
+    .join(" ");
+}
 
 /**
  * Review one item: flip its status and leave everything else alone.
@@ -26,146 +40,91 @@ export function reviewItem(changeset: Changeset, id: string, decision: Decision)
   return found ? { ...changeset, items } : changeset;
 }
 
-/**
- * One accepted edit's undo point, shaped like the history entry in #75:
- * `{ taskId, changesetId, itemId, op, targetId, baseRevision, forward,
- * inverse, acceptedAt, acceptedBy }`. Stand-in data until #75 lands: the
- * task id is fixed, the inverse patch is a marker, and nothing here can
- * roll back — the "Undo to here" buttons stay disabled until then.
- */
-export type HistoryEntry = {
-  taskId: string;
-  changesetId: string;
-  itemId: string;
-  op: EditOp;
-  targetId?: string;
-  baseRevision: string;
-  forward: Record<string, unknown>;
-  inverse: Record<string, unknown>;
-  acceptedAt: string;
-  acceptedBy: string;
-};
-
-/** Stand-in provenance until live agent output (#61) and rollback (#75) land. */
+/** Fallbacks until live agent output (#61) names the task and the editor. */
 export const STAND_IN_TASK_ID = "task-stand-in";
 export const STAND_IN_ACCEPTED_BY = "you";
 
-/** Build the history entry for one accepted item. Rejected items never call this. */
-export function historyEntryForItem(
+export type AcceptCheck =
+  | { ok: true; entry: HistoryEntry }
+  | { ok: false; reason: string };
+
+/**
+ * Build the history entry for one accepted item: the forward patch verbatim
+ * plus the inverse the timeline can unwind through. Fails closed — an item
+ * with no inverse (or whose before-state is missing from the mirror)
+ * refuses with a reason instead of accepting without a way back. Rejected
+ * items never call this.
+ */
+export function tryHistoryEntry(
   changeset: Changeset,
-  item: Pick<ChangesetItem, "id" | "op" | "targetId" | "patch">,
+  item: ChangesetItem,
+  timeline: Timeline,
   acceptedBy: string,
   acceptedAt: string,
   taskId: string = STAND_IN_TASK_ID,
-): HistoryEntry {
+): AcceptCheck {
+  const inverted = invertItem(item, timeline);
+  if (!inverted.ok) return inverted;
   return {
-    taskId,
-    changesetId: changeset.id,
-    itemId: item.id,
-    op: item.op,
-    targetId: item.targetId,
-    baseRevision: changeset.baseRevision,
-    forward: item.patch ?? {},
-    inverse: { op: item.op, standIn: true },
-    acceptedAt,
-    acceptedBy,
+    ok: true,
+    entry: {
+      taskId,
+      changesetId: changeset.id,
+      itemId: item.id,
+      op: item.op,
+      targetId: item.targetId,
+      beatId: item.beatId,
+      baseRevision: changeset.baseRevision,
+      forward: structuredClone(item.patch ?? {}),
+      inverse: inverted.inverse,
+      acceptedAt,
+      acceptedBy,
+    },
   };
 }
 
-type TaskHistorySpec = Pick<ChangesetItem, "id" | "op" | "targetId" | "patch"> & {
-  acceptedAt: string;
-};
+/** One task's accepted history, oldest first. Unknown tasks have none. */
+export function historyForTask(history: readonly HistoryEntry[], taskId: string): HistoryEntry[] {
+  return history.filter((entry) => entry.taskId === taskId);
+}
+
+/** True when a task is completed and has at least one accepted history entry to rewind. */
+export function canUndoTask(
+  task: { id: string; status: string },
+  history: readonly HistoryEntry[],
+): boolean {
+  return task.status.toLowerCase() === "completed" && historyForTask(history, task.id).length > 0;
+}
 
 /**
- * Stand-in accepted history per running task (ids from STANDIN_TASKS),
- * oldest first. Real entries arrive with #61/#75; unknown tasks have none.
+ * What an undo prompt answers with: the task's accepted edits newest first,
+ * like the rewind would run, pointing at the History card that proposes it.
  */
-const TASK_HISTORY: Record<string, TaskHistorySpec[]> = {
-  "task-1": [
-    {
-      id: "item-task-1-a",
-      op: "add_clip",
-      targetId: "v1",
-      patch: { clipId: "clip-a-roll" },
-      acceptedAt: "2026-10-31T16:30:00.000Z",
-    },
-    {
-      id: "item-task-1-b",
-      op: "trim",
-      targetId: "clip-interview",
-      patch: { edge: "head", frames: 12 },
-      acceptedAt: "2026-10-31T16:38:00.000Z",
-    },
-  ],
-  "task-2": [
-    {
-      id: "item-task-2-a",
-      op: "add_effect",
-      targetId: "clip-interview",
-      patch: { presetName: "Halation" },
-      acceptedAt: "2026-10-31T16:35:00.000Z",
-    },
-  ],
-  "task-3": [
-    {
-      id: "item-task-3-a",
-      op: "add_marker",
-      patch: {
-        marker: {
-          id: "mark-pause-1",
-          name: "Pause",
-          time: { value: 86448, rate: 24 },
-          kind: "user",
-        },
-      },
-      acceptedAt: "2026-10-31T16:36:00.000Z",
-    },
-  ],
-  "task-4": [
-    {
-      id: "item-task-4-a",
-      op: "add_effect",
-      targetId: "clip-scene-04",
-      patch: { presetName: "Match reference" },
-      acceptedAt: "2026-10-31T16:37:00.000Z",
-    },
-  ],
-};
-
-/** Stand-in history for one running task, shaped like the entries in #75. */
-export function historyForTask(taskId: string): HistoryEntry[] {
-  const specs = TASK_HISTORY[taskId] ?? [];
-  const changeset: Changeset = {
-    schemaVersion: "0.1.0",
-    id: `cs-${taskId}-1`,
-    baseRevision: "r0",
-    items: [],
-  };
-  return specs.map((spec) =>
-    historyEntryForItem(changeset, spec, STAND_IN_ACCEPTED_BY, spec.acceptedAt, taskId),
+export function undoSummaryForTask(
+  history: readonly HistoryEntry[],
+  taskId: string,
+  taskName: string,
+): string {
+  const entries = historyForTask(history, taskId);
+  if (entries.length === 0) return `No accepted edits to rewind for ${taskName} yet.`;
+  const list = [...entries]
+    .reverse()
+    .map((entry) =>
+      entry.targetId ? `${opLabel(entry.op)} on ${entry.targetId}` : opLabel(entry.op),
+    )
+    .join("; ");
+  const count = entries.length === 1 ? "1 accepted edit" : `${entries.length} accepted edits`;
+  return (
+    `${count} for ${taskName}, newest first: ${list}. ` +
+    `Pick Undo to here in History to propose the rewind — it lands in Review for accept.`
   );
 }
 
-/**
- * Accept every pending item at once. Already decided items keep their
- * status. Returns the new changeset plus the items this call accepted.
- */
-export function acceptAllPending(changeset: Changeset): {
-  changeset: Changeset;
-  accepted: ChangesetItem[];
-} {
-  const accepted = changeset.items.filter((item) => item.status === "pending");
-  if (accepted.length === 0) return { changeset, accepted };
-  return {
-    changeset: {
-      ...changeset,
-      items: changeset.items.map((item) =>
-        item.status === "pending" ? { ...item, status: "accepted" as const } : item,
-      ),
-    },
-    accepted,
-  };
-}
+/** A refused accept or undo, with the reason, for the board to explain. */
+export type Refusal = {
+  itemId?: string;
+  reason: string;
+};
 
 /**
  * Where one project open stands: loading the review, ready with a
@@ -177,12 +136,18 @@ export type ProjectStore = {
   phase: ReviewPhase;
   timeline: Timeline | null;
   changeset: Changeset | null;
+  /** The pending undo proposal, if one was asked for. Needs its own accept. */
+  rollback: Changeset | null;
   history: HistoryEntry[];
   pendingCount: number;
   error: string | null;
+  /** The last refused accept or undo, cleared by the next attempt. */
+  refusal: Refusal | null;
   acceptItem: (id: string) => void;
   rejectItem: (id: string) => void;
   acceptAll: () => void;
+  acceptAllUndo: () => void;
+  undoToHere: (itemId: string) => void;
   retry: () => void;
 };
 
@@ -195,10 +160,12 @@ export type ProjectStore = {
 export function useProject(projectId: string, projectName: string): ProjectStore {
   const [timeline, setTimeline] = useState<Timeline | null>(null);
   const [changeset, setChangeset] = useState<Changeset | null>(null);
+  const [rollback, setRollback] = useState<Changeset | null>(null);
   const [job, setJob] = useState<ReviewJob | null>(null);
   const [phase, setPhase] = useState<ReviewPhase>("loading");
   const [error, setError] = useState<string | null>(null);
   const [history, setHistory] = useState<HistoryEntry[]>([]);
+  const [refusal, setRefusal] = useState<Refusal | null>(null);
   const [nonce, setNonce] = useState(0);
 
   useEffect(() => {
@@ -208,8 +175,10 @@ export function useProject(projectId: string, projectName: string): ProjectStore
     setError(null);
     setTimeline(null);
     setChangeset(null);
+    setRollback(null);
     setJob(null);
     setHistory([]);
+    setRefusal(null);
     void (async () => {
       try {
         const review = await fetchProjectReview(projectId, { signal: controller.signal });
@@ -254,51 +223,143 @@ export function useProject(projectId: string, projectName: string): ProjectStore
     });
   }, [projectId, phase, timeline, changeset]);
 
-  const appendHistory = (decided: ChangesetItem[], stamp: string) => {
-    if (decided.length === 0 || !changeset) return;
-    const taskId = job ? job.request_id : STAND_IN_TASK_ID;
+  const taskId = job ? job.request_id : STAND_IN_TASK_ID;
+
+  /** Flip every invertible pending item in one list; refuse the rest by name. */
+  const acceptPendingIn = (
+    list: Changeset,
+    mirror: Timeline,
+    stamp: string,
+  ): { next: Changeset; entries: HistoryEntry[]; refusal: Refusal | null } => {
+    const entries: HistoryEntry[] = [];
+    let refusal: Refusal | null = null;
+    for (const target of list.items) {
+      if (target.status !== "pending") continue;
+      const checked = tryHistoryEntry(list, target, mirror, STAND_IN_ACCEPTED_BY, stamp, taskId);
+      if (!checked.ok) {
+        refusal ??= { itemId: target.id, reason: checked.reason };
+        continue;
+      }
+      entries.push(checked.entry);
+    }
+    if (entries.length === 0) return { next: list, entries, refusal };
+    const ids = new Set(entries.map((entry) => entry.itemId));
+    return {
+      next: {
+        ...list,
+        items: list.items.map((entry) =>
+          ids.has(entry.id) ? { ...entry, status: "accepted" as const } : entry,
+        ),
+      },
+      entries,
+      refusal,
+    };
+  };
+
+  const appendEntries = (entries: HistoryEntry[]) => {
+    if (entries.length === 0) return;
     setHistory((current) => {
       const known = new Set(current.map((entry) => entry.itemId));
-      const fresh = decided.filter((item) => !known.has(item.id));
+      const fresh = entries.filter((entry) => !known.has(entry.itemId));
       if (fresh.length === 0) return current;
-      return [
-        ...current,
-        ...fresh.map((item) =>
-          historyEntryForItem(changeset, item, STAND_IN_ACCEPTED_BY, stamp, taskId),
-        ),
-      ];
+      return [...current, ...fresh];
     });
   };
 
   const acceptItem = (id: string) => {
-    if (!changeset) return;
-    const item = changeset.items.find((entry) => entry.id === id);
-    if (!item || item.status !== "pending") return;
-    setChangeset(reviewItem(changeset, id, "accepted"));
-    appendHistory([item], new Date().toISOString());
+    if (!timeline) return;
+    const stamp = new Date().toISOString();
+    for (const list of [changeset, rollback] as const) {
+      if (!list) continue;
+      const target = list.items.find((entry) => entry.id === id);
+      if (!target || target.status !== "pending") continue;
+      const checked = tryHistoryEntry(
+        list,
+        target,
+        timeline,
+        STAND_IN_ACCEPTED_BY,
+        stamp,
+        taskId,
+      );
+      if (!checked.ok) {
+        setRefusal({ itemId: id, reason: checked.reason });
+        return;
+      }
+      const next = reviewItem(list, id, "accepted");
+      if (list === changeset) setChangeset(next);
+      else setRollback(next);
+      appendEntries([checked.entry]);
+      setRefusal(null);
+      return;
+    }
   };
 
   const acceptAll = () => {
-    if (!changeset) return;
-    const { changeset: next, accepted } = acceptAllPending(changeset);
-    if (accepted.length === 0) return;
-    setChangeset(next);
-    appendHistory(accepted, new Date().toISOString());
+    if (!changeset || !timeline) return;
+    const { next, entries, refusal: blocked } = acceptPendingIn(
+      changeset,
+      timeline,
+      new Date().toISOString(),
+    );
+    if (entries.length > 0) {
+      setChangeset(next);
+      appendEntries(entries);
+    }
+    setRefusal(blocked);
+  };
+
+  const acceptAllUndo = () => {
+    if (!rollback || !timeline) return;
+    const { next, entries, refusal: blocked } = acceptPendingIn(
+      rollback,
+      timeline,
+      new Date().toISOString(),
+    );
+    if (entries.length > 0) {
+      setRollback(next);
+      appendEntries(entries);
+    }
+    setRefusal(blocked);
+  };
+
+  const rejectItem = (id: string) => {
+    if (changeset?.items.some((entry) => entry.id === id)) {
+      setChangeset(reviewItem(changeset, id, "rejected"));
+    } else if (rollback?.items.some((entry) => entry.id === id)) {
+      setRollback(reviewItem(rollback, id, "rejected"));
+    } else {
+      return;
+    }
+    setRefusal((current) => (current?.itemId === id ? null : current));
+  };
+
+  /** Propose rewinding one entry plus its tail. The proposal needs accept. */
+  const undoToHere = (itemId: string) => {
+    const undone = buildUndoChangeset(history, itemId);
+    if (!undone.ok) {
+      setRefusal({ itemId, reason: undone.reason });
+      return;
+    }
+    setRollback(undone.changeset);
+    setRefusal(null);
   };
 
   return {
     phase,
     timeline,
     changeset,
+    rollback,
     history,
     pendingCount: changeset
       ? changeset.items.filter((item) => item.status === "pending").length
       : 0,
     error,
+    refusal,
     acceptItem,
-    rejectItem: (id) =>
-      setChangeset((current) => (current ? reviewItem(current, id, "rejected") : current)),
+    rejectItem,
     acceptAll,
+    acceptAllUndo,
+    undoToHere,
     retry: () => setNonce((current) => current + 1),
   };
 }

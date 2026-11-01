@@ -14,12 +14,13 @@ import { cn } from "@/lib/utils";
 import { ChairMark } from "./home/ChairMark";
 import type { EditorId } from "./home/data";
 import { EditorLogo } from "./home/EditorLogo";
+import { buildUndoChangeset } from "@chair/timeline-ir";
 import { CreationBoard } from "./orchestrator/CreationBoard";
 import { OrchestratorBoard } from "./orchestrator/OrchestratorBoard";
 import { TaskChat, UNDO_PROMPT } from "./orchestrator/TaskChat";
 import type { RunningTask } from "./orchestrator/RunningTasks";
 import { ReviewBoard } from "./project/ReviewBoard";
-import { useProject } from "./project/store";
+import { historyForTask, useProject } from "./project/store";
 
 /** Same field as the home gallery (`HomeScreen`). */
 const SHELL_BG = "#111111";
@@ -53,6 +54,21 @@ export function ProjectShell({ projectId, projectName, editorId, onHome }: Proje
   const [createdTasks, setCreatedTasks] = useState<RunningTask[]>([]);
   const [taskChat, setTaskChat] = useState<RunningTask | null>(null);
   const [taskNote, setTaskNote] = useState<{ id: number; text: string } | null>(null);
+
+  /** Answer an undo prompt by proposing the task's full tail as one changeset. */
+  const requestTaskUndo = (task: RunningTask): string => {
+    const entries = historyForTask(project.history, task.id);
+    if (entries.length === 0) return `No accepted edits to rewind for ${task.name} yet.`;
+    const tip = entries[entries.length - 1]!;
+    const undone = buildUndoChangeset(project.history, tip.itemId);
+    if (!undone.ok) return `Can't rewind ${task.name} yet: ${undone.reason}`;
+    project.undoToHere(tip.itemId);
+    const count = entries.length === 1 ? "1 edit" : `${entries.length} edits`;
+    return (
+      `Proposed undoing ${count} for ${task.name} as one changeset — ` +
+      `open Review to accept it. Nothing changed yet.`
+    );
+  };
 
   return (
     <section
@@ -92,11 +108,14 @@ export function ProjectShell({ projectId, projectName, editorId, onHome }: Proje
             <TaskChat
               task={taskChat}
               note={taskNote}
+              history={project.history}
               onClose={() => {
                 setTaskChat(null);
                 setTaskNote(null);
               }}
               onSend={(text) => setTaskNote({ id: Date.now(), text })}
+              onUndoRequest={requestTaskUndo}
+              onUndoEntry={(entry) => project.undoToHere(entry.itemId)}
             />
           ) : section === "review" ? (
             <ReviewBoard store={project} />
@@ -121,6 +140,7 @@ export function ProjectShell({ projectId, projectName, editorId, onHome }: Proje
                 setTaskChat(task);
                 setTaskNote({ id: Date.now(), text: UNDO_PROMPT });
               }}
+              onUndoEntry={(entry) => project.undoToHere(entry.itemId)}
             />
           ) : (
             <CreationBoard />

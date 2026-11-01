@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
-import type { Changeset } from "@chair/timeline-ir";
-import { acceptAllPending, historyEntryForItem, historyForTask, reviewItem } from "./store";
+import type { Changeset, HistoryEntry, Timeline } from "@chair/timeline-ir";
+import { emptyTimeline } from "@chair/timeline-ir";
+import {
+  canUndoTask,
+  historyForTask,
+  reviewItem,
+  tryHistoryEntry,
+  undoSummaryForTask,
+} from "./store";
 
 /** Three pending items, shaped like a parsed review proposal. */
 function makeChangeset(): Changeset {
@@ -28,6 +35,7 @@ function makeChangeset(): Changeset {
         id: "item-trim-interview",
         op: "trim",
         targetId: "clip-interview",
+        beatId: "beat-opener",
         rationale: "Trim the pause at the head of the interview.",
         patch: { edge: "head", frames: 12 },
         status: "pending",
@@ -46,6 +54,24 @@ function makeChangeset(): Changeset {
       },
     ],
   };
+}
+
+function makeTimeline(): Timeline {
+  const timeline = emptyTimeline("tl", "Demo");
+  timeline.tracks[0]!.clips.push({
+    id: "clip-interview",
+    name: "Interview",
+    mediaRef: "media://interview.mov",
+    sourceRange: {
+      start: { value: 0, rate: 24 },
+      duration: { value: 240, rate: 24 },
+    },
+    timelineRange: {
+      start: { value: 0, rate: 24 },
+      duration: { value: 240, rate: 24 },
+    },
+  });
+  return timeline;
 }
 
 describe("reviewItem", () => {
@@ -72,90 +98,140 @@ describe("reviewItem", () => {
   });
 });
 
-describe("acceptAllPending", () => {
-  it("accepts every pending item and reports what it accepted", () => {
-    const before = makeChangeset();
-    const { changeset: after, accepted } = acceptAllPending(before);
-
-    expect(after.items.map((item) => item.status)).toEqual(["accepted", "accepted", "accepted"]);
-    expect(accepted.map((item) => item.id)).toEqual(before.items.map((item) => item.id));
-    // The input is untouched: review builds a new changeset.
-    expect(before.items.every((item) => item.status === "pending")).toBe(true);
-  });
-
-  it("leaves decided items alone and reports nothing new", () => {
-    const decided = reviewItem(makeChangeset(), "item-trim-interview", "rejected");
-    const { changeset: after, accepted } = acceptAllPending(decided);
-
-    expect(after.items.find((item) => item.id === "item-trim-interview")?.status).toBe("rejected");
-    expect(accepted).toHaveLength(2);
-    expect(acceptAllPending(after).accepted).toHaveLength(0);
-    expect(acceptAllPending(after).changeset).toBe(after);
-  });
-});
-
-describe("historyEntryForItem", () => {
-  it("shapes one accepted item like the history entry in #75", () => {
+describe("tryHistoryEntry", () => {
+  it("shapes one accepted item with its real inverse", () => {
     const changeset = makeChangeset();
     const item = changeset.items[1]!;
-    const entry = historyEntryForItem(changeset, item, "you", "2026-10-31T12:00:00.000Z");
+    const checked = tryHistoryEntry(
+      changeset,
+      item,
+      makeTimeline(),
+      "you",
+      "2026-10-31T12:00:00.000Z",
+    );
 
-    expect(entry).toEqual({
+    expect(checked.ok).toBe(true);
+    if (!checked.ok) return;
+    expect(checked.entry).toEqual({
       taskId: "task-stand-in",
       changesetId: changeset.id,
       itemId: item.id,
       op: item.op,
       targetId: item.targetId,
+      beatId: "beat-opener",
       baseRevision: changeset.baseRevision,
       forward: item.patch,
-      inverse: { op: item.op, standIn: true },
+      inverse: {
+        op: "trim",
+        targetId: "clip-interview",
+        patch: {
+          restoreSourceRange: {
+            start: { value: 0, rate: 24 },
+            duration: { value: 240, rate: 24 },
+          },
+          restoreTimelineRange: {
+            start: { value: 0, rate: 24 },
+            duration: { value: 240, rate: 24 },
+          },
+        },
+      },
       acceptedAt: "2026-10-31T12:00:00.000Z",
       acceptedBy: "you",
     });
   });
 
-  it("defaults a missing forward patch to an empty object", () => {
+  it("fails closed with a reason when no inverse can be built", () => {
     const changeset = makeChangeset();
-    const entry = historyEntryForItem(
+    const checked = tryHistoryEntry(
       changeset,
-      { id: "item-bare", op: "move" },
+      {
+        id: "item-cut-missing",
+        op: "remove_clip",
+        targetId: "clip-missing",
+        rationale: "Cut a clip that is not there.",
+        status: "pending",
+      },
+      makeTimeline(),
       "you",
       "2026-10-31T12:00:00.000Z",
     );
-    expect(entry.forward).toEqual({});
-    expect(entry.targetId).toBeUndefined();
+
+    expect(checked).toEqual({
+      ok: false,
+      reason: "remove_clip needs clip-missing on the timeline to snapshot it",
+    });
   });
 
   it("carries an explicit task id when given", () => {
-    const entry = historyEntryForItem(
+    const checked = tryHistoryEntry(
       makeChangeset(),
-      { id: "item-bare", op: "move" },
+      makeChangeset().items[0]!,
+      makeTimeline(),
       "you",
       "2026-10-31T12:00:00.000Z",
       "task-1",
     );
-    expect(entry.taskId).toBe("task-1");
+    expect(checked.ok).toBe(true);
+    if (checked.ok) expect(checked.entry.taskId).toBe("task-1");
   });
 });
 
-describe("historyForTask", () => {
-  it("returns stand-in history shaped like #75, oldest first", () => {
-    const entries = historyForTask("task-1");
+function acceptedEntry(itemId: string, taskId: string): HistoryEntry {
+  const changeset = makeChangeset();
+  const checked = tryHistoryEntry(
+    changeset,
+    { ...changeset.items[0]!, id: itemId },
+    makeTimeline(),
+    "you",
+    "2026-10-31T12:00:00.000Z",
+    taskId,
+  );
+  if (!checked.ok) throw new Error("fixture must invert");
+  return checked.entry;
+}
 
-    expect(entries.map((entry) => entry.itemId)).toEqual(["item-task-1-a", "item-task-1-b"]);
-    expect(entries[0]).toMatchObject({
-      taskId: "task-1",
-      changesetId: "cs-task-1-1",
-      op: "add_clip",
-      targetId: "v1",
-      baseRevision: "r0",
-      forward: { clipId: "clip-a-roll" },
-      inverse: { op: "add_clip", standIn: true },
-      acceptedBy: "you",
-    });
+describe("historyForTask", () => {
+  it("returns one task's entries oldest first", () => {
+    const history = [acceptedEntry("a", "task-1"), acceptedEntry("b", "task-2"), acceptedEntry("c", "task-1")];
+
+    expect(historyForTask(history, "task-1").map((entry) => entry.itemId)).toEqual(["a", "c"]);
+    expect(historyForTask(history, "task-2").map((entry) => entry.itemId)).toEqual(["b"]);
   });
 
   it("returns no entries for unknown tasks", () => {
-    expect(historyForTask("task-missing")).toEqual([]);
+    expect(historyForTask([acceptedEntry("a", "task-1")], "task-missing")).toEqual([]);
+  });
+});
+
+describe("canUndoTask", () => {
+  const history = [acceptedEntry("a", "task-1")];
+
+  it("is true for a completed task with accepted history", () => {
+    expect(canUndoTask({ id: "task-1", status: "completed" }, history)).toBe(true);
+    expect(canUndoTask({ id: "task-1", status: "Completed" }, history)).toBe(true);
+  });
+
+  it("is false while running or with nothing to rewind", () => {
+    expect(canUndoTask({ id: "task-1", status: "Arranging A-roll on V1" }, history)).toBe(false);
+    expect(canUndoTask({ id: "task-2", status: "completed" }, history)).toBe(false);
+    expect(canUndoTask({ id: "task-1", status: "completed" }, [])).toBe(false);
+  });
+});
+
+describe("undoSummaryForTask", () => {
+  it("lists the task's edits newest first with the way back", () => {
+    const history = [acceptedEntry("a", "task-1"), acceptedEntry("b", "task-2"), acceptedEntry("c", "task-1")];
+
+    expect(undoSummaryForTask(history, "task-1", "Assemble rough cut")).toBe(
+      "2 accepted edits for Assemble rough cut, newest first: " +
+        "Add Marker; Add Marker. " +
+        "Pick Undo to here in History to propose the rewind — it lands in Review for accept.",
+    );
+  });
+
+  it("says so honestly with nothing to rewind", () => {
+    expect(undoSummaryForTask([], "task-1", "Assemble rough cut")).toBe(
+      "No accepted edits to rewind for Assemble rough cut yet.",
+    );
   });
 });
