@@ -17,24 +17,29 @@ export const PROVIDERS: Provider[] = [
     id: "meta",
     label: "Meta",
     envVar: "META_API_KEY",
-    blurb: "Primary — the agent calls Meta today.",
+    blurb: "Primary. The agent calls Meta today.",
   },
   {
     id: "openai",
     label: "OpenAI",
     envVar: "OPENAI_API_KEY",
-    blurb: "Fallback — saved here; the agent does not call it today.",
+    blurb: "Fallback. Saved here; the agent does not call it today.",
   },
   {
     id: "anthropic",
     label: "Anthropic",
     envVar: "ANTHROPIC_API_KEY",
-    blurb: "Fallback — saved here; the agent does not call it today.",
+    blurb: "Fallback. Saved here; the agent does not call it today.",
   },
 ];
 
 export function isProviderId(value: unknown): value is ProviderId {
   return value === "meta" || value === "openai" || value === "anthropic";
+}
+
+/** Display label for a provider id. Falls back to the id itself. */
+export function providerLabel(id: ProviderId): string {
+  return PROVIDERS.find((entry) => entry.id === id)?.label ?? id;
 }
 
 export type Role = {

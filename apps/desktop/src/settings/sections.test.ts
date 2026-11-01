@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { moveSectionIndex, SECTIONS } from "./sections";
 
 describe("settings sections", () => {
-  it("lists the three areas, Keys and models first", () => {
+  it("lists the three areas, Providers first", () => {
     expect(SECTIONS.map((section) => section.id)).toEqual([
       "keys",
       "editors",

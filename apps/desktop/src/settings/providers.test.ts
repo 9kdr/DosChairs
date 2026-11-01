@@ -6,9 +6,18 @@ import {
   keySourceLabel,
   maskKey,
   providerConnection,
+  providerLabel,
   ROLES,
   type ProviderId,
 } from "./providers";
+
+describe("providerLabel", () => {
+  it("names each provider", () => {
+    expect(providerLabel("meta")).toBe("Meta");
+    expect(providerLabel("openai")).toBe("OpenAI");
+    expect(providerLabel("anthropic")).toBe("Anthropic");
+  });
+});
 
 describe("maskKey", () => {
   it("shows bullets plus the last four characters", () => {

@@ -64,7 +64,7 @@ export function SettingsScreen({ onBack }: SettingsScreenProps) {
         <div className="min-w-0 flex-1">
           <h1 className="text-xl font-semibold text-neutral-100">Settings</h1>
           <p className="text-sm text-neutral-400">
-            Keys, models, editors, and preferences.
+            Providers, editors, and preferences.
           </p>
         </div>
         <Button

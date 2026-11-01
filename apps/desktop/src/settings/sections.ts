@@ -3,7 +3,7 @@
 export type SectionId = "keys" | "editors" | "preferences";
 
 export const SECTIONS: readonly { id: SectionId; label: string }[] = [
-  { id: "keys", label: "Keys and models" },
+  { id: "keys", label: "Providers" },
   { id: "editors", label: "Editors" },
   { id: "preferences", label: "Preferences" },
 ];
