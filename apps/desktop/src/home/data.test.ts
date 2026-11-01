@@ -33,4 +33,3 @@ describe("editor meta", () => {
     expect(editorById("resolve", "inProject").status).toBe("inProject");
   });
 });
-

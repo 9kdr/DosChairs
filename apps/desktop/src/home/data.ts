@@ -38,7 +38,6 @@ export function editorShort(id: EditorId): string {
   return EDITOR_META[id].short;
 }
 
-
 export function formatEditedAt(iso: string, now = Date.now()): string {
   const then = Date.parse(iso);
   if (Number.isNaN(then)) return "Unknown";

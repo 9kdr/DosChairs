@@ -65,6 +65,7 @@ export function HomeDock({ tab, onTab, onAccount, onSettings }: HomeDockProps) {
           >
             <StoreIcon />
           </DockButton>
+
           <span
             aria-hidden="true"
             className="mx-1 h-5 border-l border-white/[0.08] border-r border-black/50"
