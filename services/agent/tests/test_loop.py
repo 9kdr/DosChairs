@@ -7,6 +7,7 @@ from chair_agent.executor import Span, fill_tool_calls, merge_spans
 from chair_agent.jobs import HandlerResult, Job
 from chair_agent.loop import LoopContext, PreviewRejected, handle_edit, run_loop
 from chair_agent.planner import Plan, PlanStep, plan_brief
+from chair_agent.transcribe import Transcript, Word
 from chair_agent.verifier import verify
 
 GOLDEN = json.loads((Path(__file__).parent / "golden_run.json").read_text(encoding="utf-8"))
@@ -134,6 +135,68 @@ def test_handler_returns_pending_ops_on_accept() -> None:
     assert result.artifacts == [{"url": data["artifact_urls"][0]}]
     assert result.ops
     assert all(op["status"] == "pending" for op in result.ops)
+
+
+class _LiveSilence:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def measure_silence(self, media_url: str) -> list[tuple[float, float]]:
+        self.calls += 1
+        assert media_url == "file:///proxies/interview-proxy.mp4"
+        return [(4.0, 5.6)]
+
+
+class _LiveTranscriber:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def transcribe(self, audio_url: str, *, language: str | None = None) -> Transcript:
+        self.calls += 1
+        assert audio_url == "file:///proxies/interview-proxy.mp4"
+        words = [
+            Word(word="Welcome", start=1.0, end=1.5),
+            Word(word="um", start=30.0, end=30.6),
+        ]
+        return Transcript(text="Welcome um", words=words)
+
+
+class _LivePreview:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def render_preview(self, media_url: str) -> str:
+        self.calls += 1
+        assert media_url == "file:///proxies/interview-proxy.mp4"
+        return "file:///previews/live.mp4"
+
+
+def test_handler_dispatches_live_runs_without_hand_fed_spans() -> None:
+    data = GOLDEN["input"]
+    job_input = {**data["context"], "brief": data["brief"]}
+    silence, transcriber, preview = _LiveSilence(), _LiveTranscriber(), _LivePreview()
+    result = handle_edit(
+        _job(job_input), silence=silence, transcriber=transcriber, preview=preview
+    )
+    assert isinstance(result, HandlerResult)
+    assert result.artifacts == [{"url": "file:///previews/live.mp4"}]
+    assert [(op["patch"]["startFrames"], op["patch"]["frames"]) for op in result.ops] == [
+        (120, 48),
+        (900, 18),
+    ]
+    assert all(op["status"] == "pending" for op in result.ops)
+    assert (silence.calls, transcriber.calls, preview.calls) == (1, 1, 1)
+
+
+def test_handler_leaves_explicit_empties_canned() -> None:
+    data = GOLDEN["input"]
+    job_input = {**data["context"], "brief": data["brief"], "spans": [], "preview_urls": []}
+    silence, transcriber, preview = _LiveSilence(), _LiveTranscriber(), _LivePreview()
+    with pytest.raises(PreviewRejected):
+        handle_edit(
+            _job(job_input), silence=silence, transcriber=transcriber, preview=preview
+        )
+    assert (silence.calls, transcriber.calls, preview.calls) == (0, 0, 0)
 
 
 def test_handler_rejects_and_validates_input() -> None:
