@@ -7,6 +7,8 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { canUndoTask, type HistoryEntry } from "../project/store";
 import { createServicesClient } from "@/lib/services/client";
+import type { AgentJobStatus } from "@/lib/services/types";
+import { stopLiveTask } from "./taskThread";
 
 export type TaskLane = "edit" | "effects" | "colour";
 
@@ -33,6 +35,9 @@ export interface RunningTask {
   plan?: TaskPlan;
   /** Footage for agent turns; absent until the task has media loaded. */
   media?: TaskMedia;
+  /** Live agent job behind this row; absent until the opening turn submits. */
+  jobId?: string;
+  jobStatus?: AgentJobStatus;
 }
 
 const NON_STOPPABLE_STATUSES = new Set([
@@ -44,8 +49,10 @@ const NON_STOPPABLE_STATUSES = new Set([
   "moderated",
 ]);
 
-/** True when a task is running and can be stopped (non-terminal, non-queued). */
+/** True when Stop can cancel the row: live rows only while queued, jobless rows while non-terminal. */
 export function canStopTask(task: RunningTask): boolean {
+  // The agent only cancels queued jobs; a working job's Stop would just 409.
+  if (task.jobStatus !== undefined) return task.jobStatus === "queued";
   return Boolean(task.status) && !NON_STOPPABLE_STATUSES.has(task.status.trim().toLowerCase());
 }
 
@@ -115,33 +122,6 @@ float field(vec2 uv, vec2 res, float t) {
   return clamp(max(sea, drip) * right * top * bottom, 0.0, 0.84);
 }
 `;
-
-export const STANDIN_TASKS: readonly RunningTask[] = [
-  {
-    id: "task-1",
-    name: "Assemble rough cut",
-    status: "Arranging A-roll on V1",
-    lane: "edit",
-  },
-  {
-    id: "task-2",
-    name: "Halation on the hook",
-    status: "Painting the highlight pass",
-    lane: "effects",
-  },
-  {
-    id: "task-3",
-    name: "Detect silence and jump cuts",
-    status: "Scanning audio pauses",
-    lane: "edit",
-  },
-  {
-    id: "task-4",
-    name: "Match scene colour",
-    status: "Balancing shot 04 to the reference",
-    lane: "colour",
-  },
-];
 
 function TaskRow({
   task,
@@ -388,12 +368,12 @@ function TaskRow({
 }
 
 /**
- * Stand-in rows for tasks currently running in this project.
- * Not a live agent.
+ * Live agent jobs for this project, one row per task with a running job.
+ * Empty until opening turns submit; terminal jobs leave the list.
  */
 export function RunningTasks({
   className,
-  tasks = STANDIN_TASKS,
+  tasks = [],
   history = [],
   frozen = false,
   onOpen,
@@ -432,7 +412,7 @@ export function RunningTasks({
             onUndo={onUndo ? () => onUndo(task) : undefined}
             onStop={() => {
               onStop?.(task);
-              void createServicesClient().cancelAgentJob(task.id).catch(() => {});
+              void stopLiveTask(createServicesClient(), task).catch(() => {});
             }}
           />
         ))}

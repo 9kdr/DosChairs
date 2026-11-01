@@ -120,8 +120,13 @@ export function openTurnScope(
   };
 }
 
-export function briefForOpening(task: RunningTask): string {
-  return `${task.name}. ${task.status}.`;
+/**
+ * The opening turn's brief. Stable across live status changes: the agent
+ * compares the whole input on an idempotent resubmit, so a brief built
+ * from the row's status would 409 once the job goes live.
+ */
+export function openingBrief(task: RunningTask): string {
+  return task.plan?.brief ?? task.name;
 }
 
 /**
@@ -175,10 +180,175 @@ export async function runTurn(
     inputForTurn(turn.task, turn.brief, turn.changesetId),
     { idempotencyKey: turn.key },
   );
+  recordLiveJob(handle.request_id, turn.task);
   return client.pollAgentJob(handle.request_id, {
     onUpdate: turn.onUpdate,
     delayForAttempt: turn.delayForAttempt,
   });
+}
+
+/** Live jobs this session submitted, request id to the task owning the turn. */
+const liveJobs = new Map<string, RunningTask>();
+/** Tasks whose jobs all reached terminal: out of the list, never resubmitted. */
+const settledTasks = new Set<string>();
+
+/** Remember a submitted turn so the live list can poll it. */
+export function recordLiveJob(requestId: string, task: RunningTask): void {
+  liveJobs.set(requestId, task);
+}
+
+/** Drop a job the list no longer polls (terminal, or unknown to the agent). */
+export function forgetLiveJob(requestId: string): void {
+  liveJobs.delete(requestId);
+}
+
+/** Settle a task out of the live list; its jobs reached terminal. */
+export function settleLiveTask(taskId: string): void {
+  settledTasks.add(taskId);
+}
+
+/** True once the task's jobs reached terminal. */
+export function isLiveTaskSettled(taskId: string): boolean {
+  return settledTasks.has(taskId);
+}
+
+/** Every remembered job, oldest first, for the live list to poll. */
+export function liveJobEntries(): [string, RunningTask][] {
+  return [...liveJobs.entries()];
+}
+
+/** Test support: clear remembered jobs and settled tasks. */
+export function resetLiveJobs(): void {
+  liveJobs.clear();
+  settledTasks.clear();
+}
+
+/** One row per task from a live job. Null when the job already finished. */
+export function taskForLiveJob(job: AgentJob, task: RunningTask): RunningTask | null {
+  if (isAgentTerminal(job.status)) return null;
+  const lane = job.input.lane;
+  return {
+    ...task,
+    status: job.status === "queued" ? "Queued on the agent" : "The agent is working",
+    lane: lane === "edit" || lane === "effects" || lane === "colour" ? lane : task.lane,
+    jobId: job.request_id,
+    jobStatus: job.status,
+  };
+}
+
+export type LiveJobEntry = { requestId: string; task: RunningTask; job: AgentJob | null };
+
+/**
+ * Merge one poll round into rows. Terminal jobs settle their task out of
+ * the list; unknown (null) jobs are only forgotten, so the task resubmits
+ * under its idempotent key. Overlapping turns on one task share its row.
+ */
+export function liveRowsForJobs(entries: LiveJobEntry[]): {
+  rows: RunningTask[];
+  forget: string[];
+  settle: string[];
+} {
+  const rows = new Map<string, RunningTask>();
+  const forget: string[] = [];
+  const settle: string[] = [];
+  for (const entry of entries) {
+    const row = entry.job === null ? null : taskForLiveJob(entry.job, entry.task);
+    if (row === null) {
+      forget.push(entry.requestId);
+      if (entry.job !== null) settle.push(entry.task.id);
+      continue;
+    }
+    rows.set(entry.task.id, row);
+  }
+  return { rows: [...rows.values()], forget, settle };
+}
+
+/** Cancel the row's live job. Rows without one cancel nothing. */
+export function stopLiveTask(client: ServicesClient, task: RunningTask): Promise<AgentJob | null> {
+  if (task.jobId === undefined) return Promise.resolve(null);
+  return client.cancelAgentJob(task.jobId);
+}
+
+const LIVE_POLL_MS = 2000;
+
+/**
+ * The board's live rows: one per task with a running agent job.
+ *
+ * New tasks submit their opening turn on arrival; the thread's identical
+ * key and input resume that same job on open, never a duplicate. Each
+ * poll then refreshes every remembered job. Failed polls keep the last
+ * rows, so a flaky agent never blanks the list.
+ */
+export function useLiveTasks(createdTasks: readonly RunningTask[]): RunningTask[] {
+  const client = useServicesClient();
+  const [rows, setRows] = useState<RunningTask[]>([]);
+  const rowsRef = useRef(rows);
+  rowsRef.current = rows;
+
+  useEffect(() => {
+    let live = true;
+    let ticking = false;
+    const controller = new AbortController();
+
+    async function tick(tasks: readonly RunningTask[]) {
+      if (ticking) return;
+      ticking = true;
+      try {
+        const submitted = new Set(liveJobEntries().map(([, entry]) => entry.id));
+        for (const task of tasks) {
+          if (isLiveTaskSettled(task.id) || submitted.has(task.id)) continue;
+          submitted.add(task.id);
+          const scope = openTurnScope(task.id, task.lane, true);
+          // Same key and input as the thread's primary opening turn, so
+          // opening the row resumes this job instead of conflicting.
+          try {
+            const handle = await client.submitAgentJob(
+              EDIT_TASK,
+              inputForTurn(task, openingBrief(task), scope.changesetId),
+              { idempotencyKey: scope.key },
+            );
+            recordLiveJob(handle.request_id, task);
+          } catch {
+            submitted.delete(task.id);
+          }
+        }
+        const entries: LiveJobEntry[] = [];
+        const stale: RunningTask[] = [];
+        for (const [requestId, task] of liveJobEntries()) {
+          try {
+            entries.push({
+              requestId,
+              task,
+              job: await client.agentJob(requestId, { signal: controller.signal }),
+            });
+          } catch (error) {
+            if (error instanceof ServiceError && error.status === 404) {
+              entries.push({ requestId, task, job: null });
+              continue;
+            }
+            const previous = rowsRef.current.find((row) => row.jobId === requestId);
+            if (previous !== undefined) stale.push(previous);
+          }
+        }
+        const merged = liveRowsForJobs(entries);
+        for (const requestId of merged.forget) forgetLiveJob(requestId);
+        for (const taskId of merged.settle) settleLiveTask(taskId);
+        if (live) setRows([...stale, ...merged.rows]);
+      } finally {
+        ticking = false;
+      }
+    }
+
+    void tick(createdTasks);
+    const timer = window.setInterval(() => void tick(createdTasks), LIVE_POLL_MS);
+    return () => {
+      live = false;
+      controller.abort();
+      window.clearInterval(timer);
+    };
+  }, [client, createdTasks]);
+
+  return rows;
 }
 
 export function shortRequestId(requestId: string): string {
@@ -373,7 +543,7 @@ export function useTaskThread(
         );
       void runTurn(client, {
         task,
-        brief: briefForOpening(task),
+        brief: openingBrief(task),
         key: scope.key,
         changesetId: scope.changesetId,
         onUpdate: (job) => {

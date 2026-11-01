@@ -5,8 +5,9 @@ import { SmoothScrollTarget } from "@/components/smooth-scroll";
 import { AssetShelf } from "./AssetShelf";
 import { parseAction } from "./actions";
 import { PlanDoc } from "./PlanDoc";
-import { RunningTasks, STANDIN_TASKS, type RunningTask } from "./RunningTasks";
+import { RunningTasks, type RunningTask } from "./RunningTasks";
 import { setupTask } from "./taskSetup";
+import { useLiveTasks } from "./taskThread";
 import { HistoryCard } from "../project/HistoryCard";
 import type { HistoryEntry } from "../project/store";
 
@@ -28,7 +29,7 @@ type OrchestratorBoardProps = {
   command?: { id: number; text: string } | null;
   /** Accepted edits, shown in the History card under the running tasks. */
   history: HistoryEntry[];
-  /** Tasks prompted into being; shown above the stand-ins. */
+  /** Tasks prompted into being; shown while their agent jobs are live. */
   createdTasks?: readonly RunningTask[];
   onOpenTask?: (task: RunningTask) => void;
   onUndoTask?: (task: RunningTask) => void;
@@ -58,6 +59,7 @@ export function OrchestratorBoard({
 }: OrchestratorBoardProps) {
   const [planOpen, setPlanOpen] = useState(false);
   const [planMode, setPlanMode] = useState<PlanMode>("edit");
+  const liveTasks = useLiveTasks(createdTasks);
   const [notice, setNotice] = useState<string | null>(null);
   const [available, setAvailable] = useState<number | null>(null);
   const seen = useRef(0);
@@ -72,7 +74,7 @@ export function OrchestratorBoard({
   const side = editing ? "edit" : planOpen ? "none" : "idle";
 
   // One always-mounted tasks panel, teleported between the columns. Never
-  // unmounting means its four WebGL shaders are compiled once and never
+  // unmounting means its WebGL shaders are compiled once and never
   // again — no recompile hitch in the middle of the animation. Relocation
   // is a quick fade out, container swap, fade in.
   const [slots, setSlots] = useState<{ left: HTMLDivElement | null; right: HTMLDivElement | null }>({
@@ -271,7 +273,7 @@ export function OrchestratorBoard({
             >
               <RunningTasks
                 history={history}
-                tasks={[...createdTasks, ...STANDIN_TASKS]}
+                tasks={liveTasks}
                 onOpen={onOpenTask}
                 onUndo={onUndoTask}
                 frozen={planTweening}
