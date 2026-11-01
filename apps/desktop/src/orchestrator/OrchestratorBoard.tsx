@@ -23,6 +23,7 @@ const MIN_RIGHT_EDIT = 360; // 18rem at the 20px root
 type PlanMode = "edit" | "talk";
 
 type OrchestratorBoardProps = {
+  projectId: string;
   command?: { id: number; text: string } | null;
   /** Accepted edits, shown in the History card under the running tasks. */
   history: HistoryEntry[];
@@ -41,6 +42,7 @@ function columnWidths(available: number, editing: boolean) {
 }
 
 export function OrchestratorBoard({
+  projectId,
   command = null,
   history,
   onOpenTask,
@@ -239,6 +241,7 @@ export function OrchestratorBoard({
         >
           <AssetShelf
             className="min-h-0 flex-1"
+            projectId={projectId}
             transitionLock={widthTweening || planTweening}
           />
           <div ref={setRightSlot} className="contents" data-tasks-slot="edit" />

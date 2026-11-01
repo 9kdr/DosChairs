@@ -1,0 +1,213 @@
+/**
+ * Live project assets through the service link: GET /projects/:id/assets
+ * on the agent (issue #180) returns the folders, media files, and piece
+ * refs actually in the project, with per-asset proxy availability. No
+ * sample data anywhere here: an unknown project is an empty listing, a
+ * closed agent is an error, and a malformed payload fails loudly instead
+ * of rendering fakes.
+ */
+import { useEffect, useState } from "react";
+import { ServiceError, type FetchFn } from "@/lib/services/client";
+import { agentBaseUrl } from "@/lib/services/config";
+
+export type ShelfAssetKind = "video" | "image" | "audio";
+
+export type ShelfAsset = {
+  id: string;
+  name: string;
+  kind: ShelfAssetKind;
+  /** Whether the sidecar already rendered a preview for this file. */
+  proxy: "ready" | "missing";
+};
+
+export type ShelfFolder = {
+  id: string;
+  name: string;
+  assetIds: string[];
+};
+
+export type ShelfPiece = {
+  id: string;
+  name: string;
+};
+
+export type ProjectAssets = {
+  folders: ShelfFolder[];
+  assets: ShelfAsset[];
+  pieces: ShelfPiece[];
+};
+
+export type FetchAssetsOptions = {
+  agentUrl?: string;
+  /** Injected for tests; defaults to window fetch. */
+  fetchFn?: FetchFn;
+  signal?: AbortSignal;
+};
+
+const KINDS: ReadonlySet<string> = new Set(["video", "image", "audio"]);
+
+function malformed(detail: string): ServiceError {
+  return new ServiceError("agent", `assets payload was malformed (${detail})`);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+async function readJson(response: { json: () => Promise<unknown> }): Promise<unknown> {
+  try {
+    return await response.json();
+  } catch {
+    return null;
+  }
+}
+
+/** Mirror of the service client's agent error shape: { error: { code?, message } }. */
+function errorFromJson(payload: unknown, status: number): { code?: string; message: string } {
+  if (isRecord(payload) && isRecord(payload.error)) {
+    const message =
+      typeof payload.error.message === "string"
+        ? payload.error.message
+        : `agent failed (${status})`;
+    if (typeof payload.error.code === "string") {
+      return { code: payload.error.code, message };
+    }
+    return { message };
+  }
+  return { message: `agent failed (${status})` };
+}
+
+function folderFromJson(value: unknown): ShelfFolder {
+  if (
+    !isRecord(value) ||
+    typeof value.id !== "string" ||
+    typeof value.name !== "string" ||
+    !Array.isArray(value.asset_ids) ||
+    !value.asset_ids.every((id) => typeof id === "string")
+  ) {
+    throw malformed("folder needs id, name, and asset_ids");
+  }
+  return { id: value.id, name: value.name, assetIds: value.asset_ids };
+}
+
+function assetFromJson(value: unknown): ShelfAsset {
+  if (
+    !isRecord(value) ||
+    typeof value.id !== "string" ||
+    typeof value.name !== "string" ||
+    typeof value.kind !== "string" ||
+    (value.proxy !== "ready" && value.proxy !== "missing")
+  ) {
+    throw malformed("asset needs id, name, kind, and proxy");
+  }
+  if (!KINDS.has(value.kind)) {
+    throw malformed(`unknown kind ${value.kind}`);
+  }
+  return { id: value.id, name: value.name, kind: value.kind as ShelfAssetKind, proxy: value.proxy };
+}
+
+function pieceFromJson(value: unknown): ShelfPiece {
+  if (!isRecord(value) || typeof value.id !== "string" || typeof value.name !== "string") {
+    throw malformed("piece needs id and name");
+  }
+  return { id: value.id, name: value.name };
+}
+
+/** Parse a 200 asset listing. Anything off-shape throws instead of rendering fakes. */
+export function assetsFromJson(payload: unknown): ProjectAssets {
+  if (!isRecord(payload)) {
+    throw malformed("assets must be an object");
+  }
+  if (!Array.isArray(payload.folders) || !Array.isArray(payload.assets) || !Array.isArray(payload.pieces)) {
+    throw malformed("assets needs folders, assets, and pieces");
+  }
+  return {
+    folders: payload.folders.map(folderFromJson),
+    assets: payload.assets.map(assetFromJson),
+    pieces: payload.pieces.map(pieceFromJson),
+  };
+}
+
+/**
+ * Load one project's asset listing. Anything not-ok throws a ServiceError
+ * carrying the agent's status, code, and message.
+ */
+export async function fetchProjectAssets(
+  projectId: string,
+  options: FetchAssetsOptions = {},
+): Promise<ProjectAssets> {
+  const { agentUrl, fetchFn = fetch, signal } = options;
+  const url = `${agentBaseUrl(agentUrl)}/projects/${encodeURIComponent(projectId)}/assets`;
+  let response: { ok: boolean; status: number; json: () => Promise<unknown> };
+  try {
+    response = await fetchFn(url, { signal });
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") throw error;
+    throw new ServiceError("agent", `agent is unreachable at ${url}`);
+  }
+  const payload = await readJson(response);
+  if (!response.ok) {
+    const { code, message } = errorFromJson(payload, response.status);
+    throw new ServiceError("agent", message, { status: response.status, code });
+  }
+  return assetsFromJson(payload);
+}
+
+/** Where one shelf listing stands: loading, ready with data, or failed. */
+export type AssetsPhase = "loading" | "ready" | "error";
+
+export type AssetsStore = {
+  phase: AssetsPhase;
+  folders: ShelfFolder[];
+  assets: ShelfAsset[];
+  pieces: ShelfPiece[];
+  error: string | null;
+  retry: () => void;
+};
+
+const EMPTY: ProjectAssets = { folders: [], assets: [], pieces: [] };
+
+/**
+ * Open a project's asset listing for the shelf. An empty project is
+ * ready with no items; only transport and malformed payloads fail.
+ */
+export function useProjectAssets(projectId: string): AssetsStore {
+  const [listing, setListing] = useState<ProjectAssets>(EMPTY);
+  const [phase, setPhase] = useState<AssetsPhase>("loading");
+  const [error, setError] = useState<string | null>(null);
+  const [nonce, setNonce] = useState(0);
+
+  useEffect(() => {
+    let live = true;
+    const controller = new AbortController();
+    setPhase("loading");
+    setError(null);
+    setListing(EMPTY);
+    void (async () => {
+      try {
+        const assets = await fetchProjectAssets(projectId, { signal: controller.signal });
+        if (!live) return;
+        setListing(assets);
+        setPhase("ready");
+      } catch (fetchError) {
+        if (!live) return;
+        if (fetchError instanceof Error && fetchError.name === "AbortError") return;
+        setError(fetchError instanceof Error ? fetchError.message : "Could not load assets.");
+        setPhase("error");
+      }
+    })();
+    return () => {
+      live = false;
+      controller.abort();
+    };
+  }, [projectId, nonce]);
+
+  return {
+    phase,
+    folders: listing.folders,
+    assets: listing.assets,
+    pieces: listing.pieces,
+    error,
+    retry: () => setNonce((current) => current + 1),
+  };
+}
