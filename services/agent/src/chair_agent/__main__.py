@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import unquote, urlsplit
 
+from chair_agent.assets import build_assets
 from chair_agent.client import configured_models
 from chair_agent.jobs import (
     Job,
@@ -31,10 +32,17 @@ class Handler(BaseHTTPRequestHandler):
         if self.path == "/health":
             self._send(200, _health())
             return
-        project_id = _review_path(self.path)
+        project_id = _project_path(self.path, "review")
         if project_id is not None:
             try:
                 self._send(200, build_review(self.controller, project_id))
+            except ReviewUnavailable as error:
+                self._send(503, _error(error.code, str(error)))
+            return
+        project_id = _project_path(self.path, "assets")
+        if project_id is not None:
+            try:
+                self._send(200, build_assets(project_id))
             except ReviewUnavailable as error:
                 self._send(503, _error(error.code, str(error)))
             return
@@ -104,9 +112,9 @@ class Handler(BaseHTTPRequestHandler):
         return
 
 
-def _review_path(path: str) -> str | None:
+def _project_path(path: str, leaf: str) -> str | None:
     parts = urlsplit(path).path.strip("/").split("/")
-    if len(parts) == 3 and parts[0] == "projects" and parts[1] and parts[2] == "review":
+    if len(parts) == 3 and parts[0] == "projects" and parts[1] and parts[2] == leaf:
         return unquote(parts[1])
     return None
 
