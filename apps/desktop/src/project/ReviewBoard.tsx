@@ -1,8 +1,9 @@
-import { ChevronDownIcon, ClapperboardIcon, ListChecksIcon } from "lucide-react";
+import { ChevronDownIcon, ClapperboardIcon, ListChecksIcon, TriangleAlertIcon } from "lucide-react";
 import { useState } from "react";
 import type { RationalTime } from "@chair/timeline-ir";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
 import { OpDiff } from "./OpDiff";
 import type { ProjectStore } from "./store";
@@ -35,23 +36,108 @@ export function opLabel(op: string): string {
     .join(" ");
 }
 
+function ReviewTitle() {
+  return (
+    <div className="flex items-center gap-2">
+      <span className="flex size-7 items-center justify-center rounded-lg bg-white/[0.06] ring-1 ring-white/10">
+        <ListChecksIcon className="size-4 text-neutral-300" aria-hidden="true" />
+      </span>
+      <h2 className="text-sm font-semibold tracking-wide text-neutral-100">Review</h2>
+    </div>
+  );
+}
+
+/** Loading, empty, and error states share the board's scroll shell. */
+function ReviewLoading() {
+  return (
+    <div className="h-full overflow-y-auto p-4 pb-[9.5rem]">
+      <ReviewTitle />
+      <section aria-label="Loading review" className={cn(CARD, "mt-3 flex items-center gap-3 p-4")}>
+        <Spinner className="size-5 shrink-0 text-neutral-400" />
+        <p className="text-sm text-neutral-300">Loading the review…</p>
+      </section>
+    </div>
+  );
+}
+
+function ReviewError({ message, onRetry }: { message: string; onRetry: () => void }) {
+  return (
+    <div className="h-full overflow-y-auto p-4 pb-[9.5rem]">
+      <ReviewTitle />
+      <section
+        aria-label="Review failed to load"
+        className={cn(CARD, "mt-3 flex flex-col gap-3 p-4")}
+      >
+        <div className="flex items-center gap-2 px-1">
+          <TriangleAlertIcon className="size-4 shrink-0 text-amber-300" aria-hidden="true" />
+          <h3 className="text-sm font-semibold tracking-wide text-neutral-100">
+            Couldn&apos;t load the review
+          </h3>
+        </div>
+        <p className="px-1 text-sm leading-6 text-neutral-400">{message}</p>
+        <div className="px-1">
+          <Button type="button" size="sm" variant="outline" onClick={onRetry}>
+            Try again
+          </Button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+/** No proposal and no mirror: the agent knows nothing for this project yet. */
+function ReviewEmpty({ onRetry }: { onRetry: () => void }) {
+  return (
+    <div className="h-full overflow-y-auto p-4 pb-[9.5rem]">
+      <ReviewTitle />
+      <section aria-label="No proposals yet" className={cn(CARD, "mt-3 flex flex-col gap-3 p-4")}>
+        <h3 className="px-1 text-sm font-semibold tracking-wide text-neutral-100">
+          No proposals yet
+        </h3>
+        <p className="px-1 text-sm leading-6 text-neutral-400">
+          When the agent proposes an edit for this project, it lands here for review.
+        </p>
+        <div className="px-1">
+          <Button type="button" size="sm" variant="outline" onClick={onRetry}>
+            Check again
+          </Button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
 /**
  * Project review: the proposed edits against this cut and the timeline
  * mirror beside them. Accept or reject flips an item's status only; the
  * mirror always shows the cut as it stands. Accepted edits land in the
- * History card beside the running tasks.
+ * History card beside the running tasks. Before the review loads, or
+ * when there is no proposal yet, the board says so honestly instead of
+ * showing stand-in edits.
  */
 export function ReviewBoard({ store }: { store: ProjectStore }) {
-  const { timeline, changeset, pendingCount } = store;
+  if (store.phase === "loading") {
+    return <ReviewLoading />;
+  }
+  if (store.phase === "error") {
+    return (
+      <ReviewError
+        message={store.error ?? "Could not load the review."}
+        onRetry={() => store.retry()}
+      />
+    );
+  }
+  const timeline = store.timeline;
+  if (timeline === null) {
+    return <ReviewEmpty onRetry={() => store.retry()} />;
+  }
+  const { changeset, pendingCount } = store;
   const clipCount = timeline.tracks.reduce((sum, track) => sum + track.clips.length, 0);
 
   return (
     <div className="h-full overflow-y-auto p-4 pb-[9.5rem]">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="flex size-7 items-center justify-center rounded-lg bg-white/[0.06] ring-1 ring-white/10">
-          <ListChecksIcon className="size-4 text-neutral-300" aria-hidden="true" />
-        </span>
-        <h2 className="text-sm font-semibold tracking-wide text-neutral-100">Review</h2>
+        <ReviewTitle />
         <Badge variant={pendingCount === 0 ? "success" : "warning"} size="sm">
           {pendingCount === 1 ? "1 pending" : `${pendingCount} pending`}
         </Badge>
@@ -70,20 +156,34 @@ export function ReviewBoard({ store }: { store: ProjectStore }) {
                 Accept all ({pendingCount})
               </Button>
             ) : null}
-            <span className="ml-auto text-xs tabular-nums text-neutral-500">
-              {changeset.items.length} items
-            </span>
+            {changeset !== null ? (
+              <span className="ml-auto text-xs tabular-nums text-neutral-500">
+                {changeset.items.length} items
+              </span>
+            ) : null}
           </div>
-          <ul className="flex min-h-0 flex-col">
-            {changeset.items.map((item) => (
-              <ChangesetItemRow
-                key={item.id}
-                item={item}
-                onAccept={() => store.acceptItem(item.id)}
-                onReject={() => store.rejectItem(item.id)}
-              />
-            ))}
-          </ul>
+          {changeset === null ? (
+            <div className="flex flex-col items-start gap-2 px-1 py-3">
+              <p className="text-sm text-neutral-300">No proposals yet.</p>
+              <p className="text-xs leading-5 text-neutral-500">
+                New proposals from the agent land here for review.
+              </p>
+              <Button type="button" size="sm" variant="outline" onClick={() => store.retry()}>
+                Check again
+              </Button>
+            </div>
+          ) : (
+            <ul className="flex min-h-0 flex-col">
+              {changeset.items.map((item) => (
+                <ChangesetItemRow
+                  key={item.id}
+                  item={item}
+                  onAccept={() => store.acceptItem(item.id)}
+                  onReject={() => store.rejectItem(item.id)}
+                />
+              ))}
+            </ul>
+          )}
         </section>
 
         <section
@@ -148,7 +248,6 @@ export function ReviewBoard({ store }: { store: ProjectStore }) {
           </p>
         </section>
       </div>
-
     </div>
   );
 }
