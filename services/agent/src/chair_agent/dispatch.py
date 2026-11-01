@@ -7,12 +7,14 @@ comes from the sidecar's render_preview. Read-only against the source;
 findings flow into the loop's gated proposal like canned spans do.
 """
 
+import json
 import math
 import os
 import time
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any, Protocol
+from urllib.parse import unquote, urlsplit
 
 import httpx
 
@@ -107,8 +109,11 @@ class SidecarTools:
         raise UnexpectedDispatch(f"{tool} timed out waiting for the sidecar")
 
     def _submit(self, tool: str, body: dict[str, Any]) -> str:
-        response = self._client.post(f"{self.base_url}/jobs/{tool}", json=body)
-        response.raise_for_status()
+        payload = dict(body)
+        if "source" in payload and isinstance(payload["source"], str):
+            payload["source"] = _normalize_source(payload["source"])
+        response = self._client.post(f"{self.base_url}/jobs/{tool}", json=payload)
+        self._raise_for_status(tool, response)
         job_id = response.json().get("id")
         if not isinstance(job_id, str) or not job_id:
             raise UnexpectedDispatch(f"{tool} returned no job id")
@@ -116,11 +121,27 @@ class SidecarTools:
 
     def _get(self, tool: str, job_id: str) -> dict[str, Any]:
         response = self._client.get(f"{self.base_url}/jobs/{job_id}")
-        response.raise_for_status()
+        self._raise_for_status(tool, response)
         payload = response.json()
         if not isinstance(payload, dict):
             raise UnexpectedDispatch(f"{tool} returned a bad job body")
         return payload
+
+    def _raise_for_status(self, tool: str, response: httpx.Response) -> None:
+        if response.is_error:
+            try:
+                payload = response.json()
+                if isinstance(payload, dict) and "error" in payload:
+                    raise UnexpectedDispatch(f"{tool} failed: {payload['error']}")
+            except (json.JSONDecodeError, ValueError):
+                pass
+            response.raise_for_status()
+
+
+def _normalize_source(source: str) -> str:
+    if source.startswith("file://"):
+        return unquote(urlsplit(source).path)
+    return source
 
 
 def build_sidecar_tools(env: Mapping[str, str] | None = None) -> SidecarTools:

@@ -302,3 +302,54 @@ def test_handler_rejects_a_bad_model(model: object) -> None:
 def test_handler_rejects_bad_files(files: object) -> None:
     with pytest.raises(ValueError, match="files"):
         handle_edit(_job({**_canned_input(), "files": files}))
+
+
+def test_handler_resolves_proxy_from_project_timeline(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    timeline = {
+        "schemaVersion": "0.1.0",
+        "id": "demo-timeline-1",
+        "name": "Demo",
+        "rate": {"num": 30, "den": 1},
+        "tracks": [
+            {
+                "id": "v1",
+                "kind": "video",
+                "name": "V1",
+                "clips": [
+                    {
+                        "id": "c1",
+                        "name": "Clip",
+                        "mediaRef": "file:///proxies/interview-proxy.mp4",
+                        "timelineRange": {
+                            "start": {"value": 0, "rate": 30},
+                            "duration": {"value": 1500, "rate": 30},
+                        },
+                        "sourceRange": {
+                            "start": {"value": 0, "rate": 30},
+                            "duration": {"value": 1500, "rate": 30},
+                        },
+                    }
+                ],
+            }
+        ],
+        "markers": [],
+    }
+    monkeypatch.setattr(
+        "chair_agent.review.read_project_timeline", lambda ref: timeline
+    )
+    submitted = {"brief": "cut the silence", "project_id": "kdenlive:demo-cut"}
+    job = _job(dict(submitted))
+    silence, transcriber, preview = _LiveSilence(), _LiveTranscriber(), _LivePreview()
+    result = handle_edit(
+        job, silence=silence, transcriber=transcriber, preview=preview
+    )
+    assert isinstance(result, HandlerResult)
+    # Input stays as submitted so an idempotent resubmit still matches.
+    assert job.input == submitted
+    assert {op["targetId"] for op in result.ops} == {"demo-timeline-1"}
+    assert result.ops
+    assert all(op["status"] == "pending" for op in result.ops)
+    assert (silence.calls, transcriber.calls, preview.calls) == (1, 0, 1)
+

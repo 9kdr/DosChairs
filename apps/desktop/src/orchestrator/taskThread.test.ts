@@ -122,8 +122,19 @@ describe("turn identity", () => {
       proxy_url: "",
       base_revision: "",
       total_frames: 0,
-      spans: [],
-      preview_urls: [],
+    });
+    expect(input).not.toHaveProperty("spans");
+    expect(input).not.toHaveProperty("preview_urls");
+  });
+
+  it("passes project_id when task has projectId", () => {
+    const taskWithProject: RunningTask = {
+      ...task,
+      projectId: "kdenlive:shelf",
+    };
+    const input = inputForTurn(taskWithProject, "trim the pause", "cs-task-3-open");
+    expect(input).toMatchObject({
+      project_id: "kdenlive:shelf",
     });
   });
 

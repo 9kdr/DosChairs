@@ -193,8 +193,7 @@ export function inputForTurn(
     target_id: task.id,
     changeset_id: changesetId,
     ...mediaForTurn(task),
-    spans: [],
-    preview_urls: [],
+    ...(task.projectId ? { project_id: task.projectId } : {}),
     // Note turns carry the composer's pick and attachments; opening
     // turns leave both off so their idempotent resubmit stays stable.
     ...(selection.model ? { model: selection.model } : {}),

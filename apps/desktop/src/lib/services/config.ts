@@ -10,7 +10,12 @@ function readEnv(name: string): string | undefined {
 }
 
 export function agentBaseUrl(override?: string): string {
-  return (override?.trim() || readEnv("VITE_CHAIR_AGENT_URL") || DEFAULT_AGENT_URL).replace(
+  return (
+    override?.trim() ||
+    readEnv("VITE_CHAIR_AGENT_URL") ||
+    readEnv("VITE_AGENT_URL") ||
+    DEFAULT_AGENT_URL
+  ).replace(
     /\/+$/,
     "",
   );
@@ -20,6 +25,7 @@ export function sidecarBaseUrl(override?: string): string {
   return (
     override?.trim() ||
     readEnv("VITE_CHAIR_SIDECAR_URL") ||
+    readEnv("VITE_SIDECAR_URL") ||
     DEFAULT_SIDECAR_URL
   ).replace(/\/+$/, "");
 }
