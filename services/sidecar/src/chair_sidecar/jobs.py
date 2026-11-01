@@ -9,7 +9,7 @@ import sys
 import threading
 import uuid
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from enum import StrEnum
 from pathlib import Path
 from typing import Literal
@@ -232,15 +232,7 @@ class JobRecord:
     error: str | None = None
 
     def public(self) -> dict:
-        return {
-            "id": self.id,
-            "tool": self.tool,
-            "kind": self.kind,
-            "status": self.status,
-            "progress": self.progress,
-            "result": self.result,
-            "error": self.error,
-        }
+        return asdict(self)
 
 
 def default_proxy_dir() -> Path:
@@ -477,8 +469,6 @@ class JobStore:
             if tool == "render_preview":
                 result = self._render_preview(job_id, source)
             elif tool == "get_frame":
-                if time_s is None:
-                    raise RuntimeError("get_frame requires time")
                 result = self._get_frame(job_id, source, time_s)
             elif tool == "detect_scenes":
                 result = self._detect_scenes(job_id, source, threshold, min_shot)
@@ -876,7 +866,7 @@ class JobStore:
 
     def _output(self, source: Path, name: str) -> Path:
         path = (self.proxy_dir / name).resolve()
-        if self.proxy_dir not in path.parents:
+        if not path.is_relative_to(self.proxy_dir):
             raise RuntimeError("refusing to write outside the proxy cache")
         if path == source:
             raise RuntimeError("refusing to overwrite source media")
