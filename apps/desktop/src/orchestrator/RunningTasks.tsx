@@ -10,11 +10,20 @@ import { createServicesClient } from "@/lib/services/client";
 
 export type TaskLane = "edit" | "effects" | "colour";
 
+/** What the orchestrator planned for a prompted task: the brief plus wanted lanes. */
+export type TaskPlan = {
+  brief: string;
+  /** Lanes the task wants subagents for, primary first. */
+  lanes: TaskLane[];
+};
+
 export interface RunningTask {
   id: string;
   name: string;
   status: string;
   lane: TaskLane;
+  /** Setup plan; absent on tasks that predate prompting. */
+  plan?: TaskPlan;
 }
 
 /** True when a task is completed and has at least one accepted history entry to rewind. */
