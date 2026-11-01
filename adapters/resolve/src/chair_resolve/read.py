@@ -6,6 +6,8 @@ caller reads the current timeline and does not write to Resolve or to media.
 
 from __future__ import annotations
 
+import os
+import sys
 from typing import Any
 
 SCHEMA_VERSION = "0.1.0"
@@ -75,15 +77,35 @@ def read_current_timeline() -> dict[str, Any]:
     return timeline_from_resolve(_snapshot(resolve_app()))
 
 
+def scripting_module_paths() -> list[str]:
+    """Installed Studio scripting module locations for this OS."""
+    if sys.platform.startswith("darwin"):
+        candidates = [
+            "/Library/Application Support/Blackmagic Design/"
+            "DaVinci Resolve/Developer/Scripting/Modules",
+        ]
+    elif sys.platform.startswith("linux"):
+        candidates = ["/opt/resolve/Developer/Scripting/Modules"]
+    else:
+        candidates = []
+    return [path for path in candidates if os.path.isdir(path)]
+
+
 def resolve_app() -> Any:
     """Return the Studio scripting app, shared by the read and write paths."""
     try:
         import DaVinciResolveScript as dvr_script
-    except ImportError as exc:
-        raise ResolveClosedError(
-            "DaVinci Resolve Studio is closed, or DaVinciResolveScript is not installed. "
-            "Open Resolve Studio and try again."
-        ) from exc
+    except ImportError:
+        for path in scripting_module_paths():
+            if path not in sys.path:
+                sys.path.insert(0, path)
+        try:
+            import DaVinciResolveScript as dvr_script
+        except ImportError as exc:
+            raise ResolveClosedError(
+                "DaVinci Resolve Studio is closed, or DaVinciResolveScript is not installed. "
+                "Open Resolve Studio and try again."
+            ) from exc
     resolve = dvr_script.scriptapp("Resolve")
     if not resolve:
         raise ResolveClosedError(

@@ -1,7 +1,9 @@
 import { ArrowLeftIcon, RefreshCwIcon } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useServiceHealth } from "@/lib/services/useServices";
+import type { EditorInfo } from "../home/data";
+import { fetchDetectedSnapshot } from "../home/projects";
 import { SettingsSidebar } from "./SettingsSidebar";
 import type { SectionId } from "./sections";
 import { EditorsSection } from "./sections/EditorsSection";
@@ -25,6 +27,27 @@ export function SettingsScreen({ onBack }: SettingsScreenProps) {
   const [section, setSection] = useState<SectionId>("keys");
   const agentUp =
     agent.phase === "up" ? true : agent.phase === "down" ? false : null;
+  const [detected, setDetected] = useState<EditorInfo[] | null>(null);
+  const [detectNonce, setDetectNonce] = useState(0);
+
+  useEffect(() => {
+    let live = true;
+    void fetchDetectedSnapshot()
+      .then((snapshot) => {
+        if (live) setDetected(snapshot.editors);
+      })
+      .catch(() => {
+        if (live) setDetected(null);
+      });
+    return () => {
+      live = false;
+    };
+  }, [detectNonce]);
+
+  const refreshAll = () => {
+    refresh();
+    setDetectNonce((current) => current + 1);
+  };
 
   return (
     <div className="mx-auto flex w-full max-w-4xl flex-col gap-8">
@@ -48,7 +71,7 @@ export function SettingsScreen({ onBack }: SettingsScreenProps) {
           type="button"
           variant="ghost"
           size="sm"
-          onClick={refresh}
+          onClick={refreshAll}
           disabled={agent.phase === "checking"}
         >
           <RefreshCwIcon />
@@ -75,8 +98,9 @@ export function SettingsScreen({ onBack }: SettingsScreenProps) {
             <EditorsSection
               connections={settings.editors}
               agentUp={agentUp}
+              detected={detected}
               saveConnection={saveEditorConnection}
-              refresh={refresh}
+              refresh={refreshAll}
             />
           ) : (
             <PreferencesSection />

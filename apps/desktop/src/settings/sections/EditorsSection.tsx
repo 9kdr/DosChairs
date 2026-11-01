@@ -1,16 +1,26 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import type { EditorId } from "../../home/data";
+import type { EditorId, EditorInfo, EditorStatus } from "../../home/data";
 import { cn } from "@/lib/utils";
 import type { EditorConnection } from "../settings-store";
 import {
+  detectedStatus,
   EDITOR_CONNECTION_LABEL,
   EDITORS,
   editorConnection,
   type EditorConnectionState,
   type EditorMeta,
 } from "../editors";
+
+function unreachableCopy(id: EditorId, detected: EditorStatus | null): string {
+  if (detected === "stopped") {
+    return id === "resolve"
+      ? "Linked, but Studio isn't answering — open Studio, then Recheck."
+      : "Linked, but no project folder was found — check it, then Recheck.";
+  }
+  return "Linked, but the agent is down — Chair can't hand it the cut.";
+}
 
 function editorDot(state: EditorConnectionState): string {
   if (state === "connected") return "bg-emerald-400";
@@ -22,6 +32,8 @@ function editorDot(state: EditorConnectionState): string {
 type EditorsSectionProps = {
   connections: Record<EditorId, EditorConnection | null>;
   agentUp: boolean | null;
+  /** Detected per-editor reachability; null while detection never answered. */
+  detected: EditorInfo[] | null;
   saveConnection: (
     id: EditorId,
     connection: EditorConnection | null,
@@ -36,6 +48,7 @@ type EditorsSectionProps = {
 export function EditorsSection({
   connections,
   agentUp,
+  detected,
   saveConnection,
   refresh,
 }: EditorsSectionProps) {
@@ -54,6 +67,7 @@ export function EditorsSection({
             editor={editor}
             connection={connections[editor.id]}
             agentUp={agentUp}
+            detected={detectedStatus(detected, editor.id)}
             onConnect={(connection) =>
               saveConnection(editor.id, connection).then(() => refresh())
             }
@@ -69,6 +83,7 @@ type EditorCardProps = {
   editor: EditorMeta;
   connection: EditorConnection | null;
   agentUp: boolean | null;
+  detected: EditorStatus | null;
   onConnect: (connection: EditorConnection) => Promise<void>;
   onDisconnect: () => Promise<void>;
 };
@@ -77,13 +92,14 @@ function EditorCard({
   editor,
   connection,
   agentUp,
+  detected,
   onConnect,
   onDisconnect,
 }: EditorCardProps) {
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
   const linked = connection != null;
-  const state = editorConnection({ linked, agentUp });
+  const state = editorConnection({ linked, agentUp, detected });
 
   const connect = () => {
     if (busy) return;
@@ -168,7 +184,7 @@ function EditorCard({
         {state === "connected"
           ? "Linked · the agent answered."
           : state === "unreachable"
-            ? "Linked, but the agent is down — Chair can't hand it the cut."
+            ? unreachableCopy(editor.id, detected)
             : state === "checking"
               ? "Checking the agent…"
               : editor.endpointLabel != null
