@@ -1,15 +1,27 @@
-"""Rule-based v1 planner: short briefs about silence and filler removal.
+"""Planner: model-backed free-text planning over the tool registry with rule fallback.
 
-Reads a short brief, detects the cleanup intents it names, and emits an
-ordered plan of tool steps against the proxy. A model-backed planner can
-replace plan_brief later; the Plan shape stays.
+Reads a brief, detects intents, and emits an ordered plan of tool steps against
+the proxy. With META_API_KEY and CHAIR_PLANNER_MODEL configured, calls the planner
+model; without a key or on model error / invalid answer, falls back to v1 rules.
 """
 
-from pydantic import BaseModel, ConfigDict
+import json
+from collections.abc import Mapping
+from typing import Any
 
+from pydantic import BaseModel, ConfigDict, Field
+
+from chair_agent.client import (
+    ModelClient,
+    build_brief_planner_messages,
+    build_client,
+    key_configured,
+    load_settings,
+)
 from chair_agent.models import TOOLS
 
 _TOOL_NAMES = frozenset(tool.name for tool in TOOLS)
+DISPATCHABLE_INTENTS = frozenset({"silence", "filler"})
 
 
 class PlanStep(BaseModel):
@@ -25,6 +37,8 @@ class Plan(BaseModel):
     brief: str
     intents: list[str]
     steps: list[PlanStep]
+    planner: str = Field(default="rules", exclude=True)
+    message: str | None = Field(default=None, exclude=True)
 
 
 def _intents(brief: str) -> list[str]:
@@ -37,12 +51,23 @@ def _intents(brief: str) -> list[str]:
     return intents
 
 
-def plan_brief(brief: str) -> Plan:
-    """Turn a short brief into an ordered plan of tool steps.
+def _parse_completion_json(text: str) -> dict[str, Any]:
+    trimmed = text.strip()
+    if trimmed.startswith("```"):
+        lines = trimmed.splitlines()
+        if lines[0].startswith("```"):
+            lines = lines[1:]
+        if lines and lines[-1].startswith("```"):
+            lines = lines[:-1]
+        trimmed = "\n".join(lines).strip()
+    payload = json.loads(trimmed)
+    if not isinstance(payload, dict):
+        raise ValueError("model completion must be a JSON object")
+    return payload
 
-    v1 understands silence and filler removal on a proxy. Raises
-    ValueError when the brief is empty or names nothing v1 can plan.
-    """
+
+def plan_rules(brief: str) -> Plan:
+    """Turn a short brief into an ordered plan of tool steps using v1 rules."""
     if not brief.strip():
         raise ValueError("brief must be a non-empty string")
     intents = _intents(brief)
@@ -58,4 +83,81 @@ def plan_brief(brief: str) -> Plan:
     unknown = [step.tool for step in steps if step.tool not in _TOOL_NAMES]
     if unknown:
         raise ValueError(f"plan uses unknown tools: {', '.join(unknown)}")
-    return Plan(brief=brief, intents=intents, steps=steps)
+    return Plan(brief=brief, intents=intents, steps=steps, planner="rules")
+
+
+def plan_with_model(brief: str, client: ModelClient) -> Plan:
+    """Turn a free-text brief into a Plan using the planner model.
+
+    Validates that steps only use tool names from models.TOOLS and rejects
+    unknown tools.
+    """
+    if not brief.strip():
+        raise ValueError("brief must be a non-empty string")
+    messages = build_brief_planner_messages(brief)
+    completion = client.plan(messages)
+    data = _parse_completion_json(completion.text)
+
+    raw_intents = data.get("intents")
+    if not isinstance(raw_intents, list) or not raw_intents:
+        raise ValueError("model plan must have a non-empty 'intents' list")
+    intents = [str(item).strip() for item in raw_intents if str(item).strip()]
+    if not intents:
+        raise ValueError("model plan must have at least one non-empty intent")
+
+    raw_steps = data.get("steps")
+    if not isinstance(raw_steps, list) or not raw_steps:
+        raise ValueError("model plan must have a non-empty 'steps' list")
+
+    steps: list[PlanStep] = []
+    for step_data in raw_steps:
+        if not isinstance(step_data, dict):
+            raise ValueError("each step must be an object")
+        tool = step_data.get("tool")
+        goal = step_data.get("goal", "")
+        if not isinstance(tool, str) or not tool.strip():
+            raise ValueError("each step must have a non-empty 'tool' name")
+        clean_tool = tool.strip()
+        if clean_tool not in _TOOL_NAMES:
+            raise ValueError(f"plan uses unknown tool: {clean_tool!r}")
+        steps.append(PlanStep(tool=clean_tool, goal=str(goal).strip()))
+
+    undispatched = [i for i in intents if i not in DISPATCHABLE_INTENTS]
+    message = (
+        f"Cannot dispatch intents yet: {', '.join(undispatched)}"
+        if undispatched
+        else None
+    )
+    return Plan(brief=brief, intents=intents, steps=steps, planner="model", message=message)
+
+
+def plan_brief(
+    brief: str,
+    *,
+    client: ModelClient | None = None,
+    env: Mapping[str, str] | None = None,
+) -> Plan:
+    """Turn a brief into an ordered plan of tool steps.
+
+    Uses the planner model when configured; falls back to rules without a
+    key or on model error / invalid answer.
+    """
+    if not brief.strip():
+        raise ValueError("brief must be a non-empty string")
+
+    active_client = client
+    if active_client is None and key_configured(env):
+        settings = load_settings(env)
+        if settings.models.planner:
+            try:
+                active_client = build_client(env)
+            except Exception:
+                active_client = None
+
+    if active_client is not None:
+        try:
+            return plan_with_model(brief, active_client)
+        except Exception:
+            return plan_rules(brief)
+
+    return plan_rules(brief)
