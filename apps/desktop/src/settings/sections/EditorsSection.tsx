@@ -5,6 +5,7 @@ import type { EditorId, EditorInfo, EditorStatus } from "../../home/data";
 import { cn } from "@/lib/utils";
 import type { EditorConnection } from "../settings-store";
 import {
+  capabilityLine,
   detectedStatus,
   EDITOR_CONNECTION_LABEL,
   EDITORS,
@@ -113,12 +114,6 @@ function EditorCard({
     void onDisconnect().finally(() => setBusy(false));
   };
 
-  const native = editor.capabilities.filter((cap) => cap.native);
-  const fallbacks = editor.capabilities.filter((cap) => cap.fallback != null);
-  const unsupported = editor.capabilities.filter(
-    (cap) => !cap.native && cap.fallback == null,
-  );
-
   return (
     <div className="rounded-card bg-card px-5 py-4">
       <div className="flex items-baseline justify-between gap-3">
@@ -189,29 +184,9 @@ function EditorCard({
                 : "Not linked yet — open your project in Studio, then Connect."}
       </p>
 
-      <div className="mt-3 space-y-1 border-t border-white/[0.06] pt-3 text-xs text-muted-foreground">
-        <p>
-          <span className="text-neutral-400">Native:</span>{" "}
-          {native.map((cap) => cap.label).join(", ")}
-        </p>
-        {fallbacks.length > 0 ? (
-          <p>
-            <span className="text-neutral-400">Falls back:</span>{" "}
-            {fallbacks
-              .map((cap) => `${cap.label} → ${cap.fallback}`)
-              .join("; ")}
-          </p>
-        ) : null}
-        {unsupported.length > 0 ? (
-          <p>
-            <span className="text-neutral-400">Not supported:</span>{" "}
-            {unsupported.map((cap) => cap.label).join(", ")}
-          </p>
-        ) : null}
-        <p className="text-muted-foreground">
-          From the {editor.name} adapter manifest · v{editor.version}
-        </p>
-      </div>
+      <p className="mt-3 border-t border-white/[0.06] pt-3 text-xs text-muted-foreground">
+        {capabilityLine(editor)}
+      </p>
     </div>
   );
 }

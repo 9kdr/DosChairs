@@ -8,7 +8,7 @@ export function PreferencesSection() {
     <div className="flex flex-col gap-8">
       <div className="rounded-2xl border border-dashed border-white/10 px-5 py-4">
         <p className="text-sm text-neutral-400">
-          Service URLs, paths, and device live here — coming in #172.
+          Service URLs, paths, and device settings aren&apos;t here yet.
         </p>
       </div>
     </div>

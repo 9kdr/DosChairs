@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { detectedStatus, EDITORS, editorConnection } from "./editors";
+import {
+  capabilityLine,
+  detectedStatus,
+  EDITORS,
+  editorConnection,
+} from "./editors";
 
 describe("editorConnection", () => {
   it("is connected when linked and the agent answers", () => {
@@ -94,5 +99,19 @@ describe("editor manifests", () => {
     expect(
       resolve.capabilities.filter((capability) => capability.fallback).length,
     ).toBe(2);
+  });
+});
+
+describe("capabilityLine", () => {
+  it("lists one line per editor: natives, gaps, then the version", () => {
+    expect(capabilityLine(EDITORS[0]!)).toBe(
+      "Keyframes, Fusion comps, Adjustment layers, Markers, Subtitles, Nested sequences, Speed changes · v0.1.0",
+    );
+    expect(capabilityLine(EDITORS[1]!)).toBe(
+      "Keyframes, Markers, Subtitles, Nested sequences, Speed changes · Fusion comps via pre-rendered overlay track · no Adjustment layers · v0.1.0",
+    );
+    expect(capabilityLine(EDITORS[2]!)).toBe(
+      "Markers, Subtitles, Nested sequences, Speed changes · Keyframes via baked clip · Fusion comps via pre-rendered overlay track · no Adjustment layers · v0.1.0",
+    );
   });
 });
