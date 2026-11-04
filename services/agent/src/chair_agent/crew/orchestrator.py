@@ -211,7 +211,7 @@ def merge_results(
         if result.verdict == "accepted":
             items.extend(result.items)
     merged = build_changeset(changeset_id, base_revision, items, summary="Crew cut")
-    merged = validate_changeset(merged.model_dump(mode="json", by_alias=True))
+    merged = validate_changeset(merged.model_dump(mode="json", by_alias=True, exclude_none=True))
     reasons: list[str] = []
     try:
         beats = plan_beats(plan)
@@ -223,7 +223,7 @@ def merge_results(
         reasons.append(f"plan coverage unreadable: {error}")
     reasons.extend(drift_check(merged.items, timeline))
     check = verifier.verify(
-        merged.model_dump(mode="json", by_alias=True),
+        merged.model_dump(mode="json", by_alias=True, exclude_none=True),
         artifact_urls=list(artifacts),
         total_frames=total_frames,
         plan=plan if not isinstance(plan, Mapping) or "beats" in plan else None,
