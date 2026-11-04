@@ -6,6 +6,8 @@ model; without a key or on model error / invalid answer, falls back to v1 rules.
 """
 
 import json
+import threading
+import time
 from collections.abc import Mapping
 from typing import Any
 
@@ -23,6 +25,15 @@ from chair_agent.models import TOOLS
 
 _TOOL_NAMES = frozenset(tool.name for tool in TOOLS)
 DISPATCHABLE_INTENTS = frozenset({"silence", "filler"})
+
+_STATUS_LOCK = threading.Lock()
+_STATUS: dict[str, Any] = {"plans": 0, "last_plan_ms": None, "last_error": None}
+
+
+def status_snapshot() -> dict[str, Any]:
+    """Planner counters: plans made, last plan wall time, last error."""
+    with _STATUS_LOCK:
+        return dict(_STATUS)
 
 
 class PlanStep(BaseModel):
@@ -147,6 +158,26 @@ def plan_brief(
     if not brief.strip():
         raise ValueError("brief must be a non-empty string")
 
+    started = time.perf_counter()
+    try:
+        plan = _plan_brief(brief, client=client, env=env, model=model)
+    except Exception as error:
+        with _STATUS_LOCK:
+            _STATUS["last_error"] = f"{type(error).__name__}: {error}"
+        raise
+    with _STATUS_LOCK:
+        _STATUS["plans"] += 1
+        _STATUS["last_plan_ms"] = round((time.perf_counter() - started) * 1000, 1)
+    return plan
+
+
+def _plan_brief(
+    brief: str,
+    *,
+    client: ModelClient | None = None,
+    env: Mapping[str, str] | None = None,
+    model: str | None = None,
+) -> Plan:
     active_client = client
     if active_client is None:
         try:

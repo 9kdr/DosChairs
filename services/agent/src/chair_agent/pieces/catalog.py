@@ -16,6 +16,20 @@ EffectName = Literal["muse_image", "sam3_mask", "grade", "motion_graphics"]
 
 EFFECTS: tuple[EffectName, ...] = ("muse_image", "sam3_mask", "grade", "motion_graphics")
 
+PieceKind = Literal["macro", "effect", "motion", "sound"]
+
+_EFFECT_SHELF: dict[EffectName, PieceKind] = {
+    "muse_image": "effect",
+    "sam3_mask": "effect",
+    "grade": "effect",
+    "motion_graphics": "motion",
+}
+
+
+def piece_kind(effect: EffectName) -> PieceKind:
+    """Shelf kind for a catalog piece; unknown workflows land on macro."""
+    return _EFFECT_SHELF.get(effect, "macro")
+
 
 class EnumSpec(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)

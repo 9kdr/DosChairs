@@ -358,6 +358,33 @@ def _cancel_path(path: str) -> str | None:
     return None
 
 
+def _pipeline() -> dict[str, Any]:
+    """Checkable pipeline numbers: jobs, last error, plan time, effect repairs."""
+    from chair_agent import effects, planner
+
+    pipeline: dict[str, Any] = {
+        "jobs_queued": 0,
+        "jobs_done": 0,
+        "jobs_failed": 0,
+        "last_error": None,
+        "last_plan_ms": None,
+        "effect_repairs_used": 0,
+    }
+    controller = getattr(Handler, "controller", None)
+    if controller is not None:
+        jobs = controller.summary()
+        pipeline["jobs_queued"] = jobs["queued"]
+        pipeline["jobs_done"] = jobs["completed"]
+        pipeline["jobs_failed"] = jobs["failed"]
+        pipeline["last_error"] = jobs["last_error"]
+    plans = planner.status_snapshot()
+    pipeline["last_plan_ms"] = plans["last_plan_ms"]
+    pipeline["effect_repairs_used"] = effects.status_snapshot()["repairs"]
+    if pipeline["last_error"] is None:
+        pipeline["last_error"] = plans["last_error"] or effects.status_snapshot()["last_error"]
+    return pipeline
+
+
 def _health() -> dict[str, Any]:
     from chair_agent import effects, modules, sounds
     from chair_agent.pieces import macros
@@ -375,6 +402,7 @@ def _health() -> dict[str, Any]:
         "effects": effects.status_snapshot(),
         "macros": macros.status_snapshot(),
         "modules": modules.status_snapshot() | {"model": modules.module_model()},
+        "pipeline": _pipeline(),
     }
 
 

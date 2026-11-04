@@ -8,6 +8,7 @@ from chair_agent.pieces import (
     PieceRecord,
     apply_director_defaults,
     apply_piece_defaults,
+    piece_kind,
     search_pieces,
 )
 
@@ -83,3 +84,11 @@ def test_director_defaults_cover_camera_lens_palette_audio() -> None:
 
 def test_catalog_namespace_exports() -> None:
     assert set(pieces.__all__) >= {"PIECES", "WORKFLOWS", "search_pieces"}
+
+
+def test_piece_kind_maps_workflows_to_the_shelf() -> None:
+    assert piece_kind("motion_graphics") == "motion"
+    assert piece_kind("muse_image") == "effect"
+    assert piece_kind("sam3_mask") == "effect"
+    assert piece_kind("grade") == "effect"
+    assert piece_kind("warp_drive") == "macro"  # type: ignore[arg-type]

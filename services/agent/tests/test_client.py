@@ -186,6 +186,72 @@ def test_health_reports_configured_model_names(monkeypatch: pytest.MonkeyPatch) 
     assert any(tool["name"] == "render_preview" for tool in body["tools"])
 
 
+def test_health_pipeline_reports_jobs_plan_and_repairs(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from chair_agent import planner
+    from chair_agent.jobs import JobController
+
+    monkeypatch.setattr(
+        planner, "_STATUS", {"plans": 0, "last_plan_ms": None, "last_error": None}
+    )
+    controller = JobController(
+        tmp_path / "jobs.json", deliver=lambda url, body, headers: None
+    )
+    old = getattr(Handler, "controller", None)
+    Handler.controller = controller
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    port = server.server_address[1]
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        done = controller.submit("edit", {"brief": "cut the silence"})
+        controller.claim_next()
+        controller.finish_completed(done.request_id)
+        bad = controller.submit("edit", {"brief": "cut the silence"})
+        controller.claim_next()
+        controller.finish_failed(bad.request_id, "boom")
+        planner.plan_brief("cut the silence from the proxy", env={})
+        with urlopen(f"http://127.0.0.1:{port}/health") as response:
+            body = json.load(response)
+    finally:
+        server.shutdown()
+        thread.join(timeout=2)
+        server.server_close()
+        if old is None:
+            del Handler.controller
+        else:
+            Handler.controller = old
+
+    pipeline = body["pipeline"]
+    assert pipeline == {
+        "jobs_queued": 0,
+        "jobs_done": 1,
+        "jobs_failed": 1,
+        "last_error": "boom",
+        "last_plan_ms": pipeline["last_plan_ms"],
+        "effect_repairs_used": pipeline["effect_repairs_used"],
+    }
+    assert isinstance(pipeline["last_plan_ms"], float)
+    assert isinstance(pipeline["effect_repairs_used"], int)
+
+
+def test_plan_brief_records_timing_and_errors(monkeypatch: pytest.MonkeyPatch) -> None:
+    from chair_agent import planner
+
+    monkeypatch.setattr(
+        planner, "_STATUS", {"plans": 0, "last_plan_ms": None, "last_error": None}
+    )
+    planner.plan_brief("cut the silence", env={})
+    snapshot = planner.status_snapshot()
+    assert snapshot["plans"] == 1
+    assert isinstance(snapshot["last_plan_ms"], float)
+    assert snapshot["last_error"] is None
+    with pytest.raises(ValueError):
+        planner.plan_brief("make the look warmer with a grade", env={})
+    assert planner.status_snapshot()["last_error"] is not None
+
+
 def test_saved_key_endpoint_and_not_echoed(monkeypatch) -> None:
     from urllib.request import Request
 

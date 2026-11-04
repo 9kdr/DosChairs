@@ -12,9 +12,11 @@ from chair_agent.pieces.catalog import (
     EnumSpec,
     PieceExample,
     PieceHit,
+    PieceKind,
     PieceRecord,
     apply_director_defaults,
     apply_piece_defaults,
+    piece_kind,
     search_pieces,
 )
 
@@ -30,8 +32,10 @@ __all__ = [
     "EnumSpec",
     "PieceExample",
     "PieceHit",
+    "PieceKind",
     "PieceRecord",
     "apply_director_defaults",
     "apply_piece_defaults",
+    "piece_kind",
     "search_pieces",
 ]
