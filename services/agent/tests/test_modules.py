@@ -299,7 +299,9 @@ def test_generate_rejects_unasked_opaque_frame(isolated) -> None:
     )
     client = FakeClient([fenced(opaque), fenced(opaque)])
     with pytest.raises(InvalidModule, match="no background") as caught:
-        modules.generate_module("smoothly merging liquid boxes", client=client)
+        # "blobs", not "boxes": boxes would reuse liquid-boxes instead of
+        # drafting, and this test needs the model drafting path.
+        modules.generate_module("smoothly merging liquid blobs", client=client)
     assert "failed the check twice" in str(caught.value)
 
 
@@ -332,7 +334,9 @@ export default function Effect({ t, hue, width, height }: any) {
 def test_generate_rejects_failure_fallback_with_gl_log(isolated) -> None:
     client = FakeClient([fenced(BROKEN_SHADER), fenced(BROKEN_SHADER)])
     with pytest.raises(InvalidModule, match="failed the check twice") as caught:
-        modules.generate_module("smoothly merging liquid boxes", client=client)
+        # "blobs", not "boxes": boxes would reuse liquid-boxes instead of
+        # drafting, and this test needs the model drafting path.
+        modules.generate_module("smoothly merging liquid blobs", client=client)
     assert "failure fallback" in str(caught.value)
     assert "dimension mismatch" in str(caught.value)
 

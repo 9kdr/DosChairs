@@ -1188,8 +1188,11 @@ def _piece_plan_body(body: dict[str, Any]) -> dict[str, Any]:
 
 
 def _modules_generate_body(body: dict[str, Any]) -> dict[str, Any]:
-    from chair_agent import modules
+    from chair_agent import modules, piece_plan
 
+    brief = body.get("brief", "")
+    if not isinstance(brief, str) or not brief.strip():
+        raise ValueError("generate needs a non-empty 'brief'")
     canvas = body.get("canvas", {})
     if not isinstance(canvas, dict):
         raise ValueError("generate needs a 'canvas' object with width and height")
@@ -1205,8 +1208,10 @@ def _modules_generate_body(body: dict[str, Any]) -> dict[str, Any]:
     mode = body.get("mode", "spark")
     if mode not in modules.MODES:
         raise ValueError("mode must be 'spark' or 'wonder'")
+    plan = piece_plan.plan_piece(brief)
+    plan_dump = plan.model_dump(mode="json", by_alias=True)
     record = modules.generate_module(
-        str(body.get("brief", "")),
+        brief,
         kind=body.get("kind") if isinstance(body.get("kind"), str) else None,
         width=width,
         height=height,
@@ -1216,8 +1221,16 @@ def _modules_generate_body(body: dict[str, Any]) -> dict[str, Any]:
         piece_ids=[str(p) for p in pieces] if isinstance(pieces, list) else None,
         model=modules.WONDER_MODULE_MODEL if mode == "wonder" else None,
         mode=mode,
+        plan=plan,
     )
-    return _module_summary(record)
+    if record is None:
+        return {
+            "id": None,
+            "plan": plan_dump,
+            "notes": piece_plan.guidance(plan),
+            "preview": None,
+        }
+    return _module_summary(record) | {"plan": plan_dump}
 
 
 def _effect_body(effect_id: str) -> dict[str, Any]:

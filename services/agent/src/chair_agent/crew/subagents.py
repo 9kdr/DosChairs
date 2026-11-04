@@ -132,6 +132,12 @@ def run_motion(task: Task, *, client: Any = None, target_id: str = "timeline-1")
 
     try:
         record = modules.generate_module(task.goal, client=client)
+        if record is None:
+            return SubagentOutput(
+                items=[_beat_marker(task, "Motion accent")],
+                notes="beat marker (all-native piece plan: place natively)",
+                fallback=True,
+            )
         item = ChangesetItem(
             id="motion", op="add_effect", targetId=target_id, beatId=task.beat_id,
             rationale=f"Motion module {record.id}: {task.goal}",

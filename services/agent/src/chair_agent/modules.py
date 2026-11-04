@@ -531,7 +531,9 @@ def _write_source(module_id: str, source: str, env: Mapping[str, str] | None = N
     return path
 
 
-_BACKGROUND_WORDS = {"background", "backdrop", "bg", "wallpaper"}
+_BACKGROUND_WORDS = {
+    "background", "backdrop", "bg", "wallpaper", "gradient", "gradients",
+}
 _TEXT_WORDS = {
     "text", "title", "caption", "says", "say", "label", "word", "words",
     "letter", "letters", "type", "typographic", "typography", "heading", "subtitle",
@@ -592,6 +594,84 @@ def register_source(
     return record
 
 
+_PROP_DEFAULT = re.compile(
+    r'^(?P<head>\s*(?P<id>[\w$]+): \{\s*type: "(?P<kind>string|color)",'
+    r'\s*default: ")(?P<value>[^"]*)(?P<tail>".*)$'
+)
+
+
+def _apply_brief_values(
+    source: str, *, texts: list[str], colors: list[str]
+) -> tuple[str, list[str]]:
+    """Rewrite string/color prop defaults from the brief, in file order."""
+    applied: list[str] = []
+    texts = [text.replace("\\", "\\\\").replace('"', '\\"') for text in texts]
+    lines = []
+    text_at = color_at = 0
+    for line in source.split("\n"):
+        match = _PROP_DEFAULT.match(line)
+        if match is not None:
+            kind = match["kind"]
+            if kind == "string" and text_at < len(texts):
+                line = f"{match['head']}{texts[text_at]}{match['tail']}"
+                applied.append(match["id"])
+                text_at += 1
+            elif kind == "color" and color_at < len(colors):
+                line = f"{match['head']}{colors[color_at]}{match['tail']}"
+                applied.append(match["id"])
+                color_at += 1
+        lines.append(line)
+    return "\n".join(lines), applied
+
+
+def adapt_library_piece(
+    piece_id: str, brief: str, env: Mapping[str, str] | None = None
+) -> ModuleRecord:
+    """Adapt a gold library piece with values from the brief (no model).
+
+    Literals (quoted or saying-phrases) land in string props and #rrggbb
+    colors in color props, in file order; the result runs the normal
+    check and store path, so it is a real piece under the brief's scope.
+    """
+    if not re.fullmatch(r"[a-z0-9-]+", piece_id or ""):
+        raise InvalidModule(f"unknown library piece: {piece_id!r}")
+    path = _effects_dir() / "library" / f"{piece_id}.tsx"
+    if not path.is_file():
+        raise InvalidModule(f"unknown library piece: {piece_id!r}")
+    texts = piece_plan.brief_literals(brief)
+    colors = [found.lower() for found in re.findall(r"#[0-9a-fA-F]{6}\b", brief)]
+    adapted, applied = _apply_brief_values(
+        path.read_text(encoding="utf-8"), texts=texts, colors=colors
+    )
+    record = register_source(adapted, brief=brief, env=env)
+    notes = f"Adapted from {piece_id}"
+    if applied:
+        notes += f" ({', '.join(applied)} from the brief)"
+    updated = record.model_copy(update={"notes": notes + "."})
+    _register(updated, env)
+    piece_plan.note_adapted()
+    return updated
+
+
+def _generate_adapted(
+    plan: piece_plan.PiecePlan,
+    part: piece_plan.PiecePart,
+    env: Mapping[str, str] | None,
+) -> ModuleRecord:
+    """Adapt the topmost reuse part's gold module; note the rest as guidance."""
+    record = adapt_library_piece(part.piece_id or "", part.brief, env=env)
+    guide = piece_plan.guidance(plan, adapted_id=part.piece_id)
+    notes = (
+        f"{record.notes} Piece plan: {plan.counts.native} native,"
+        f" {plan.counts.reuse} reuse, {plan.counts.new} new."
+    )
+    if guide:
+        notes += f" {guide}"
+    updated = record.model_copy(update={"notes": notes})
+    _register(updated, env)
+    return updated
+
+
 def generate_module(
     brief: str,
     *,
@@ -606,13 +686,14 @@ def generate_module(
     env: Mapping[str, str] | None = None,
     model: str | None = None,
     mode: str = "spark",
-) -> ModuleRecord:
-    """Plan the split, draft the new parts, check, repair once, then store.
+    plan: piece_plan.PiecePlan | None = None,
+) -> ModuleRecord | None:
+    """Plan the split, then produce the piece. Never fails because covered.
 
-    The plan routes each part of the brief first (native, reuse, new) and
-    only the new parts reach the model. When every part already has a
-    home, generation refuses with the routing instead of baking a
-    redundant piece.
+    Only the new parts reach the model. When nothing is new, the topmost
+    reuse part adapts its gold module with values from the brief; when
+    every part is a native layer, there is no piece to make and this
+    returns None (the plan's guidance says what to add in Resolve).
     """
     if width <= 0 or height <= 0 or fps <= 0 or duration_sec <= 0:
         raise InvalidModule("canvas width, height, fps, and durationSec must be positive")
@@ -620,11 +701,18 @@ def generate_module(
         raise InvalidModule(f"unknown mode: {mode!r} (want 'spark' or 'wonder')")
     if not brief.strip():
         raise InvalidModule("generate needs a non-empty 'brief'")
-    plan = piece_plan.plan_piece(brief)
+    if plan is None:
+        plan = piece_plan.plan_piece(brief)
     new_parts = [part for part in plan.parts if part.route == "new"]
     if not new_parts:
-        piece_plan.note_refused()
-        raise InvalidModule(piece_plan.refusal_message(plan))
+        reuse_parts = [
+            part for part in plan.parts
+            if part.route == "reuse" and part.piece_id
+        ]
+        if reuse_parts:
+            return _generate_adapted(plan, reuse_parts[0], env)
+        piece_plan.note_guided()
+        return None
     scoped = "; ".join(part.brief for part in new_parts)
     scope = scope_from_brief(scoped)
     active = client if client is not None else _model_client(model)
@@ -642,6 +730,9 @@ def generate_module(
             f" Piece plan: {plan.counts.native} native,"
             f" {plan.counts.reuse} reuse, {plan.counts.new} new."
         )
+        guide = piece_plan.guidance(plan)
+        if guide:
+            notes += f" {guide}"
     repaired = False
     try:
         completion = active.execute(messages)

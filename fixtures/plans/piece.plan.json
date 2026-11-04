@@ -21,10 +21,10 @@
       "order": 1,
       "tool": null,
       "settings": {},
-      "pieceId": "liquid-boxes",
+      "pieceId": "mesh-gradient",
       "props": {},
       "brief": "a liquid gradient",
-      "note": "Reuse liquid-boxes; adapt it with props."
+      "note": "Reuse mesh-gradient; adapt it with props."
     },
     {
       "name": "grain",

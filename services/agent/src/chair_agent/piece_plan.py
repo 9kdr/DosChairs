@@ -9,13 +9,13 @@ each one, in order:
 2. ``reuse``: an existing gold library piece, adapted with props.
 3. ``new``: a tightly scoped brief for one new piece.
 
-A one-element brief plans as a single new part: the editor already scoped
-the piece, and the scope check (no background or text unless asked) keeps
-it in its niche. An explicit piece spec (a "Props:" list or a code fence)
-never splits. generate_module plans first and renders only the new parts;
-when every part already has a home it refuses with the routing instead of
-baking a redundant piece. Native parts name the Fusion tool and settings
-so the shared Fusion builder can take them later.
+A one-element loose ask reuses the library when it names a gold piece,
+else it is new: a lone ask is a piece order, never a dead end. An explicit
+piece spec (a "Props:" list or a code fence) is already a custom-piece
+order and never reroutes. Multi-part briefs route each part fully: native
+layers become placement guidance, reuse parts adapt their gold module,
+and only the new parts reach the model. Native parts name the Fusion tool
+and settings so the shared Fusion builder can take them later.
 """
 
 from __future__ import annotations
@@ -43,9 +43,11 @@ _LITERAL_AFTER = re.compile(
     re.IGNORECASE,
 )
 _QUOTED = re.compile(r"[\"']([^\"']+)[\"']")
+_HEX_TAIL = re.compile(r"\s*#[0-9a-fA-F]{6}\b.*$")
+_HEX_PREP = re.compile(r"\s+(?:in|on|with|and)\s*$", re.IGNORECASE)
 
-# word -> (Fusion tool, base settings). The first native noun in a part
-# picks the tool; mirrors the Fusion skill's "Safe native tools" table.
+# word -> (Fusion tool, base settings); mirrors the Fusion skill's "Safe
+# native tools" table. _TOOL_RANK picks among several nouns in one part.
 _NATIVE_NOUNS: dict[str, tuple[str, dict[str, Any]]] = {
     **dict.fromkeys(
         (
@@ -181,7 +183,8 @@ _STATUS: dict[str, Any] = {
     "native": 0,
     "reuse": 0,
     "new": 0,
-    "refused": 0,
+    "adapted": 0,
+    "guided": 0,
     "last_error": None,
 }
 
@@ -206,11 +209,16 @@ def _note_plan(plan: PiecePlan) -> None:
         _STATUS["new"] += plan.counts.new
 
 
-def note_refused() -> None:
-    """A generation refused: every part already had a home. Not an error."""
+def note_adapted() -> None:
+    """A reuse part adapted its gold module into a piece."""
     with _STATUS_LOCK:
-        _STATUS["refused"] += 1
-        _STATUS["last_error"] = None
+        _STATUS["adapted"] += 1
+
+
+def note_guided() -> None:
+    """An all-native plan answered with placement guidance, not a piece."""
+    with _STATUS_LOCK:
+        _STATUS["guided"] += 1
 
 
 def _schema_path() -> Path:
@@ -236,17 +244,13 @@ def _validate_plan(data: dict[str, Any]) -> None:
         raise ValueError(f"invalid piece plan at {where}: {first.message}")
 
 
-def _literal_spans(text: str) -> tuple[list[tuple[int, int]], str | None]:
-    """Quoted and saying-phrases spans, plus the first literal for Text+."""
+def _literal_spans(text: str) -> list[tuple[int, int]]:
+    """Quoted and saying-phrase spans (rendered content, never split)."""
     spans: list[tuple[int, int]] = []
-    first: str | None = None
     for pattern in (_QUOTED, _LITERAL_AFTER):
         for match in pattern.finditer(text):
             spans.append(match.span(1))
-            candidate = match.group(1).strip()
-            if first is None and candidate:
-                first = candidate
-    return spans, first
+    return spans
 
 
 def _outside(spans: list[tuple[int, int]], at: int) -> bool:
@@ -259,7 +263,7 @@ def _tokens(text: str) -> list[str]:
 
 def _content_tokens(text: str) -> list[str]:
     """Tokens minus literal spans (rendered content never blocks routing)."""
-    spans, _ = _literal_spans(text)
+    spans = _literal_spans(text)
     if not spans:
         return _tokens(text)
     chars = list(text)
@@ -275,7 +279,7 @@ def _has_native_noun(text: str) -> bool:
 
 def _cut_over(text: str) -> list[int]:
     """Cut offsets for layer "over" (time phrases like "over the duration" stay)."""
-    spans, _ = _literal_spans(text)
+    spans = _literal_spans(text)
     cuts = []
     for match in _OVER_PATTERN.finditer(text):
         if not _outside(spans, match.start()):
@@ -290,7 +294,7 @@ def _cut_over(text: str) -> list[int]:
 
 
 def _cut_with(text: str) -> list[int]:
-    spans, _ = _literal_spans(text)
+    spans = _literal_spans(text)
     return [
         match.start()
         for match in _WITH_PATTERN.finditer(text)
@@ -299,7 +303,7 @@ def _cut_with(text: str) -> list[int]:
 
 
 def _cut_plus(text: str) -> list[int]:
-    spans, _ = _literal_spans(text)
+    spans = _literal_spans(text)
     return [
         match.start()
         for match in _PLUS_PATTERN.finditer(text)
@@ -309,7 +313,7 @@ def _cut_plus(text: str) -> list[int]:
 
 def _cut_and(text: str) -> list[int]:
     """Cut "and" only when both sides name a native tool ("grain and glow")."""
-    spans, _ = _literal_spans(text)
+    spans = _literal_spans(text)
     cuts = []
     for match in _AND_PATTERN.finditer(text):
         if not _outside(spans, match.start()):
@@ -385,9 +389,9 @@ def _native_hit(text: str) -> tuple[str, dict[str, Any]] | None:
     tool, base = _NATIVE_NOUNS[ranked[0]]
     settings = dict(base)
     if tool == "Text+":
-        _, literal = _literal_spans(text)
-        if literal:
-            settings["text"] = literal
+        literals = brief_literals(text)
+        if literals:
+            settings["text"] = literals[0]
     return tool, settings
 
 
@@ -399,26 +403,61 @@ def _stems(token: str) -> set[str]:
     return out
 
 
+# Trigger words that name a gold module's subject. A part reuses an entry
+# only when it says the subject out loud ("boxes" -> liquid-boxes, but a
+# bare "liquid gradient" is mesh-gradient, not boxes). Entries added later
+# without a row keep the old 2+ total-hits rule, so library additions stay
+# data-only.
+_REUSE_CORE: dict[str, frozenset[str]] = {
+    "liquid-boxes": frozenset({"box", "boxes"}),
+    "mesh-gradient": frozenset({"gradient", "gradients", "mesh"}),
+    "dither-reveal": frozenset({"dither"}),
+    "lower-third": frozenset({"lower"}),
+    "physics-letters": frozenset(
+        {"physics", "verlet", "rain", "raining", "tumble", "tumbling"}
+    ),
+    "morph-icon": frozenset({"morph", "morphing", "icon"}),
+}
+
+
 def _reuse_match(text: str) -> dict[str, Any] | None:
-    """Best gold library entry at 2+ token hits (stems count), else None."""
+    """Best gold library entry by subject word, ranked by total hits."""
     tokens = [token for token in _tokens(text) if len(token) > 2]
     if not tokens:
         return None
-    best: dict[str, Any] | None = None
-    best_score = 0
-    for entry in skills.library_entries():
+    stemmed = {bit for token in tokens for bit in _stems(token)}
+    scored: list[tuple[int, int, dict[str, Any]]] = []
+    for index, entry in enumerate(skills.library_entries()):
         haystack = skills._entry_text(entry).lower()
-        score = sum(
+        total = sum(
             1 for token in tokens if any(bit in haystack for bit in _stems(token))
         )
-        if score > best_score:
-            best, best_score = entry, score
-    return best if best_score >= 2 else None
+        core = _REUSE_CORE.get(str(entry.get("id")))
+        if core is None:
+            if total >= 2:
+                scored.append((total, index, entry))
+        elif stemmed & core:
+            scored.append((total, index, entry))
+    if not scored:
+        return None
+    scored.sort(key=lambda item: (-item[0], item[1]))
+    return scored[0][2]
 
 
 def _short(text: str) -> str:
     cleaned = re.sub(r"\s+", " ", text.strip())
     return cleaned if len(cleaned) <= 48 else cleaned[:48].rstrip()
+
+
+def _reuse_part(
+    text: str, order: int, entry: dict[str, Any], note: str = ""
+) -> PiecePart:
+    return PiecePart(
+        name=_short(text), route="reuse", order=order,
+        piece_id=str(entry.get("id")), brief=text,
+        note=((note + " ") if note else "")
+        + f"Reuse {entry.get('id')}; adapt it with props.",
+    )
 
 
 def _route_part(text: str, order: int, native_ok: bool) -> PiecePart:
@@ -437,12 +476,7 @@ def _route_part(text: str, order: int, native_ok: bool) -> PiecePart:
         )
     entry = _reuse_match(text)
     if entry is not None:
-        return PiecePart(
-            name=_short(text), route="reuse", order=order,
-            piece_id=str(entry.get("id")), brief=text,
-            note=((note + " ") if note else "")
-            + f"Reuse {entry.get('id')}; adapt it with props.",
-        )
+        return _reuse_part(text, order, entry, note)
     return PiecePart(
         name=_short(text), route="new", order=order, brief=text, note=note
     )
@@ -450,15 +484,25 @@ def _route_part(text: str, order: int, native_ok: bool) -> PiecePart:
 
 def plan_piece(brief: str) -> PiecePlan:
     """Split the brief and route each part. Deterministic: no model calls."""
+    text = brief.strip()
     segments = split_brief(brief)
     native_ok = _native_allowed()
-    if len(segments) == 1:
+    if len(segments) == 1 and _EXPLICIT.search(text):
+        # An explicit spec is already a custom-piece order: never reroute it.
         parts = [
-            PiecePart(
-                name=_short(segments[0]), route="new", order=0,
-                brief=segments[0],
-            )
+            PiecePart(name=_short(text), route="new", order=0, brief=text)
         ]
+    elif len(segments) == 1:
+        # One loose element: reuse the library when it names the piece,
+        # else it's new. Native routing applies to split-off layers, so a
+        # lone ask always ends in a piece, never guidance alone.
+        entry = _reuse_match(text)
+        if entry is None:
+            parts = [
+                PiecePart(name=_short(text), route="new", order=0, brief=text)
+            ]
+        else:
+            parts = [_reuse_part(text, 0, entry)]
     else:
         parts = [
             _route_part(segment, order, native_ok)
@@ -469,24 +513,38 @@ def plan_piece(brief: str) -> PiecePlan:
         reuse=sum(1 for part in parts if part.route == "reuse"),
         new=sum(1 for part in parts if part.route == "new"),
     )
-    plan = PiecePlan(brief=brief.strip(), parts=parts, counts=counts)
+    plan = PiecePlan(brief=text, parts=parts, counts=counts)
     _validate_plan(plan.model_dump(mode="json", by_alias=True))
     _note_plan(plan)
     return plan
 
 
-def refusal_message(plan: PiecePlan) -> str:
-    """Why generation refuses: every part already has a home."""
-    bits = []
+def brief_literals(brief: str) -> list[str]:
+    """Quoted and saying-phrase values, in position order, deduplicated."""
+    spans = _literal_spans(brief)
+    seen: list[str] = []
+    for start, end in sorted(spans):
+        candidate = brief[start:end].strip()
+        trimmed = _HEX_TAIL.sub("", candidate)
+        if trimmed != candidate:  # "HELLO in #FF0000" keeps HELLO for text
+            trimmed = _HEX_PREP.sub("", trimmed).strip()
+            candidate = trimmed
+        if candidate and candidate not in seen:
+            seen.append(candidate)
+    return seen
+
+
+def guidance(plan: PiecePlan, adapted_id: str | None = None) -> str:
+    """Plain placement notes for parts no piece covers. Never an error."""
+    lines: list[str] = []
     for part in plan.parts:
-        if part.route == "native":
-            bits.append(f"{part.name!r} -> native {part.tool}")
-        elif part.route == "reuse":
-            bits.append(f"{part.name!r} -> reuse {part.piece_id}")
-        else:
-            bits.append(f"{part.name!r} -> new piece")
-    return (
-        "nothing to generate: every part already has a home ("
-        + "; ".join(bits)
-        + "). Place those directly instead of baking a new piece."
-    )
+        if part.route == "native" and part.tool:
+            literal = part.settings.get("text", "")
+            literal = literal.strip() if isinstance(literal, str) else ""
+            if part.tool == "Text+" and literal:
+                lines.append(f"Add Text+ {literal!r} in Resolve")
+            else:
+                lines.append(f"Add {part.tool} in Resolve for {part.brief!r}")
+        elif part.route == "reuse" and part.piece_id != adapted_id:
+            lines.append(f"Also reuse {part.piece_id} for {part.brief!r}")
+    return "; ".join(lines)

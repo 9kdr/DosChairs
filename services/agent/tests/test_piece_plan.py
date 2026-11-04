@@ -1,4 +1,4 @@
-"""Piece plans: split a brief, route native/reuse/new, generation obeys (#278)."""
+"""Piece plans: split, route native/reuse/new, adapt, guide, never fail (#278)."""
 
 import json
 import threading
@@ -59,11 +59,21 @@ def isolated(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     return tmp_path
 
 
+def ok_report(**extra):
+    report = {
+        "ok": True, "errors": [], "warnings": [],
+        "meta": {"id": "tiny-text", "name": "Tiny Text"},
+        "props": [{"id": "size"}], "checks": {"deterministic": True},
+    }
+    report.update(extra)
+    return report
+
+
 def test_proof_brief_plans_native_reuse_native() -> None:
     plan = piece_plan.plan_piece(PROOF)
     assert [(p.route, p.tool, p.piece_id) for p in plan.parts] == [
         ("native", "Text+", None),
-        ("reuse", None, "liquid-boxes"),
+        ("reuse", None, "mesh-gradient"),
         ("native", "FilmGrain", None),
     ]
     assert plan.parts[0].settings == {"text": "LAUNCH"}
@@ -72,24 +82,43 @@ def test_proof_brief_plans_native_reuse_native() -> None:
 
 
 @pytest.mark.parametrize(
+    ("brief", "piece_id"),
+    [
+        ("smoothly merging liquid boxes", "liquid-boxes"),
+        ("a liquid gradient", "mesh-gradient"),
+        ("Dither title piece", "dither-reveal"),
+        ("Make a dither title piece", "dither-reveal"),
+        ("a morphing icon", "morph-icon"),
+        ("A lower third for the host", "lower-third"),
+    ],
+)
+def test_reuse_names_the_subject(brief: str, piece_id: str) -> None:
+    plan = piece_plan.plan_piece(brief)
+    assert len(plan.parts) == 1
+    assert plan.parts[0].route == "reuse"
+    assert plan.parts[0].piece_id == piece_id
+
+
+@pytest.mark.parametrize(
     "brief",
     [
         "fade a label in",
         "fade",
-        "smoothly merging liquid boxes",
         "dark title background with big words",
         "a bouncing logo",
+        "Bouncy cursor",
+        "a liquid haze",
         "Kinetic type: each letter of a short word hangs from a rope",
     ],
 )
-def test_single_element_briefs_stay_one_new_part(brief: str) -> None:
+def test_single_element_briefs_stay_new_without_a_subject(brief: str) -> None:
     plan = piece_plan.plan_piece(brief)
     assert len(plan.parts) == 1
     assert plan.parts[0].route == "new"
     assert plan.parts[0].brief == brief
 
 
-def test_eval_briefs_never_split() -> None:
+def test_eval_briefs_never_reroute() -> None:
     data = json.loads((ROOT / "services/agent/eval/modules_briefs.json").read_text())
     briefs = data.get("briefs", data if isinstance(data, list) else [])
     assert len(briefs) >= 10
@@ -144,15 +173,6 @@ def test_subject_beats_motion_modifier() -> None:
     assert alone.parts[0].tool == "Transform"
 
 
-def test_reuse_names_library_pieces() -> None:
-    plan = piece_plan.plan_piece("a morphing icon with glow")
-    assert [(p.route, p.piece_id, p.tool) for p in plan.parts] == [
-        ("reuse", "morph-icon", None),
-        ("native", None, "SoftGlow"),
-    ]
-    assert "adapt it with props" in plan.parts[0].note
-
-
 def test_native_gated_on_manifest(monkeypatch: pytest.MonkeyPatch) -> None:
     from chair_resolve import manifest as resolve_manifest
 
@@ -164,6 +184,32 @@ def test_native_gated_on_manifest(monkeypatch: pytest.MonkeyPatch) -> None:
     assert "cannot host this natively" in plan.parts[0].note
 
 
+def test_brief_literals_order_and_hex_tail() -> None:
+    assert piece_plan.brief_literals("dither title saying HELLO in #FF0000") == [
+        "HELLO"
+    ]
+    assert piece_plan.brief_literals('kicker "HI" and title "BYE"') == ["HI", "BYE"]
+    assert piece_plan.brief_literals("go live") == []
+    assert piece_plan.brief_literals("saying Log in over grain") == ["Log in"]
+
+
+def test_guidance_names_native_steps() -> None:
+    plan = piece_plan.plan_piece("a title saying LAUNCH plus grain")
+    assert piece_plan.guidance(plan) == (
+        "Add Text+ 'LAUNCH' in Resolve; Add FilmGrain in Resolve for 'grain'"
+    )
+    assert piece_plan.guidance(piece_plan.plan_piece("fade a label in")) == ""
+    adapted = piece_plan.guidance(piece_plan.plan_piece(PROOF), adapted_id="mesh-gradient")
+    assert "Also reuse" not in adapted
+    assert "Add Text+ 'LAUNCH' in Resolve" in adapted
+
+
+def test_gradient_counts_as_background_scope() -> None:
+    assert modules.scope_from_brief("a liquid gradient") == {
+        "wantsBackground": True, "wantsText": False,
+    }
+
+
 def test_empty_brief_fails() -> None:
     with pytest.raises(ValueError, match="non-empty"):
         piece_plan.plan_piece("  ")
@@ -171,56 +217,89 @@ def test_empty_brief_fails() -> None:
         modules.generate_module("  ")
 
 
-def test_refusal_names_each_home() -> None:
-    message = piece_plan.refusal_message(piece_plan.plan_piece(PROOF))
-    assert "already has a home" in message
-    assert "Text+" in message and "liquid-boxes" in message and "FilmGrain" in message
+def test_generate_adapts_reuse_without_a_model(isolated, monkeypatch) -> None:
+    seen: list = []
 
+    def fake_check(module_id, source, env, scope=None):
+        seen.append((source, scope))
+        return ok_report()
 
-def test_generate_refuses_when_every_part_has_a_home(isolated) -> None:
     client = FakeClient([fenced(TEXT_SRC)])
-    with pytest.raises(InvalidModule, match="already has a home"):
-        modules.generate_module(PROOF, client=client)
-    assert client.calls == 0  # the model is never asked for a redundant piece
+    monkeypatch.setattr(modules, "_check_source", fake_check)
+    record = modules.generate_module(PROOF, client=client)
+    assert record is not None
+    assert client.calls == 0  # adapt is deterministic: the model is never asked
+    assert "mesh-gradient" in seen[0][0]
+    assert seen[0][1] == {"wantsBackground": True, "wantsText": False}
+    assert record.brief == "a liquid gradient"
+    assert "Adapted from mesh-gradient" in record.notes
+    assert "Add Text+ 'LAUNCH' in Resolve" in record.notes
     snap = piece_plan.status_snapshot()
-    assert snap["refused"] == 1 and snap["planned"] == 1
-    assert (snap["native"], snap["reuse"], snap["new"]) == (2, 1, 0)
+    assert snap["adapted"] == 1 and snap["planned"] == 1
+
+
+def test_generate_all_native_returns_guidance(isolated) -> None:
+    record = modules.generate_module("grain and glow")
+    assert record is None
+    assert piece_plan.status_snapshot()["guided"] == 1
 
 
 def test_generate_scopes_new_parts_only(isolated, monkeypatch) -> None:
     seen: list = []
-    report = {
-        "ok": True, "errors": [], "warnings": [],
-        "meta": {"id": "blob", "name": "Blob"},
-        "props": [{"id": "size"}], "checks": {"deterministic": True},
-    }
 
     def fake_check(module_id, source, env, scope=None):
         seen.append(scope)
-        return dict(report)
+        return ok_report()
 
     client = FakeClient([fenced(TEXT_SRC)])
     monkeypatch.setattr(modules, "_check_source", fake_check)
     record = modules.generate_module(
         "a blob that breathes over a dark background", client=client
     )
+    assert record is not None
     assert record.brief == "a blob that breathes"
     assert client.last_messages[1].content == "a blob that breathes"
     assert "Piece plan: 1 native, 0 reuse, 1 new." in record.notes
+    assert "Add Background in Resolve for 'a dark background'" in record.notes
     assert seen == [{"wantsBackground": False, "wantsText": False}]
 
 
 def test_generate_single_part_keeps_full_brief(isolated, monkeypatch) -> None:
-    report = {
-        "ok": True, "errors": [], "warnings": [],
-        "meta": {"id": "tiny-text", "name": "Tiny Text"},
-        "props": [{"id": "size"}], "checks": {"deterministic": True},
-    }
     client = FakeClient([fenced(TEXT_SRC)])
-    monkeypatch.setattr(modules, "_check_source", lambda *a: dict(report))
+    monkeypatch.setattr(modules, "_check_source", lambda *a: ok_report())
     record = modules.generate_module("dark title background with big words", client=client)
+    assert record is not None
     assert record.brief == "dark title background with big words"
     assert "Piece plan" not in record.notes
+
+
+def test_generate_with_passed_plan_counts_once(isolated, monkeypatch) -> None:
+    client = FakeClient([fenced(TEXT_SRC)])
+    monkeypatch.setattr(modules, "_check_source", lambda *a: ok_report())
+    plan = piece_plan.plan_piece("fade a label in")
+    record = modules.generate_module("fade a label in", client=client, plan=plan)
+    assert record is not None
+    assert piece_plan.status_snapshot()["planned"] == 1
+
+
+def test_adapt_applies_brief_values(isolated, monkeypatch) -> None:
+    seen: list = []
+
+    def fake_check(module_id, source, env, scope=None):
+        seen.append(source)
+        return ok_report()
+
+    monkeypatch.setattr(modules, "_check_source", fake_check)
+    record = modules.adapt_library_piece(
+        "dither-reveal", "dither title saying HELLO in #FF0000"
+    )
+    assert 'default: "HELLO"' in seen[0]
+    assert 'default: "#ff0000"' in seen[0]
+    assert "(colorBack, label from the brief)" in record.notes
+    with pytest.raises(InvalidModule, match="unknown library piece"):
+        modules.adapt_library_piece("nope", "a brief")
+    with pytest.raises(InvalidModule, match="unknown library piece"):
+        modules.adapt_library_piece("../x", "a brief")
 
 
 def test_plan_counts_reach_health(isolated) -> None:
@@ -242,13 +321,13 @@ def test_plan_counts_reach_health(isolated) -> None:
     try:
         planned = post("/effects/modules/plan", {"brief": PROOF})
         assert [p["route"] for p in planned["parts"]] == ["native", "reuse", "native"]
-        assert planned["parts"][0]["tool"] == "Text+"
+        assert planned["parts"][1]["pieceId"] == "mesh-gradient"
         assert planned["counts"] == {"native": 2, "reuse": 1, "new": 0}
         with urlopen(f"{base}/health") as response:
             health = json.load(response)
         assert health["piece_plans"] == {
             "planned": 3, "native": 4, "reuse": 2, "new": 1,
-            "refused": 0, "last_error": None,
+            "adapted": 0, "guided": 0, "last_error": None,
         }
         with pytest.raises(HTTPError) as empty:
             post("/effects/modules/plan", {"brief": "  "})
@@ -257,17 +336,64 @@ def test_plan_counts_reach_health(isolated) -> None:
         server.shutdown()
 
 
+def test_http_generate_guidance_for_all_native(isolated) -> None:
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    port = server.server_address[1]
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    request = Request(
+        f"http://127.0.0.1:{port}/effects/modules/generate",
+        data=json.dumps({"brief": "grain and glow"}).encode(), method="POST",
+        headers={"Content-Type": "application/json"},
+    )
+    try:
+        with urlopen(request) as response:
+            made = json.load(response)
+        assert response.status == 200
+        assert made["id"] is None and made["preview"] is None
+        assert made["plan"]["counts"] == {"native": 2, "reuse": 0, "new": 0}
+        assert "Add FilmGrain in Resolve" in made["notes"]
+    finally:
+        server.shutdown()
+
+
+@needs_toolchain
+def test_http_generate_adapts_reuse(isolated) -> None:
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    port = server.server_address[1]
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    request = Request(
+        f"http://127.0.0.1:{port}/effects/modules/generate",
+        data=json.dumps({"brief": "Dither title piece"}).encode(), method="POST",
+        headers={"Content-Type": "application/json"},
+    )
+    try:
+        with urlopen(request) as response:
+            made = json.load(response)
+        assert response.status == 200
+        assert made["id"].startswith("fxm-")
+        assert made["meta"]["id"] == "dither-reveal"
+        assert made["checks"]["deterministic"] is True
+        assert made["plan"]["parts"][0]["pieceId"] == "dither-reveal"
+        assert "Adapted from dither-reveal" in made["notes"]
+    finally:
+        server.shutdown()
+
+
+def test_crew_motion_marks_all_native(isolated) -> None:
+    from chair_agent.crew.command import Task
+    from chair_agent.crew.subagents import run_motion
+
+    out = run_motion(Task(id="t1", beatId="b1", section="motion", goal="grain and glow"))
+    assert out.fallback is True
+    assert "all-native piece plan" in out.notes
+
+
 def test_register_source_applies_brief_scope(isolated, monkeypatch) -> None:
     seen: list = []
-    report = {
-        "ok": True, "errors": [], "warnings": [],
-        "meta": {"id": "tiny-text", "name": "Tiny Text"},
-        "props": [{"id": "size"}], "checks": {"deterministic": True},
-    }
 
     def fake_check(module_id, source, env, scope=None):
         seen.append(scope)
-        return dict(report)
+        return ok_report()
 
     monkeypatch.setattr(modules, "_check_source", fake_check)
     modules.register_source("export default function E() {}", brief="a bg wash")
@@ -282,11 +408,7 @@ def test_bundle_threads_scope(isolated, monkeypatch) -> None:
         if data is not None:
             seen.append(json.loads(data))
         return {
-            "report": {
-                "ok": True, "errors": [], "warnings": [],
-                "meta": {"id": "tiny-text", "name": "Tiny Text"},
-                "props": [{"id": "size"}], "checks": {"deterministic": True},
-            },
+            "report": ok_report(),
             "id": "chair-tiny-text",
             "files": ["x.ograf.json", "x.js"],
         }
