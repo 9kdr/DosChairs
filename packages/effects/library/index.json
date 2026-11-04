@@ -21,7 +21,6 @@
         "ogl",
         "paper",
         "motion",
-        "background",
         "generator"
       ],
       "summary": "Two boxes orbit, touch, and merge through a smooth-min SDF rendered by OGL, with a Paper grain-gradient on top; per-box phase from Motion stagger.",
@@ -119,6 +118,10 @@
         {
           "id": "label",
           "type": "string"
+        },
+        {
+          "id": "ink",
+          "type": "color"
         },
         {
           "id": "backdrop",

@@ -1,13 +1,14 @@
 /**
- * Dither Reveal (gold module): a Paper dithering shader confined to the
- * title band, wiped away over the reveal seconds to uncover the title.
- * Pixels outside the band stay transparent.
+ * Dither Reveal (gold module): the title starts as a dithering pattern and
+ * resolves to solid ink over the reveal seconds. The dither lives inside
+ * the text alpha; every other pixel stays transparent.
  *
  * Seeking: the Paper mount is parked at speed 0 and pinned with
- * `setFrame(t * 1000 * speed)`; the wipe itself is pure CSS (`clip-path`
- * from `t / reveal`), so the render pass — the one the determinism probe
- * reads — carries the whole animation in SSR markup. Mirror attributes
- * (`data-frame`, `data-wipe`) carry every prop.
+ * `setFrame(t * 1000 * speed)`; a 2D composite masks the dither with the
+ * title glyphs and crossfades it into solid text by `t / reveal`. The
+ * render pass — the one the determinism probe reads — carries the whole
+ * animation in SSR markup. Mirror attributes (`data-frame`, `data-wipe`)
+ * carry every prop.
  */
 import React from "react";
 import { ShaderMount, ditheringFragmentShader, getShaderColorFromString } from "@paper-design/shaders";
@@ -32,6 +33,7 @@ export const props = {
   speed: { type: "number", min: 0, max: 3, default: 0.5, title: "Flow Speed" },
   reveal: { type: "number", min: 2, max: 8, default: 5, title: "Reveal (s)" },
   label: { type: "string", default: "Liquid Light", title: "Title" },
+  ink: { type: "color", default: "#f2efe8", title: "Title Ink" },
   backdrop: { type: "boolean", default: false, title: "Backdrop Fill" },
 } satisfies Record<string, PropSpec>;
 
@@ -43,6 +45,7 @@ type Props = EffectProps<{
   speed: number;
   reveal: number;
   label: string;
+  ink: string;
   backdrop: boolean;
 }>;
 
@@ -55,9 +58,13 @@ export default function DitherReveal(p: Props): React.ReactElement {
   const frame = Math.round(Math.max(0, t) * 1000 * clamp(n("speed", 0.5), 0, 3));
   const wipe = clamp(t / Math.max(0.5, n("reveal", 5)), 0, 1);
   const label = c("label", "Liquid Light");
+  const ink = c("ink", "#f2efe8");
   const backdrop = history("backdrop", t) === true;
   const hostRef = React.useRef<HTMLDivElement | null>(null);
   const mountRef = React.useRef<ShaderMount | null>(null);
+  const compRef = React.useRef<HTMLDivElement | null>(null);
+  const compCanvasRef = React.useRef<HTMLCanvasElement | null>(null);
+  const textCanvasRef = React.useRef<HTMLCanvasElement | null>(null);
 
   const uniforms = {
     colorBack: c("colorBack", "#101018"),
@@ -67,7 +74,7 @@ export default function DitherReveal(p: Props): React.ReactElement {
   };
 
   React.useLayoutEffect(() => {
-    if (!hostRef.current) return;
+    if (!hostRef.current || !compRef.current) return;
     try {
       if (!mountRef.current) {
         // Paper only queries uniform locations for keys passed here; every key
@@ -93,11 +100,60 @@ export default function DitherReveal(p: Props): React.ReactElement {
       });
       mount.setSpeed(0);
       mount.setFrame(frame);
+      // The title resolves from dither to solid: mask the full-frame dither
+      // with the glyphs, fade it out by the wipe, and draw the solid ink
+      // over it with the same call so the two never drift apart. Paper
+      // draws synchronously while parked, so its buffer reads valid here.
+      const paperCanvas = hostRef.current.querySelector("canvas");
+      if (paperCanvas) {
+        paperCanvas.style.display = "none";
+        if (!compCanvasRef.current) {
+          const made = document.createElement("canvas");
+          made.width = width;
+          made.height = height;
+          made.style.cssText = "position:absolute;inset:0;width:100%;height:100%";
+          compRef.current.appendChild(made);
+          compCanvasRef.current = made;
+        }
+        if (!textCanvasRef.current) {
+          const made = document.createElement("canvas");
+          made.width = width;
+          made.height = height;
+          textCanvasRef.current = made;
+        }
+        const glyph = textCanvasRef.current.getContext("2d");
+        const comp = compCanvasRef.current.getContext("2d");
+        if (glyph && comp) {
+          glyph.globalCompositeOperation = "source-over";
+          glyph.clearRect(0, 0, width, height);
+          glyph.font = "600 120px sans-serif";
+          glyph.textAlign = "center";
+          glyph.textBaseline = "middle";
+          glyph.fillStyle = "#ffffff";
+          glyph.fillText(label, width / 2, height / 2);
+          comp.globalCompositeOperation = "source-over";
+          comp.clearRect(0, 0, width, height);
+          comp.drawImage(paperCanvas, 0, 0, width, height);
+          comp.globalCompositeOperation = "destination-in";
+          comp.drawImage(textCanvasRef.current, 0, 0);
+          comp.globalAlpha = 1 - wipe;
+          comp.fillRect(0, 0, width, height);
+          comp.globalAlpha = 1;
+          comp.globalCompositeOperation = "source-over";
+          comp.globalAlpha = wipe;
+          comp.font = "600 120px sans-serif";
+          comp.textAlign = "center";
+          comp.textBaseline = "middle";
+          comp.fillStyle = ink;
+          comp.fillText(label, width / 2, height / 2);
+          comp.globalAlpha = 1;
+        }
+      }
     } catch {
       // No WebGL on this host: the mirrored markup still describes the frame.
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [frame, uniforms.colorBack, uniforms.colorFront, uniforms.shape, uniforms.size]);
+  }, [frame, wipe, uniforms.colorBack, uniforms.colorFront, uniforms.shape, uniforms.size, label, ink]);
 
   React.useLayoutEffect(() => () => {
     mountRef.current?.dispose();
@@ -114,7 +170,7 @@ export default function DitherReveal(p: Props): React.ReactElement {
       data-frame={frame}
       data-wipe={wipe.toFixed(4)}
       data-pattern={`${shape}:${size}`}
-      data-ink={`${uniforms.colorBack}|${uniforms.colorFront}`}
+      data-ink={`${uniforms.colorBack}|${uniforms.colorFront}|${ink}`}
     >
       <div
         style={{
@@ -124,23 +180,15 @@ export default function DitherReveal(p: Props): React.ReactElement {
           alignItems: "center",
           justifyContent: "center",
           font: "600 120px sans-serif",
-          color: "#101018",
+          color: ink,
           letterSpacing: "-0.02em",
+          opacity: 0,
         }}
       >
         {label}
       </div>
-      <div
-        ref={hostRef}
-        style={{
-          position: "absolute",
-          left: 0,
-          right: 0,
-          top: "36%",
-          height: "28%",
-          clipPath: `inset(0 ${wipe * 100}% 0 0)`,
-        }}
-      />
+      <div ref={hostRef} style={{ position: "absolute", inset: 0 }} />
+      <div ref={compRef} style={{ position: "absolute", inset: 0 }} />
     </div>
   );
 }
