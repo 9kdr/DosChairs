@@ -227,8 +227,8 @@ function ProjectsPane({
           <ProjectsSkeleton columns={columns} gapClass={layout.gapClass} />
         ) : detected.phase === "error" ? (
           <ProjectsNotice
-            title="Couldn't reach the helper"
-            body="Chair looks for projects through its helper, and the helper didn't answer. Start it and try again."
+            title="Couldn't reach the agent"
+            body="Chair looks for projects through its agent, and the agent didn't answer. Start it and try again."
             actionLabel="Retry"
             onAction={detected.rescan}
           />

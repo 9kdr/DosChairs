@@ -40,7 +40,7 @@ export function HistoryFallbackLine({ entry }: { entry: HistoryEntry }) {
 }
 
 /**
- * Applied edits as a bento card beside the running tasks, in the same
+ * History as a bento card beside the running tasks, in the same
  * card treatment as `RunningTasks`. Each row shows what landed, who
  * did it, when, and the adapter fallback line when the item had one.
  * Undo applies at once onto a copy: u rewinds the last entry,
@@ -173,7 +173,7 @@ export function HistoryCard({
       </div>
       {entries.length === 0 ? (
         <p className="px-1 py-2 text-xs text-neutral-500">
-          Nothing applied yet — applied edits land here with their undo point.
+          Nothing applied yet — new edits land here in History with their undo point.
         </p>
       ) : (
         <ol aria-label="History entries" className="flex min-h-0 flex-col">
