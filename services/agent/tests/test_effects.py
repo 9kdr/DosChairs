@@ -125,6 +125,31 @@ def test_generate_repairs_once_then_fails_clearly(isolated) -> None:
     assert "twice" in (effects.status_snapshot()["last_error"] or "")
 
 
+def test_generate_repairs_malformed_json_once(isolated) -> None:
+    # Live run had one stray "}" in a long reply; the repair round gets the
+    # raw text plus the parse error, and at most one repair call happens.
+    broken = json.dumps(_spec()) + "}"
+    client = FakeClient(execute=[broken, json.dumps(_spec())])
+    record = effects.generate_effect(
+        "title", width=1280, height=720, fps=30, duration_sec=2.0, client=client,
+    )
+    assert client.execute_calls == 2
+    assert "repaired on retry" in record.notes
+    assert record.spec["layers"]
+    developer = next(m.content for m in client.last_messages if m.role == "developer")
+    assert "did not return JSON" in developer
+    user = next(m.content for m in client.last_messages if m.role == "user")
+    assert user == broken
+
+    still_broken = FakeClient(execute=[broken, broken])
+    with pytest.raises(InvalidEffect, match="did not return JSON"):
+        effects.generate_effect(
+            "title", width=1280, height=720, fps=30, duration_sec=2.0,
+            client=still_broken,
+        )
+    assert still_broken.execute_calls == 2
+
+
 def test_generate_shader_layers_fall_back_to_rendered_clip(isolated) -> None:
     spec = _spec(layers=[{"id": "glow", "type": "shader", "params": {}}],
                 shader={"source": "void main(){}"})
