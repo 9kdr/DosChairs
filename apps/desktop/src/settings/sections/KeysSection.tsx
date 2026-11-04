@@ -1,9 +1,10 @@
 import { EyeIcon, EyeOffIcon, PlusIcon, XIcon } from "lucide-react";
 import { useState } from "react";
+import { InfoHint } from "@/components/info-hint";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
-import { modelLabel } from "@/lib/model-label";
+import { modelLabel, orchestratorLabel } from "@/lib/model-label";
 import type { AgentHealth } from "@/lib/services/types";
 import { cn } from "@/lib/utils";
 import type { AddProviderResult } from "../add-provider";
@@ -451,6 +452,7 @@ function ModelsBlock({
         <ul className="mt-2 flex flex-col divide-y divide-white/[0.06]">
           {known.map((name) => {
             const off = disabledModels.includes(name);
+            const label = orchestratorLabel(modelLabel(name, provider.label));
             return (
               <li
                 key={name}
@@ -460,18 +462,20 @@ function ModelsBlock({
                 )}
               >
                 <span className="min-w-0 flex-1 truncate text-xs text-neutral-300">
-                  {modelLabel(name, provider.label)}
+                  {label}
                 </span>
+                {label === name ? null : <InfoHint>{name}</InfoHint>}
                 <Switch
                   checked={!off}
                   onCheckedChange={(next) => void onToggleModel(name, next)}
-                  aria-label={`${name} enabled`}
+                  aria-label={`${label} enabled`}
                 />
               </li>
             );
           })}
           {customModels.map((name) => {
             const off = disabledModels.includes(name);
+            const label = orchestratorLabel(modelLabel(name, provider.label));
             return (
               <li
                 key={name}
@@ -481,18 +485,19 @@ function ModelsBlock({
                 )}
               >
                 <span className="min-w-0 flex-1 truncate text-xs text-neutral-300">
-                  {modelLabel(name, provider.label)}
+                  {label}
                 </span>
+                {label === name ? null : <InfoHint>{name}</InfoHint>}
                 <Switch
                   checked={!off}
                   onCheckedChange={(next) => void onToggleModel(name, next)}
-                  aria-label={`${name} enabled`}
+                  aria-label={`${label} enabled`}
                 />
                 <Button
                   type="button"
                   variant="ghost"
                   size="icon-xs"
-                  aria-label={`Remove ${name}`}
+                  aria-label={`Remove ${label}`}
                   disabled={busy}
                   onClick={() => void remove(name)}
                 >

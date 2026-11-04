@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { orchestratorGroups, orchestratorLabel, orchestratorOptions, resolveOrchestrator } from "./chat-prompt";
+import { orchestratorGroups, orchestratorOptions, resolveOrchestrator } from "./chat-prompt";
+import { orchestratorLabel } from "../lib/model-label";
 import type { ProviderId } from "../settings/providers";
 
 const NO_KEYS: Record<ProviderId, string | null> = {
