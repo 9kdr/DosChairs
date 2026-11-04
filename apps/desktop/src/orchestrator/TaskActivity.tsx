@@ -5,7 +5,7 @@ import { SmoothScrollTarget } from "@/components/smooth-scroll";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { HistoryActorBadge, HistoryFallbackLine } from "../project/HistoryCard";
-import { clockTime, opLabel } from "../project/ReviewBoard";
+import { clockTime, opLabel } from "../project/store";
 import type { HistoryEntry } from "../project/store";
 import { LANE_INK, TASK_FIELD, type RunningTask } from "./RunningTasks";
 

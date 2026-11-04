@@ -25,6 +25,7 @@ import {
 } from "./data";
 import { HomeDock, type HomeTab } from "./HomeDock";
 import { ProjectCard } from "./ProjectCard";
+import { PiecesShelf } from "../effects/PiecesShelf";
 import { SettingsScreen } from "../settings/SettingsScreen";
 import { useElementWidth } from "./use-element-width";
 import { useProjects } from "./useProjects";
@@ -72,10 +73,9 @@ export function HomeScreen({ onOpenProject }: HomeScreenProps) {
                 <ProjectsPane onOpenProject={onOpenProject} />
               ) : null}
               {tab === "pieces" ? (
-                <PlaceholderPane
-                  title="Pieces"
-                  body="Named presets and templates the agent can call — captions, motion, grade looks. Empty for now; this is the shelf."
-                />
+                <div className="mx-auto flex h-[calc(100dvh-12rem)] min-h-96 w-full max-w-5xl flex-col">
+                  <PiecesShelf />
+                </div>
               ) : null}
               {tab === "marketplace" ? (
                 <PlaceholderPane

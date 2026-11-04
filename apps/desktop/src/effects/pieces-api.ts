@@ -17,11 +17,31 @@ export type PieceControl = {
   choices?: string[];
 };
 
+/**
+ * What a piece is: a saved macro, a look/effect, a motion template, or a
+ * sound bed. Anything the agent sends that is not one of these reads as a
+ * macro, so the shelf always has one shelf to show.
+ */
+export type PieceKind = "macro" | "effect" | "motion" | "sound";
+
+const PIECE_KINDS: ReadonlySet<string> = new Set(["macro", "effect", "motion", "sound"]);
+
+/** Read any raw kind value the agent sends; unknown kinds fall back to macro. */
+export function pieceKindOf(value: unknown): PieceKind {
+  return typeof value === "string" && PIECE_KINDS.has(value) ? (value as PieceKind) : "macro";
+}
+
+export const PIECE_KIND_LABEL: Record<PieceKind, string> = {
+  macro: "Macro",
+  effect: "Effect",
+  motion: "Motion",
+  sound: "Sound",
+};
+
 export type PieceInfo = {
   id: string;
   name: string;
-  /** title, transition, generator, effect, macro, ograf, or a catalogue effect name. */
-  kind: string;
+  kind: PieceKind;
   origin: "catalog" | "macro";
   source: "user" | "system" | "catalog";
   summary: string;
@@ -58,7 +78,7 @@ function pieceOf(value: unknown): PieceInfo | null {
   return {
     id: value.id,
     name: value.name,
-    kind: typeof value.kind === "string" ? value.kind : "piece",
+    kind: pieceKindOf(value.kind),
     origin: value.origin === "macro" ? "macro" : "catalog",
     source: value.source === "user" || value.source === "system" ? value.source : "catalog",
     summary: typeof value.summary === "string" ? value.summary : "",

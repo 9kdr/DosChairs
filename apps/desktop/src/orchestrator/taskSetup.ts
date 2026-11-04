@@ -63,7 +63,7 @@ export const RUNNABLE_LANES: ReadonlySet<TaskLane> = new Set(["edit"]);
 
 export const AGENT_LABEL: Record<TaskLane, string> = {
   edit: "Edit",
-  effects: "Effects",
+  effects: "Pieces",
   colour: "Colour",
 };
 

@@ -156,8 +156,8 @@ export function ControlsPanel({
       ) : (
         <p className="px-1 text-xs leading-5 text-neutral-500">
           {spec
-            ? "This effect publishes no controls."
-            : "Once an effect exists, what an editor would retitle or recolor shows up here."}
+            ? "This piece publishes no controls."
+            : "Once a piece exists, what an editor would retitle or recolor shows up here."}
         </p>
       )}
     </section>
@@ -237,7 +237,7 @@ export function RigPanel({
         </>
       ) : (
         <p className="px-1 text-xs leading-5 text-neutral-500">
-          {`Spring, swing, tilt and squash appear here when an effect has a rig. They re-simulate as you drag.`}
+          {`Spring, swing, tilt and squash appear here when a piece has a rig. They re-simulate as you drag.`}
         </p>
       )}
     </section>

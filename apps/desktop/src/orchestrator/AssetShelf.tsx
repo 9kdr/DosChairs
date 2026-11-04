@@ -31,6 +31,9 @@ import type {
 import { SmoothScrollTarget } from "@/components/smooth-scroll";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { PiecesShelf } from "@/effects/PiecesShelf";
+import type { ClipChoice } from "@/effects/EffectMaker";
+import type { ChangesetItem } from "@chair/timeline-ir";
 import {
   Empty,
   EmptyContent,
@@ -64,13 +67,11 @@ type AssetItem = {
   proxy: "ready" | "missing";
 };
 
-type PieceItem = {
-  id: string;
-  scope: "pieces";
-  name: string;
-};
-
-type ShelfItem = AssetItem | PieceItem;
+/**
+ * The shelf's own rows are assets only. Pieces render through PiecesShelf
+ * (the Pieces tab below), which reads the agent's piece listing with kinds.
+ */
+type ShelfItem = AssetItem;
 
 type FolderItem = {
   id: string;
@@ -452,6 +453,12 @@ type AssetShelfProps = {
   frozen?: boolean;
   /** Lock indicator transitions so highlights track 1:1 mid-morph. */
   transitionLock?: boolean;
+  /** Clips an effect-kind piece can land on; the Pieces tab owns the editor. */
+  clips?: ClipChoice[];
+  onApplyPiece?: (item: ChangesetItem) => string | null;
+  onUndoPiece?: (itemId: string) => void;
+  onOpenHistory?: () => void;
+  pieceRefusal?: string | null;
 };
 
 export function AssetShelf({
@@ -459,6 +466,11 @@ export function AssetShelf({
   projectId,
   frozen = false,
   transitionLock = false,
+  clips = [],
+  onApplyPiece,
+  onUndoPiece,
+  onOpenHistory,
+  pieceRefusal = null,
 }: AssetShelfProps) {
   const reduce = useReducedMotion();
   const listing = useProjectAssets(projectId);
@@ -467,8 +479,8 @@ export function AssetShelf({
   const [imports, setImports] = useState<AssetItem[]>([]);
   const [scope, setScope] = useState<Scope>("assets");
   const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");
-  // One sizing shared by assets and pieces, compact unless the user picked
-  // otherwise. Persisted across sessions.
+  // Sizing for the assets list, compact unless the user picked otherwise.
+  // Persisted across sessions.
   const [view, setView] = useState<ViewStyle>(loadShelfView);
   useEffect(() => {
     localStorage.setItem(SHELF_VIEW_KEY, view);
@@ -511,10 +523,6 @@ export function AssetShelf({
   const [shift, setShift] = useState<Shift>("fade");
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const folders = listing.folders;
-  const pieces: PieceItem[] = useMemo(
-    () => listing.pieces.map((piece) => ({ ...piece, scope: "pieces" as const })),
-    [listing.pieces],
-  );
   const assets: AssetItem[] = useMemo(
     () => [...imports, ...listing.assets.map((asset) => ({ ...asset, scope: "assets" as const }))],
     [imports, listing.assets],
@@ -604,11 +612,6 @@ export function AssetShelf({
   }, [assets, folder, folders, needle, removedIds, scope, typeFilter]);
 
   const visible = useMemo(() => {
-    if (scope === "pieces") {
-      return pieces.filter(
-        (item) => !removedIds.has(item.id) && item.name.toLowerCase().includes(needle),
-      );
-    }
     const pool = folder
       ? folder.assetIds.flatMap((id) => {
           if (removedIds.has(id)) return [];
@@ -620,7 +623,7 @@ export function AssetShelf({
       if (typeFilter !== "all" && item.kind !== typeFilter) return false;
       return item.name.toLowerCase().includes(needle);
     });
-  }, [assets, filedIds, folder, needle, pieces, removedIds, scope, typeFilter]);
+  }, [assets, filedIds, folder, needle, removedIds, typeFilter]);
 
   const importFiles = (list: FileList | null) => {
     if (!list || list.length === 0) return;
@@ -805,15 +808,8 @@ export function AssetShelf({
 
   const beginDrag = (event: DragEvent, id: string, label: string, tone: ShelfDragTone) => {
     suppressClick.current = true;
-    const group = dragItemsFor(
-      selectedIdsRef.current,
-      assets,
-      folders,
-      pieces,
-      id,
-      label,
-      tone,
-    );
+    // Pieces drag from PiecesShelf, never from these rows: no piece ids here.
+    const group = dragItemsFor(selectedIdsRef.current, assets, folders, [], id, label, tone);
     writeChairRefs(
       event.dataTransfer,
       group.map((item) => ({ kind: item.refKind, id: item.id, label: item.label })),
@@ -884,7 +880,7 @@ export function AssetShelf({
   };
 
   const filterLabel = TYPE_FILTERS.find((item) => item.id === typeFilter)?.label ?? "All";
-  const searchLabel = scope === "assets" ? "Search assets" : "Search pieces";
+  const searchLabel = "Search assets";
   const viewChoice = VIEWS.find((item) => item.id === view) ?? {
     id: "cards" as const,
     label: "Cards",
@@ -893,7 +889,7 @@ export function AssetShelf({
   const ViewIcon = viewChoice.icon;
   // No data at all for this scope: the empty state. Data that only
   // filters to nothing keeps the "Nothing matches." line instead.
-  const listedCount = scope === "pieces" ? pieces.length : folders.length + assets.length;
+  const listedCount = folders.length + assets.length;
   const scopeEmpty = listing.phase === "ready" && listedCount === 0;
   const filteredEmpty =
     listing.phase === "ready" &&
@@ -978,6 +974,16 @@ export function AssetShelf({
         </TabsList>
       </Tabs>
 
+      {scope === "pieces" ? (
+        <PiecesShelf
+          clips={clips}
+          onApplyPiece={onApplyPiece}
+          onUndoPiece={onUndoPiece}
+          onOpenHistory={onOpenHistory}
+          refusal={pieceRefusal}
+        />
+      ) : (
+      <>
       <div className="relative z-20 flex min-w-0 shrink-0 flex-wrap items-center gap-1.5">
         {scope === "assets" ? (
           <Menu>
@@ -1368,6 +1374,8 @@ export function AssetShelf({
             </motion.div>
           </AnimatePresence>
         </div>
+      </>
+      )}
         </div>
       </div>
     </section>

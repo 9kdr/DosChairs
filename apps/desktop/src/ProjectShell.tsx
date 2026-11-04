@@ -1,8 +1,9 @@
-import { BlocksIcon, HomeIcon, ListChecksIcon, WaypointsIcon } from "lucide-react";
-import { useState, type ReactNode } from "react";
+import { BlocksIcon, HomeIcon, MessageSquareIcon } from "lucide-react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { ChatPrompt } from "@/components/chat-prompt";
 import { ServiceStatus } from "@/components/service-status";
 import { Button } from "@/components/ui/button";
+import { Tabs, TabsList, TabsTab } from "@/components/ui/tabs";
 import {
   Tooltip,
   TooltipCreateHandle,
@@ -15,11 +16,15 @@ import { ChairMark } from "./home/ChairMark";
 import type { EditorId } from "./home/data";
 import { EditorLogo } from "./home/EditorLogo";
 import { buildUndoChangeset } from "@chair/timeline-ir";
+import { AssetShelf } from "./orchestrator/AssetShelf";
 import { CreationBoard } from "./orchestrator/CreationBoard";
-import { OrchestratorBoard } from "./orchestrator/OrchestratorBoard";
+import { parseAction } from "./orchestrator/actions";
+import { PlanDoc } from "./orchestrator/PlanDoc";
+import { RunningTasks, type RunningTask } from "./orchestrator/RunningTasks";
 import { TaskChat, UNDO_PROMPT } from "./orchestrator/TaskChat";
-import type { RunningTask } from "./orchestrator/RunningTasks";
-import { ReviewBoard } from "./project/ReviewBoard";
+import { setupTask } from "./orchestrator/taskSetup";
+import { useLiveTasks } from "./orchestrator/taskThread";
+import { HistoryCard } from "./project/HistoryCard";
 import { historyForTask, useProject } from "./project/store";
 import { useSettings } from "./settings/useSettings";
 
@@ -33,11 +38,10 @@ type ProjectShellProps = {
   onHome: () => void;
 };
 
-/** Same dock as home. Icons are the project lenses. */
+/** Chat first: the thread is the screen, Pieces is the shelf beside it. */
 const SECTIONS = [
-  { id: "review", label: "Review", icon: ListChecksIcon },
-  { id: "orchestrator", label: "Orchestrator", icon: WaypointsIcon },
-  { id: "creation", label: "Creation", icon: BlocksIcon },
+  { id: "chat", label: "Chat", icon: MessageSquareIcon },
+  { id: "pieces", label: "Pieces", icon: BlocksIcon },
 ] as const;
 
 type DockTipPayload = { label: string };
@@ -45,19 +49,60 @@ type DockTipPayload = { label: string };
 const dockTooltip = TooltipCreateHandle<DockTipPayload>();
 
 type SectionId = (typeof SECTIONS)[number]["id"];
+type SideTab = "plan" | "shelf" | "history";
+type PlanMode = "edit" | "talk";
 
-/** Blank project view: a way home, a command bar, section nav, and the Chair mark. */
+/** Chat in the center, Plan/Shelf/History in the side panel. */
 export function ProjectShell({ projectId, projectName, editorId, onHome }: ProjectShellProps) {
-  const [section, setSection] = useState<SectionId>("review");
+  const [section, setSection] = useState<SectionId>("chat");
+  const [sideTab, setSideTab] = useState<SideTab>("shelf");
   const { settings } = useSettings();
   const project = useProject(projectId, projectName, { applyMode: settings.applyMode });
-  const [barOpen, setBarOpen] = useState(false);
   const [command, setCommand] = useState<{ id: number; text: string } | null>(null);
   const [createdTasks, setCreatedTasks] = useState<RunningTask[]>([]);
   const [taskChat, setTaskChat] = useState<RunningTask | null>(null);
   const [taskNote, setTaskNote] = useState<{ id: number; text: string } | null>(null);
+  const [planOpen, setPlanOpen] = useState(false);
+  const [planMode, setPlanMode] = useState<PlanMode>("edit");
+  const [notice, setNotice] = useState<string | null>(null);
+  const liveTasks = useLiveTasks(createdTasks);
+  const seen = useRef(0);
 
-  /** Clips an effect can land on: every video-track clip in the cut. */
+  useEffect(() => {
+    if (!command || seen.current === command.id) return;
+    seen.current = command.id;
+    const action = parseAction(command.text);
+    if (!action) {
+      if (command.text.trim()) {
+        setCreatedTasks((current) => {
+          const task = { ...setupTask(command.text, command.id), projectId };
+          return current.some((existing) => existing.id === task.id)
+            ? current
+            : [task, ...current];
+        });
+      }
+      return;
+    }
+    if (action.key === "brief") {
+      setPlanMode("edit");
+      setPlanOpen(true);
+      setSideTab("plan");
+      setNotice(null);
+      return;
+    }
+    if (action.key === "accept") {
+      setPlanOpen(false);
+      setNotice("Accepted. The timeline is unchanged.");
+      return;
+    }
+    if (action.key === "again") {
+      setNotice("Another pass, same rules.");
+      return;
+    }
+    if (action.slot) setNotice(`${action.key}: ${action.slot}`);
+  }, [command, projectId]);
+
+  /** Clips an effect-kind piece can land on: every video-track clip in the cut. */
   const effectClips =
     project.timeline?.tracks
       .filter((track) => track.kind === "video")
@@ -73,6 +118,11 @@ export function ProjectShell({ projectId, projectName, editorId, onHome }: Proje
     project.undoToHere(tip.itemId);
     const count = entries.length === 1 ? "1 edit" : `${entries.length} edits`;
     return `Rewound ${count} for ${task.name} onto a copy — History shows every step.`;
+  };
+
+  const openTask = (task: RunningTask) => {
+    setTaskNote(null);
+    setTaskChat(task);
   };
 
   return (
@@ -107,8 +157,8 @@ export function ProjectShell({ projectId, projectName, editorId, onHome }: Proje
           <ServiceStatus />
         </div>
       </header>
-      <main className="relative flex min-h-0 flex-1 flex-col">
-        <div className="min-h-0 flex-1 overflow-hidden">
+      <div className="flex min-h-0 flex-1 gap-3 px-3 pb-3">
+        <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
           {taskChat ? (
             <TaskChat
               task={taskChat}
@@ -122,68 +172,104 @@ export function ProjectShell({ projectId, projectName, editorId, onHome }: Proje
               onUndoRequest={requestTaskUndo}
               onUndoEntry={(entry) => project.undoToHere(entry.itemId)}
             />
-          ) : section === "review" ? (
-            <ReviewBoard store={project} />
-          ) : section === "orchestrator" ? (
-            <OrchestratorBoard
-              projectId={projectId}
-              command={command}
-              history={project.history}
-              createdTasks={createdTasks}
-              onCreateTask={(task) =>
-                setCreatedTasks((current) =>
-                  current.some((existing) => existing.id === task.id)
-                    ? current
-                    : [{ ...task, projectId }, ...current],
-                )
-              }
-              onOpenTask={(task) => {
-                setTaskNote(null);
-                setTaskChat(task);
-              }}
-              onUndoTask={(task) => {
-                setTaskChat(task);
-                setTaskNote({ id: Date.now(), text: UNDO_PROMPT });
-              }}
-              onUndoEntry={(entry) => project.undoToHere(entry.itemId)}
-              onUndoLast={() => project.undoLast()}
-            />
+          ) : section === "chat" ? (
+            <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden">
+              <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+                <div className="mx-auto flex w-full max-w-3xl flex-col gap-3 py-2">
+                  <RunningTasks
+                    history={project.history}
+                    tasks={liveTasks}
+                    onOpen={openTask}
+                    onUndo={(task) => {
+                      setTaskChat(task);
+                      setTaskNote({ id: Date.now(), text: UNDO_PROMPT });
+                    }}
+                  />
+                  {liveTasks.length === 0 ? (
+                    <p className="px-1 text-sm leading-6 text-neutral-500">
+                      Say what to cut below. Every applied edit lands on a copy — undo is one key.
+                    </p>
+                  ) : null}
+                </div>
+              </div>
+              <div className="mx-auto w-full max-w-3xl shrink-0 pb-20">
+                <ChatPrompt
+                  open
+                  wide
+                  placeholder="Tell Chair what to cut…"
+                  onOpen={() => {}}
+                  onClose={() => {}}
+                  onSend={(draft) => {
+                    if (draft.text.trim()) {
+                      setCommand({ id: Date.now(), text: draft.text });
+                    }
+                  }}
+                />
+              </div>
+            </div>
           ) : (
             <CreationBoard
               clips={effectClips}
               onApplyEffect={project.applyItem}
               onUndoEffect={(itemId) => project.undoToHere(itemId)}
-              onOpenHistory={() => setSection("orchestrator")}
+              onOpenHistory={() => setSideTab("history")}
               refusal={project.refusal?.reason ?? null}
             />
           )}
-        </div>
-        {!taskChat ? (
-          <div className="pointer-events-auto absolute inset-x-0 bottom-[calc(1.25rem+3rem+0.75rem)] z-20 flex justify-center px-4">
-            <ChatPrompt
-              open={barOpen}
-              onOpen={() => setBarOpen(true)}
-              onClose={() => setBarOpen(false)}
-              onSend={(draft) => {
-                if (draft.text.trim()) {
-                  setCommand({ id: Date.now(), text: draft.text });
-                }
-                setBarOpen(false);
-              }}
-            />
+        </main>
+        <aside
+          aria-label="Project panel"
+          className="flex min-h-0 w-80 shrink-0 flex-col overflow-hidden rounded-[28px] bg-[#1a1a1a] p-4 text-neutral-100 shadow-raised ring-1 ring-white/8 xl:w-96"
+        >
+          <Tabs value={sideTab} onValueChange={(value) => setSideTab(value as SideTab)}>
+            <TabsList size="sm" className="grid w-full shrink-0 grid-cols-3">
+              <TabsTab value="plan">Plan</TabsTab>
+              <TabsTab value="shelf">Shelf</TabsTab>
+              <TabsTab value="history">History</TabsTab>
+            </TabsList>
+          </Tabs>
+          <div className="mt-3 min-h-0 flex-1 overflow-hidden">
+            {sideTab === "plan" ? (
+              <div className="h-full min-h-0 overflow-y-auto overscroll-contain">
+                <PlanDoc
+                  open={planOpen}
+                  mode={planMode}
+                  onOpen={(mode) => {
+                    setPlanMode(mode);
+                    setPlanOpen(true);
+                  }}
+                  onClose={() => setPlanOpen(false)}
+                  notice={notice}
+                />
+              </div>
+            ) : sideTab === "shelf" ? (
+              <AssetShelf
+                projectId={projectId}
+                clips={effectClips}
+                onApplyPiece={project.applyItem}
+                onUndoPiece={(itemId) => project.undoToHere(itemId)}
+                onOpenHistory={() => setSideTab("history")}
+                pieceRefusal={project.refusal?.reason ?? null}
+              />
+            ) : (
+              <div className="h-full min-h-0 overflow-y-auto overscroll-contain">
+                <HistoryCard
+                  entries={project.history}
+                  onUndoEntry={(entry) => project.undoToHere(entry.itemId)}
+                  onUndoLast={() => project.undoLast()}
+                />
+              </div>
+            )}
           </div>
-        ) : null}
-      </main>
-      {!taskChat ? (
-        <div
-          aria-hidden="true"
-          className="pointer-events-none absolute inset-x-0 bottom-0 z-10 h-64"
-          style={{
-            background: `linear-gradient(to top, ${SHELL_BG} 0%, color-mix(in srgb, ${SHELL_BG} 78%, transparent) 38%, transparent 100%)`, // taste-skill-ignore: neutral scrim keeps the dock legible over scrolled content.
-          }}
-        />
-      ) : null}
-      {!taskChat ? (
+        </aside>
+      </div>
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-x-0 bottom-0 z-10 h-24"
+        style={{
+          background: `linear-gradient(to top, ${SHELL_BG} 0%, color-mix(in srgb, ${SHELL_BG} 78%, transparent) 38%, transparent 100%)`, // taste-skill-ignore: neutral scrim keeps the dock legible over scrolled content.
+        }}
+      />
       <TooltipProvider delay={220} closeDelay={120} timeout={500}>
         <nav
           aria-label="Project sections"
@@ -223,7 +309,6 @@ export function ProjectShell({ projectId, projectName, editorId, onHome }: Proje
           </Tooltip>
         </nav>
       </TooltipProvider>
-      ) : null}
       <div className="pointer-events-none absolute bottom-5 left-5 z-20 flex items-center gap-2.5 text-neutral-400">
         <ChairMark className="h-8 w-auto text-neutral-200" />
         <span className="text-base font-medium tracking-wide text-neutral-200">

@@ -58,6 +58,8 @@ export type ShelfFolder = {
 export type ShelfPiece = {
   id: string;
   name: string;
+  /** Raw kind from the agent; the shelf reads it through pieceKindOf. */
+  kind: string;
 };
 
 export type ProjectAssets = {
@@ -139,7 +141,11 @@ function pieceFromJson(value: unknown): ShelfPiece {
   if (!isRecord(value) || typeof value.id !== "string" || typeof value.name !== "string") {
     throw malformed("piece needs id and name");
   }
-  return { id: value.id, name: value.name };
+  return {
+    id: value.id,
+    name: value.name,
+    kind: typeof value.kind === "string" ? value.kind : "macro",
+  };
 }
 
 /** Parse a 200 asset listing. Anything off-shape throws instead of rendering fakes. */

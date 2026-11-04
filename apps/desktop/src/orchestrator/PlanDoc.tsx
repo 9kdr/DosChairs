@@ -520,7 +520,7 @@ export function PlanDoc({ open, mode, onOpen, onClose, notice, className }: Plan
   const [editingLabel, setEditingLabel] = useState("");
   const areaRef = useRef<HTMLTextAreaElement>(null);
 
-  // Opening the plan grows its card over ~380ms (see OrchestratorBoard).
+  // Opening the plan grows its card over ~380ms.
   // The edit view opens behind skeleton placeholders for that window, then
   // the real text fades in, so the words never reflow on screen. The
   // skeleton never shows under reduced motion.

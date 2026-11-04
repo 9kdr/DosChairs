@@ -72,7 +72,7 @@ export interface RunningTasksProps {
 
 const LANE_LABEL: Record<TaskLane, string> = {
   edit: "Edit",
-  effects: "Effects",
+  effects: "Pieces",
   colour: "Colour",
 };
 
