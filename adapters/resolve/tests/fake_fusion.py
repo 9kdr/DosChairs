@@ -9,6 +9,8 @@ Semantics verified on Mel's Studio 21.1 while building #270:
 - GetFusionCompNameList answers {} when the item has no comps
 - LoadFusionCompByName answers the comp object
 - GetFusionCompByName answers the comp object without loading it
+- DeleteFusionCompByName refuses the only version (#295)
+- Undo drops tools added since StartUndo
 """
 
 from __future__ import annotations
@@ -120,6 +122,7 @@ class FakeComp:
         self.flow = FakeFlow()
         self.locked = False
         self.undo_log: list[Any] = []
+        self._undo_mark: int | None = None
         self._add(FakeTool(self, "Loader", "MediaIn1"))
         self._add(FakeTool(self, "Saver", "MediaOut1"))
 
@@ -161,6 +164,15 @@ class FakeComp:
 
     def StartUndo(self, name: str) -> None:
         self.undo_log.append(name)
+        self._undo_mark = self._seq
+
+    def Undo(self) -> bool:
+        if self._undo_mark is None:
+            return False
+        for seq in [key for key in self._tools if key > self._undo_mark]:
+            del self._tools[seq]
+        self._undo_mark = None
+        return True
 
     def EndUndo(self, ok: bool) -> None:
         self.undo_log.append(("end", ok))
@@ -211,6 +223,8 @@ class FakeItem:
 
     def DeleteFusionCompByName(self, name: str) -> bool:
         self.deleted.append(name)
+        if len(self.names) == 1 and name in self.names:
+            return False  # live: Resolve keeps the only version (#295)
         self.names = [known for known in self.names if known != name]
         self.comps.pop(name, None)
         return True

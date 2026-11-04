@@ -20,6 +20,7 @@ const pairs = [
   ["story-plan.schema.json", "plans/story.plan.json"],
   ["project-plan.schema.json", "plans/project.plan.json"],
   ["effect-spec.schema.json", "effects/bounce-title.effect.json"],
+  ["piece-plan.schema.json", "plans/piece.plan.json"],
 ];
 
 const ajv = new Ajv2020({ allErrors: true, strict: true });

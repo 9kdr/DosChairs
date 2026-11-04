@@ -12,19 +12,23 @@ import {
   activityForLiveError,
   activityForLiveJob,
   activityForLivePending,
+  applyFinishedCut,
   applyFinishedSound,
   clearPollFailure,
+  hasCutItems,
   hasSoundItems,
   headerStatusFor,
   headlineForSubmitError,
   initialTurnsFor,
   inputForTurn,
+  isTaskSeen,
   isThreadDemo,
   landedFor,
-  landedRowsFor,
   liveJobEntries,
   liveRowsForJobs,
   liveSubmitError,
+  markTaskSeen,
+  maybeApplyFinishedCut,
   maybeApplyFinishedSound,
   noteKey,
   notePollFailure,
@@ -35,12 +39,15 @@ import {
   POLL_FAIL_LIMIT,
   recordLiveJob,
   redoLandedWrite,
+  rememberSettledTask,
   replyForSubmitError,
   resetLiveJobs,
   retryLandedWrite,
   retryLiveTask,
   runTurn,
   selectionForNote,
+  settledStatusFor,
+  settledTaskRows,
   stopLiveTask,
   submitLiveTurn,
   taskForLiveJob,
@@ -189,6 +196,13 @@ describe("thread copy", () => {
     expect(working).toContain("working on it");
   });
 
+  it("reads unknown statuses as live work, never as a result", () => {
+    const strange = job("queued", { status: "running" });
+    expect(textForJob(strange)).toBe(textForJob(job("in_progress")));
+    expect(textForJob(strange)).not.toContain("Nothing changed");
+    expect(activityForLiveJob(strange).headline).toBe("The agent is working");
+  });
+
   it("says a finished sound turn landed, with Undo on the card", () => {
     const text = textForJob(
       job("completed", {
@@ -205,23 +219,41 @@ describe("thread copy", () => {
     expect(text).not.toContain("accept");
   });
 
-  it("says plainly when cuts don't land yet", () => {
+  it("says plainly when nothing could land", () => {
     const text = textForJob(
       job("completed", {
-        changeset: { status: "proposed", ops: [{ id: "op-1" }, { id: "op-2" }] },
+        changeset: {
+          status: "proposed",
+          ops: [{ op: "set_speed", targetId: "clip-a", patch: { rate: 2 } }],
+        },
       }),
     );
-    expect(text).toBe("Planned 2 cuts. Cuts don't land in Resolve yet.");
+    expect(text).toBe("Done: no previews, 1 edit. Nothing landed in Resolve yet.");
+    expect(text).not.toContain("Landed on a copy");
     expect(text).not.toContain("proposed");
     expect(text).not.toContain("accept");
-    expect(text).not.toContain("Review");
-    expect(text).not.toContain("no previews");
   });
 
   it("says plainly when the turn produced nothing", () => {
     const text = textForJob(job("completed"));
     expect(text).toContain("no previews, no edits");
     expect(text).toContain("Nothing changed");
+    expect(text).not.toContain("proposed");
+    expect(text).not.toContain("accept");
+  });
+
+  it("says a finished cut turn landed, with Undo on the card", () => {
+    const text = textForJob(
+      job("completed", {
+        changeset: {
+          status: "proposed",
+          ops: [{ op: "trim", targetId: "clip-a", patch: { trimStartFrames: 12 } }],
+        },
+      }),
+    );
+    expect(text).toContain("Done: no previews, 1 edit.");
+    expect(text).toContain("Landed on a copy in Resolve.");
+    expect(text).toContain("Undo is on the card.");
     expect(text).not.toContain("proposed");
     expect(text).not.toContain("accept");
   });
@@ -557,6 +589,35 @@ describe("live task list", () => {
   });
 });
 
+describe("settled tasks", () => {
+  it("reads the terminal outcome as a short status line", () => {
+    expect(settledStatusFor(job("completed"))).toBe("Done");
+    expect(settledStatusFor(job("failed", { error: "no faces found\nframe 12" }))).toBe(
+      "Failed: no faces found",
+    );
+    expect(settledStatusFor(job("canceled"))).toBe("Canceled");
+    expect(settledStatusFor(job("moderated"))).toBe("Stopped");
+  });
+
+  it("keeps settled rows oldest first until reset", () => {
+    expect(settledTaskRows()).toEqual([]);
+    rememberSettledTask({ ...task, id: "task-a", status: "Done" });
+    rememberSettledTask({ ...task, id: "task-b", status: "Done" });
+    expect(settledTaskRows().map((row) => row.id)).toEqual(["task-a", "task-b"]);
+    resetLiveJobs();
+    expect(settledTaskRows()).toEqual([]);
+  });
+});
+
+describe("seen tasks", () => {
+  it("clears the unseen dot once the task is looked at, per project", () => {
+    expect(isTaskSeen("p1", "task-a")).toBe(false);
+    markTaskSeen("p1", "task-a");
+    expect(isTaskSeen("p1", "task-a")).toBe(true);
+    expect(isTaskSeen("p2", "task-a")).toBe(false);
+  });
+});
+
 describe("waiting and failed rows", () => {
   const prompted: RunningTask = {
     id: "task-prompt-7",
@@ -579,14 +640,10 @@ describe("waiting and failed rows", () => {
     };
     const client = createServicesClient({ fetchFn: failing });
     await submitLiveTurn(client, prompted);
-    expect(liveSubmitError(prompted.id)).toBe(
-      "agent is unreachable at http://127.0.0.1:8787/jobs",
-    );
+    expect(liveSubmitError(prompted.id)).toBe("agent is unreachable at http://127.0.0.1:8787/jobs");
     const rows = waitingRowsFor([prompted]);
     expect(rows).toHaveLength(1);
-    expect(rows[0]?.status).toBe(
-      "Failed: agent is unreachable at http://127.0.0.1:8787/jobs",
-    );
+    expect(rows[0]?.status).toBe("Failed: agent is unreachable at http://127.0.0.1:8787/jobs");
   });
 
   it("clears the failure once a later submit succeeds", async () => {
@@ -675,9 +732,7 @@ describe("turn model and files", () => {
   it("names the turn model on live and terminal copy", () => {
     const queued = textForJob(job("queued", { input: { model: "Chair fast" } }));
     expect(queued).toContain("Model: Chair fast.");
-    const done = textForJob(
-      job("completed", { input: { model: "muse-spark-1 (Meta)" } }),
-    );
+    const done = textForJob(job("completed", { input: { model: "muse-spark-1 (Meta)" } }));
     expect(done).toContain("Model: muse-spark-1 (Meta).");
     expect(textForJob(job("completed"))).not.toContain("Model:");
   });
@@ -770,11 +825,19 @@ describe("hasSoundItems", () => {
   it("sees ducking, audio tracks, and sound clips", () => {
     expect(hasSoundItems(done([{ op: "set_gain", patch: { gainDb: -12 } }]))).toBe(true);
     expect(
-      hasSoundItems(done([{ op: "add_track", patch: { track: { id: "audio-sfx-1", kind: "audio" } } }])),
+      hasSoundItems(
+        done([{ op: "add_track", patch: { track: { id: "audio-sfx-1", kind: "audio" } } }]),
+      ),
     ).toBe(true);
     expect(
       hasSoundItems(
-        done([{ op: "add_clip", targetId: "audio-sfx-1", patch: { clipId: "sfx-riser-1", kind: "riser" } }]),
+        done([
+          {
+            op: "add_clip",
+            targetId: "audio-sfx-1",
+            patch: { clipId: "sfx-riser-1", kind: "riser" },
+          },
+        ]),
       ),
     ).toBe(true);
   });
@@ -823,14 +886,15 @@ describe("finished sound writes", () => {
     expect(landed.line).toBe("Added to Demo Cut (sound copy) · 1 skipped");
     expect(landed.detail).toContain("Skipped sting: no sting in the library");
     expect(landed.detail).toContain("Fallback: set the Fairlight ducking by hand");
-    expect(landedRowsFor([task])).toMatchObject([{ id: task.id, status: landed.line }]);
   });
 
   it("records a failed write the card can retry", async () => {
     const fetchFn = reply(503, { error: "Resolve is not running" });
     await applyFinishedSound({ requestId: "req_sound1", task, job: soundJob() }, { fetchFn });
-    expect(landedFor(task.id)).toMatchObject({ state: "failed", line: "Failed: Resolve is not running" });
-    expect(landedRowsFor([task])).toHaveLength(1);
+    expect(landedFor(task.id)).toMatchObject({
+      state: "failed",
+      line: "Failed: Resolve is not running",
+    });
     retryLandedWrite(task.id, { fetchFn: reply(200, appliedBody) });
     await vi.waitFor(() => expect(landedFor(task.id)?.state).toBe("landed"));
   });
@@ -841,15 +905,14 @@ describe("finished sound writes", () => {
     await applyFinishedSound({ requestId: "req_plain", task, job: plain }, { fetchFn });
     expect(fetchFn).not.toHaveBeenCalled();
     expect(landedFor(task.id)).toBeUndefined();
-    expect(landedRowsFor([task])).toEqual([]);
   });
 
   it("undoes back to the original and redoes as a new copy", async () => {
     const calls: string[] = [];
     const fetchFn: FetchFn = async (url, init) => {
       calls.push(`${url} ${String(init?.body)}`);
-      if (url.endsWith("/sounds/revert")) {
-        return { ok: true, status: 200, json: async () => ({ timeline: "Demo Cut", project: "" }) };
+      if (url.endsWith("/sounds/undo")) {
+        return { ok: true, status: 200, json: async () => ({ current_timeline: "Demo Cut", deleted: false }) };
       }
       return { ok: true, status: 200, json: async () => appliedBody };
     };
@@ -859,14 +922,14 @@ describe("finished sound writes", () => {
       state: "undone",
       line: "Back on Demo Cut — copy kept",
     });
-    expect(calls[1]).toContain("/sounds/revert");
-    expect(calls[1]).toContain('"originalTimeline":"Demo Cut"');
+    expect(calls[1]).toContain("/sounds/undo");
+    expect(calls[1]).toContain('"original_timeline":"Demo Cut"');
     expect(await redoLandedWrite(task.id, { fetchFn })).toBe(true);
     expect(landedFor(task.id)).toMatchObject({ state: "landed" });
     expect(calls[2]).toContain("/sounds/apply");
   });
 
-  it("keeps Undo available when the revert fails", async () => {
+  it("keeps Undo available when the undo fails", async () => {
     await applyFinishedSound(
       { requestId: "req_sound1", task, job: soundJob() },
       { fetchFn: reply(200, appliedBody) },
@@ -920,6 +983,50 @@ describe("maybeApplyFinishedSound", () => {
   });
 });
 
+describe("maybeApplyFinishedCut", () => {
+  const cutEntry = (requestId: string) => ({
+    requestId,
+    task,
+    job: job("completed", {
+      request_id: requestId,
+      changeset: {
+        status: "proposed",
+        ops: [{ op: "trim", targetId: "clip-a", patch: { trimStartFrames: 4 } }],
+      },
+    }),
+  });
+
+  it("settles once the card's write state lands, firing only once per job", async () => {
+    const fetchFn = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        timeline_name: "Demo Cut (cut copy)",
+        original_timeline: "Demo Cut",
+        clips_changed: 1,
+        skipped: [],
+      }),
+    }));
+    const first = maybeApplyFinishedCut(cutEntry("req_shared_cut"), { fetchFn });
+    const second = maybeApplyFinishedCut(cutEntry("req_shared_cut"), { fetchFn });
+    expect(second).toBe(first);
+    expect(landedFor(task.id)).toBeUndefined();
+    await first;
+    expect(fetchFn).toHaveBeenCalledTimes(1);
+    expect(landedFor(task.id)).toMatchObject({ state: "landed", kind: "cut" });
+  });
+
+  it("resolves at once when there is nothing to write", async () => {
+    const sound = job("completed", {
+      changeset: { status: "proposed", ops: [{ op: "set_gain", patch: { gainDb: -12 } }] },
+    });
+    await expect(
+      maybeApplyFinishedCut({ requestId: "req_sound2", task, job: sound }),
+    ).resolves.toBeUndefined();
+    expect(landedFor(task.id)).toBeUndefined();
+  });
+});
+
 describe("thread header status", () => {
   const base: HeaderState = {
     terminal: null,
@@ -931,7 +1038,7 @@ describe("thread header status", () => {
 
   it("reads the live step off the rail", () => {
     expect(activeStepLabel(activityForLiveJob(job("in_progress")))).toBe("Agent working");
-    expect(activeStepLabel(activityForLivePending())).toBe("Sending the turn…");
+    expect(activeStepLabel(activityForLivePending())).toBe("Working…");
     expect(activeStepLabel(activityForLiveError("Agent unreachable"))).toBeNull();
     expect(activeStepLabel(null)).toBeNull();
   });
@@ -950,11 +1057,161 @@ describe("thread header status", () => {
   });
 
   it("shows the live step while running, else the spinner or the fallback", () => {
-    expect(headerStatusFor({ ...base, step: "Sending the turn…" })).toBe("Sending the turn…");
+    expect(headerStatusFor({ ...base, step: "Working…" })).toBe("Working…");
     expect(headerStatusFor({ ...base })).toBeNull();
     expect(headerStatusFor({ ...base, live: false })).toBe("Waiting for the agent");
     expect(headerStatusFor({ ...base, terminal: "in_progress", step: "Agent working" })).toBe(
       "Agent working",
     );
+  });
+});
+
+describe("hasCutItems", () => {
+  const done = (ops: Record<string, unknown>[]) =>
+    job("completed", { changeset: { status: "proposed", ops } });
+
+  it("sees trims, moves, ripples, removals, markers, and picture inserts", () => {
+    expect(hasCutItems(done([{ op: "trim", patch: { trimStartFrames: 4 } }]))).toBe(true);
+    expect(
+      hasCutItems(done([{ op: "move", patch: { toTrackId: "v2", startFrames: 96 } }])),
+    ).toBe(true);
+    expect(hasCutItems(done([{ op: "ripple", patch: { shiftFrames: 24 } }]))).toBe(true);
+    expect(hasCutItems(done([{ op: "remove_clip", patch: {} }]))).toBe(true);
+    expect(
+      hasCutItems(done([{ op: "add_clip", targetId: "v1", patch: { clipId: "clip-b" } }])),
+    ).toBe(true);
+    expect(
+      hasCutItems(done([{ op: "add_track", patch: { track: { id: "v2", kind: "video" } } }])),
+    ).toBe(true);
+    expect(hasCutItems(done([{ op: "add_marker", patch: {} }]))).toBe(true);
+  });
+
+  it("ignores sound shapes, effect ops, and unsupported cuts", () => {
+    expect(hasCutItems(done([{ op: "set_gain", patch: { gainDb: -12 } }]))).toBe(false);
+    expect(
+      hasCutItems(done([{ op: "add_track", patch: { track: { id: "audio-sfx-1", kind: "audio" } } }])),
+    ).toBe(false);
+    expect(
+      hasCutItems(
+        done([{ op: "add_clip", targetId: "audio-sfx-1", patch: { clipId: "sfx-riser-1", kind: "riser" } }]),
+      ),
+    ).toBe(false);
+    expect(hasCutItems(done([{ op: "add_effect", patch: {} }]))).toBe(false);
+    expect(hasCutItems(done([{ op: "set_speed", patch: { rate: 2 } }]))).toBe(false);
+    expect(hasCutItems(done([{ op: "add_transition", patch: {} }]))).toBe(false);
+    expect(hasCutItems(job("completed"))).toBe(false);
+  });
+});
+
+describe("finished cut writes", () => {
+  const cutJob = () =>
+    job("completed", {
+      request_id: "req_cut1",
+      changeset: {
+        status: "proposed",
+        ops: [{ op: "trim", targetId: "clip-a", patch: { trimStartFrames: 12 } }],
+      },
+    });
+  const appliedBody = {
+    timeline_name: "Demo Cut (cut copy)",
+    original_timeline: "Demo Cut",
+    clips_added: 0,
+    clips_removed: 0,
+    clips_changed: 1,
+    markers_added: 0,
+    skipped: [{ intent: "spd-1", reason: "retime the clip in Studio by hand" }],
+    fallback: null,
+  };
+  const reply =
+    (status: number, body: unknown): FetchFn =>
+    async () => ({ ok: status < 400, status, json: async () => body });
+
+  it("writes by job id and lands the card line with skipped reasons", async () => {
+    let seen: unknown = null;
+    const fetchFn: FetchFn = async (_url, init) => {
+      seen = JSON.parse(String(init?.body));
+      return { ok: true, status: 200, json: async () => appliedBody };
+    };
+    await applyFinishedCut({ requestId: "req_cut1", task, job: cutJob() }, { fetchFn });
+    expect(seen).toEqual({ jobId: "req_cut1" });
+    const landed = landedFor(task.id)!;
+    expect(landed.state).toBe("landed");
+    expect(landed.kind).toBe("cut");
+    expect(landed.line).toBe("Added to Demo Cut (cut copy) · 1 skipped");
+    expect(landed.detail).toContain("Skipped spd-1: retime the clip in Studio by hand");
+    expect(landed.skipped).toEqual([
+      { intent: "spd-1", reason: "retime the clip in Studio by hand" },
+    ]);
+    rememberSettledTask({ ...task, status: settledStatusFor(cutJob()) });
+    expect(settledTaskRows()).toMatchObject([{ id: task.id, status: "Done" }]);
+  });
+
+  it("records a failed write the card can retry", async () => {
+    const fetchFn = reply(503, { error: "Resolve is not running" });
+    await applyFinishedCut({ requestId: "req_cut1", task, job: cutJob() }, { fetchFn });
+    expect(landedFor(task.id)).toMatchObject({ state: "failed", line: "Failed: Resolve is not running" });
+    rememberSettledTask({ ...task, status: settledStatusFor(cutJob()) });
+    expect(settledTaskRows()).toHaveLength(1);
+    retryLandedWrite(task.id, { fetchFn: reply(200, appliedBody) });
+    await vi.waitFor(() => expect(landedFor(task.id)?.state).toBe("landed"));
+  });
+
+  it("leaves sound and mixed jobs on the sound route", async () => {
+    const fetchFn = vi.fn(reply(200, appliedBody));
+    const sound = job("completed", {
+      changeset: { status: "proposed", ops: [{ op: "set_gain", patch: { gainDb: -12 } }] },
+    });
+    await applyFinishedCut({ requestId: "req_sound", task, job: sound }, { fetchFn });
+    const mixed = job("completed", {
+      changeset: {
+        status: "proposed",
+        ops: [
+          { op: "trim", targetId: "clip-a", patch: { trimStartFrames: 12 } },
+          { op: "set_gain", patch: { gainDb: -12 } },
+        ],
+      },
+    });
+    await applyFinishedCut({ requestId: "req_mixed", task, job: mixed }, { fetchFn });
+    expect(fetchFn).not.toHaveBeenCalled();
+    expect(landedFor(task.id)).toBeUndefined();
+  });
+
+  it("undoes back to the original and redoes as a new copy", async () => {
+    const calls: string[] = [];
+    const fetchFn: FetchFn = async (url, init) => {
+      calls.push(`${url} ${String(init?.body)}`);
+      if (url.endsWith("/cuts/undo")) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ current_timeline: "Demo Cut", deleted: false }),
+        };
+      }
+      return { ok: true, status: 200, json: async () => appliedBody };
+    };
+    await applyFinishedCut({ requestId: "req_cut1", task, job: cutJob() }, { fetchFn });
+    expect(await undoLandedWrite(task.id, { fetchFn })).toBe(true);
+    expect(landedFor(task.id)).toMatchObject({
+      state: "undone",
+      line: "Back on Demo Cut — copy kept",
+    });
+    expect(calls[1]).toContain("/cuts/undo");
+    expect(calls[1]).toContain('"original_timeline":"Demo Cut"');
+    expect(await redoLandedWrite(task.id, { fetchFn })).toBe(true);
+    expect(landedFor(task.id)).toMatchObject({ state: "landed", kind: "cut" });
+    expect(calls[2]).toContain("/cuts/apply");
+  });
+
+  it("keeps Undo available when the revert fails", async () => {
+    await applyFinishedCut(
+      { requestId: "req_cut1", task, job: cutJob() },
+      { fetchFn: reply(200, appliedBody) },
+    );
+    const ok = await undoLandedWrite(task.id, { fetchFn: reply(404, {}) });
+    expect(ok).toBe(false);
+    expect(landedFor(task.id)).toMatchObject({
+      state: "landed",
+      line: "Undo failed: Undo isn't available on this agent yet.",
+    });
   });
 });

@@ -57,6 +57,7 @@
         "simulateSpring(target: (tau) => number, t, opts?): {x, v}   // fixed 240 Hz step from time 0 to t",
         "followProp(history, name, t, opts?): {x, v}   // spring chasing a keyframed numeric prop",
         "simulateFollower(history, xName, yName, t, opts?): { x, y, vx, vy, tilt, scaleAlong, scaleAcross, heading }   // expressive-mouse rig: overshoot, swing/tilt, squash-and-stretch",
+        "simulateRig(rig: Rig, fps, { settleSec? }): RigFrame[]   // bake a spec rig's inputPath to per-frame x/y/rotation/scale keys through simulateFollower",
         "verletChain(anchor: (tau) => {x, y}, count, t, {segment?, gravity?, damping?, iterations?}): {x, y}[]   // hanging rope; one letter per point for text physics",
         "<ShaderPass frag={glsl} uniforms={{ u_time: t, u_color: '#ff6a00', u_res: [width, height] }} width={width} height={height} />   // fullscreen WebGL2 pass. frag is GLSL ES 3.00 and receives `in vec2 vUv` (0..1). Uniforms may be number, boolean, #rrggbb string (vec3), or number[2..4].",
         "hexToRgb01(hex): [r, g, b]; hexToRgba(hex, alpha?): string; mixHex(a, b, u): string",

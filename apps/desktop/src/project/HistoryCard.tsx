@@ -1,9 +1,8 @@
 import { Dialog } from "@base-ui/react/dialog";
-import { HistoryIcon, KeyboardIcon, TriangleAlertIcon, Undo2Icon } from "lucide-react";
+import { HistoryIcon, TriangleAlertIcon, Undo2Icon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { InfoHint } from "@/components/info-hint";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Kbd } from "@/components/ui/kbd";
 import { cn } from "@/lib/utils";
 import { fallbackNotice } from "./OpDiff";
@@ -19,9 +18,9 @@ import { clockTime, opLabel, type HistoryEntry } from "./store";
 /** Who caused the apply: the agent on arrival, or the person by hand. */
 export function HistoryActorBadge({ actor }: { actor: HistoryEntry["actor"] }) {
   return (
-    <Badge variant={actor === "agent" ? "info" : "secondary"} size="sm">
+    <span className="shrink-0 text-xs font-normal text-muted-foreground">
       {actor === "agent" ? "Agent" : "You"}
-    </Badge>
+    </span>
   );
 }
 
@@ -41,11 +40,10 @@ export function HistoryFallbackLine({ entry }: { entry: HistoryEntry }) {
 }
 
 /**
- * History as a bento card beside the running tasks, in the same
- * card treatment as `RunningTasks`. Each row shows what landed, who
- * did it, when, and the adapter fallback line when the item had one.
- * Undo applies at once onto a copy: u rewinds the last entry,
- * Shift+U rewinds to the focused entry. The agent's hand edits in the
+ * History as a full page: each row shows what landed, who did it,
+ * when, and the adapter fallback line when the item had one. Undo
+ * applies at once onto a copy: u rewinds the last entry, Shift+U
+ * rewinds to the focused entry. The agent's hand edits in the
  * editing app bypass this card — the app only sees what it applied.
  */
 export function HistoryCard({
@@ -96,7 +94,6 @@ export function HistoryCard({
       if (!historyKeyAllowed(event.target)) return;
       const action = historyKeyAction(event);
       if (!action) return;
-      if (action === "accept" || action === "reject") return;
       if (entries.length === 0) return;
       if (action === "help") {
         event.preventDefault();
@@ -145,10 +142,7 @@ export function HistoryCard({
   return (
     <section
       aria-label="History"
-      className={cn(
-        "flex flex-col gap-1 rounded-card bg-card p-4 text-neutral-100",
-        className,
-      )}
+      className={cn("flex flex-col gap-1 rounded-card bg-card p-4 text-neutral-100", className)}
     >
       <div className="flex items-center gap-2 px-1 pb-1">
         <HistoryIcon className="size-4 text-neutral-400" aria-hidden="true" />
@@ -172,9 +166,7 @@ export function HistoryCard({
         ) : null}
       </div>
       {entries.length === 0 ? (
-        <p className="px-1 py-2 text-xs text-muted-foreground">
-          Nothing applied yet.
-        </p>
+        <p className="px-1 py-2 text-xs text-muted-foreground">Nothing applied yet.</p>
       ) : (
         <ol aria-label="History entries" className="flex min-h-0 flex-col">
           {entries.map((entry, index) => {
@@ -188,18 +180,18 @@ export function HistoryCard({
                 onFocus={() => setFocusedIndex(index)}
                 className={cn(
                   "flex items-start gap-3 rounded-xl border-t border-white/[0.06] px-1 py-3 outline-none transition-colors first:border-t-0 first:pt-1 last:pb-1",
-                  index === focusedIndex && "bg-white/[0.05] ring-1 ring-lime-300/60 ring-inset",
+                  index === focusedIndex && "bg-white/[0.08]",
                 )}
               >
                 <span className="w-7 shrink-0 pt-0.5 text-xs tabular-nums text-muted-foreground">
                   #{index + 1}
                 </span>
                 <div className="min-w-0 flex-1">
-                  <p className="flex flex-wrap items-center gap-x-2 gap-y-1 truncate text-sm font-medium text-neutral-100">
-                    <span className="truncate">
+                  <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm font-medium text-neutral-100">
+                    <span>
                       {opLabel(entry.op)}
                       {entry.targetId ? (
-                        <span className="ml-2 font-normal text-muted-foreground">
+                        <span className="ml-2 font-normal break-all text-muted-foreground">
                           {entry.targetId}
                         </span>
                       ) : null}
@@ -212,21 +204,14 @@ export function HistoryCard({
                   <HistoryFallbackLine entry={entry} />
                   {open ? (
                     <div className="mt-1.5 rounded-xl bg-black/30 p-3">
-                      <p className="truncate font-mono text-xs text-neutral-400">
-                        {entry.itemId}
-                      </p>
+                      <p className="truncate font-mono text-xs text-neutral-400">{entry.itemId}</p>
                       <p className="mt-1 text-xs leading-5 text-muted-foreground">
                         Rewinds with {opLabel(entry.inverse.op)}
                         {entry.inverse.targetId ? ` on ${entry.inverse.targetId}` : ""}
                         {entry.beatId ? <span> · step {entry.beatId}</span> : null}
                       </p>
                     </div>
-                  ) : (
-                    <p className="mt-0.5 truncate text-xs text-neutral-500">
-                      <span className="font-mono">{entry.itemId}</span>
-                      {entry.beatId ? <span> · step {entry.beatId}</span> : null}
-                    </p>
-                  )}
+                  ) : null}
                 </div>
                 <Button
                   type="button"
@@ -250,30 +235,16 @@ export function HistoryCard({
         </ol>
       )}
       {entries.length > 0 ? (
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-white/[0.06] px-1 pt-2.5 pb-1 text-[11px] leading-5 text-muted-foreground">
-          <KeyboardIcon className="size-3.5 text-neutral-500" aria-hidden="true" />
-          <span className="flex items-center gap-1">
-            <Kbd>j</Kbd>
-            <Kbd>k</Kbd>
-            <span>move</span>
-          </span>
-          <span className="flex items-center gap-1">
-            <Kbd>u</Kbd>
-            <span>undo</span>
-          </span>
-          <span className="flex items-center gap-1">
-            <Kbd>Enter</Kbd>
-            <span>details</span>
-          </span>
+        <p className="border-t border-white/[0.06] px-1 pt-2.5 pb-1 text-[11px] leading-5 text-muted-foreground">
+          j/k move · u undo · Shift+U undo here · Enter details ·{" "}
           <button
             type="button"
             onClick={() => setHelpOpen(true)}
-            className="ml-auto flex items-center gap-1.5 rounded-md px-1 py-0.5 text-neutral-400 outline-none hover:text-neutral-100 focus-visible:ring-2 focus-visible:ring-white/40"
+            className="rounded-md px-1 py-0.5 text-neutral-400 outline-none hover:text-neutral-100 focus-visible:ring-2 focus-visible:ring-white/40"
           >
-            <Kbd>?</Kbd>
-            <span>shortcuts</span>
+            ? all shortcuts
           </button>
-        </div>
+        </p>
       ) : null}
 
       <Dialog.Root open={helpOpen} onOpenChange={setHelpOpen}>

@@ -69,14 +69,23 @@ def test_check_undo_accepts_switch_and_remove():
                           ["Comp 1"]) == "remove"
 
 
+def test_check_undo_proves_an_unwind_by_tool_drop():
+    run = load_run()
+    assert run.check_undo(["Comp 1"], "Comp 1", None, [],
+                          tools_now=4, tools_before=14) == "unwind"
+
+
 def test_check_undo_rejects_a_broken_undo():
     import pytest
 
     run = load_run()
-    with pytest.raises(run.Fail, match="is gone"):
+    with pytest.raises(run.Fail, match="standing with its build"):
         run.check_undo(["Comp 2"], "Comp 2", "Comp 1", ["Comp 1"])
     with pytest.raises(run.Fail, match="expected"):
         run.check_undo(["Comp 1", "Comp 2"], "Comp 9", "Comp 1", ["Comp 1"])
+    with pytest.raises(run.Fail, match="standing with its build"):
+        run.check_undo(["Comp 1"], "Comp 1", None, [],
+                       tools_now=14, tools_before=14)
 
 
 def test_report_json_shape(tmp_path):

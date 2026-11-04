@@ -284,6 +284,24 @@ def test_build_writes_squash_pair() -> None:
     assert xf.values["XSize"] == 1
 
 
+def test_build_lands_rig_bake_on_text_carrier() -> None:
+    """#294: a rig bake (rotation + scale/scaley) lands on a text carrier."""
+    spec = _spec()
+    baked = {"title": {
+        "rotation": [{"time": 0, "value": 0}, {"time": 1, "value": 0.2}],
+        "scale": [{"time": 0, "value": 1}, {"time": 1, "value": 1.1}],
+        "scaley": [{"time": 0, "value": 1}, {"time": 1, "value": 0.9}],
+    }}
+    item = FakeItem()
+    op = build_comp(item, spec_to_plan(spec, baked=baked))
+    assert op["keyframes"]["Xf_titleAngle"] == 2
+    assert op["keyframes"]["Xf_titleXSize"] == 2
+    assert op["keyframes"]["Xf_titleYSize"] == 2
+    assert "Xf_titleSize" not in op["keyframes"]
+    xf = item.comps[op["comp_name"]].FindTool("Xf_title")
+    assert xf.values["UseSizeAndAspect"] == 0
+
+
 def test_build_absorbs_modifier_seed_key() -> None:
     """A curve starting after 0 still lands exactly: the seed is overwritten."""
     spec = _spec()

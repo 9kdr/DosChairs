@@ -208,19 +208,26 @@ def health_delta(before: dict, after: dict, *areas: str) -> tuple[int, int]:
     return calls, repairs
 
 
-def check_undo(names: list, made: str, prev: str | None, before: list) -> str:
-    """Prove an undo from the version list. Returns 'switch' or 'remove'.
+def check_undo(names: list, made: str, prev: str | None, before: list,
+             tools_now: int | None = None,
+             tools_before: int | None = None) -> str:
+    """Prove an undo. Returns 'switch', 'remove', or 'unwind'.
 
     Switch keeps the added version (redo stays possible), so prev must
-    stand beside it; remove must restore the before-state exactly.
+    stand beside it; remove must restore the before-state exactly. When
+    the added version stands alone, only a strict tool-count drop proves
+    the build was unwound inside it (#295).
     """
-    if made in names:
-        if prev not in names:
-            raise Fail(f"undo switched but {prev!r} is gone")
+    if made not in names:
+        if sorted(names) != sorted(before):
+            raise Fail(f"undo left versions {names}, expected {before}")
+        return "remove"
+    if prev in names:
         return "switch"
-    if sorted(names) != sorted(before):
-        raise Fail(f"undo left versions {names}, expected {before}")
-    return "remove"
+    if (tools_before is not None and tools_now is not None
+            and tools_now < tools_before):
+        return "unwind"
+    raise Fail(f"undo left {made!r} standing with its build")
 
 
 class Live:
@@ -340,19 +347,22 @@ class Live:
             tools[name] = len(comp.GetToolList(False) or {}) if comp else 0
         return {"names": names, "tools": tools}
 
-    def undo_comp(self, op: dict, before: list) -> tuple[str, str]:
+    def undo_comp(self, op: dict, before: list, tools_before: int) -> tuple[str, str]:
         """Undo the apply through the real route, then prove the versions.
 
         POST /effects/rig/revert is the product undo (crash-guarded, #290):
         it switches back when the Fusion UI is up (the added version stays
-        for redo), else removes the added version. Returns (prev, undone_by).
+        for redo), removes the added version, or unwinds the build inside
+        it (#295). Returns (prev, undone_by).
         """
         prev = (op.get("undo") or {}).get("prev_comp_name",
                                           op.get("prev_comp_name"))
         self.post("/effects/rig/revert", {"op": op, **self.locator()})
-        names = self.comp_state()["names"]
-        undone_by = check_undo(names, op.get("comp_name", ""),
-                               prev if isinstance(prev, str) else None, before)
+        state = self.comp_state()
+        undone_by = check_undo(
+            state["names"], op.get("comp_name", ""),
+            prev if isinstance(prev, str) else None, before,
+            state["tools"].get(op.get("comp_name", ""), 0), tools_before)
         return (prev if isinstance(prev, str) else "", undone_by)
 
     def delete_comp(self, name: str) -> None:
@@ -557,12 +567,14 @@ class Dry:
     def comp_state(self) -> dict:
         return {"names": list(self.comps), "tools": dict(self.tools)}
 
-    def undo_comp(self, op: dict, before: list) -> tuple[str, str]:
+    def undo_comp(self, op: dict, before: list, tools_before: int) -> tuple[str, str]:
         prev = (op.get("undo") or {}).get("prev_comp_name",
                                           op.get("prev_comp_name"))
         self.post("/effects/rig/revert", {"op": op, **self.locator()})
-        undone_by = check_undo(list(self.comps), op.get("comp_name", ""),
-                               prev if isinstance(prev, str) else None, before)
+        undone_by = check_undo(
+            list(self.comps), op.get("comp_name", ""),
+            prev if isinstance(prev, str) else None, before,
+            self.tools.get(op.get("comp_name", ""), 0), tools_before)
         return (prev if isinstance(prev, str) else "", undone_by)
 
     def delete_comp(self, name: str) -> None:
@@ -631,10 +643,13 @@ def flow_effect(world, prompts: dict, info: dict, created: dict) -> dict:
         op = {"comp_name": comp, "prev_comp_name": prev,
               "undo": {"prev_comp_name": prev}}
         _, undone_by = timed(flow["seconds"], "undo", world.undo_comp, op,
-                             state_before["names"])
+                             state_before["names"], new_tools)
         flow["evidence"]["undone_by"] = undone_by
         flow["status"] = "PASS"
-        undone = f"undone to {prev}" if prev else "only version removed"
+        if undone_by == "unwind":
+            undone = f"build unwound inside {comp}"
+        else:
+            undone = f"undone to {prev}" if prev else "only version removed"
         flow["reason"] = f"new comp {comp} with {new_tools} tools, {undone}"
     except Fail as error:
         flow["reason"] = str(error)
@@ -723,10 +738,13 @@ def flow_rig(world, prompts: dict, info: dict, created: dict) -> dict:
         op = {"comp_name": comp, "prev_comp_name": prev,
               "undo": {"prev_comp_name": prev}}
         _, undone_by = timed(flow["seconds"], "undo", world.undo_comp, op,
-                             state_before["names"])
+                             state_before["names"], new_tools)
         flow["evidence"]["undone_by"] = undone_by
         flow["status"] = "PASS"
-        undone = f"undone to {prev}" if prev else "only version removed"
+        if undone_by == "unwind":
+            undone = f"build unwound inside {comp}"
+        else:
+            undone = f"undone to {prev}" if prev else "only version removed"
         flow["reason"] = (
             f"rig baked to {baked['keys']} keys on {baked['targetId']}, "
             f"new comp {comp}, {undone}")

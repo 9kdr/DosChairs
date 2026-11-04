@@ -202,23 +202,35 @@ class Handler(BaseHTTPRequestHandler):
             except _SoundsApplyError as error:
                 self._send(error.status, {"error": str(error)})
             return
+        cuts_path = urlsplit(self.path).path
+        if cuts_path in ("/cuts/apply", "/cuts/undo"):
+            from chair_agent import cuts
+
+            try:
+                body = self._body()
+            except ValueError:
+                self._send(400, {"error": "request body must be JSON"})
+                return
+            try:
+                if cuts_path == "/cuts/apply":
+                    self._send(200, _cuts_apply_body(body, self.controller))
+                else:
+                    self._send(200, _cuts_undo_body(body))
+            except _CutsApplyError as error:
+                if cuts_path == "/cuts/apply":
+                    cuts.note_applied(skipped_ops=0, write_ms=0.0, error=str(error))
+                else:
+                    cuts.note_undone(error=str(error))
+                self._send(error.status, {"error": str(error)})
+            return
         module_route = _module_paths(self.path)
         if module_route is not None:
             self._module_post(*module_route)
             return
         effects_path = urlsplit(self.path).path
-        if effects_path == "/effects/rig/generate":
-            try:
-                body = self._body()
-            except ValueError:
-                self._send(400, _error("invalid_json", "request body must be JSON"))
-                return
-            try:
-                self._send(200, _rig_generate_body(body))
-            except Exception as error:
-                self._send(_rig_status(error), _error("invalid_rig", str(error)))
-            return
-        if effects_path == "/effects/rig/apply":
+        # The generic apply-piece route. /effects/rig/apply is the historical
+        # name the desktop calls; /effects/apply is the same handler.
+        if effects_path in ("/effects/rig/apply", "/effects/apply"):
             try:
                 body = self._body()
             except ValueError:
@@ -231,7 +243,7 @@ class Handler(BaseHTTPRequestHandler):
             except _ResolveFailed as error:
                 self._send(502, _error("resolve_failed", str(error)))
             except Exception as error:
-                self._send(_rig_status(error), _error("invalid_rig", str(error)))
+                self._send(400, _error("invalid_rig", str(error)))
             return
         if effects_path == "/effects/rig/revert":
             try:
@@ -246,7 +258,7 @@ class Handler(BaseHTTPRequestHandler):
             except _ResolveFailed as error:
                 self._send(502, _error("resolve_failed", str(error)))
             except Exception as error:
-                self._send(_rig_status(error), _error("invalid_rig", str(error)))
+                self._send(400, _error("invalid_rig", str(error)))
             return
         if effects_path == "/effects/generate":
             try:
@@ -355,6 +367,8 @@ class Handler(BaseHTTPRequestHandler):
         try:
             if action == "generate":
                 self._send(200, _modules_generate_body(body))
+            elif action == "plan":
+                self._send(200, _piece_plan_body(body))
             elif action == "import":
                 record = modules.register_source(
                     str(body.get("source", "")), brief=str(body.get("brief", ""))
@@ -424,7 +438,7 @@ def _module_paths(path: str) -> tuple[str, str | None, str | None] | None:
     if len(parts) < 3 or parts[0] != "effects" or parts[1] != "modules":
         return None
     if len(parts) == 3:
-        if parts[2] in ("generate", "import"):
+        if parts[2] in ("generate", "import", "plan"):
             return (parts[2], None, None)
         return ("record", parts[2], None)
     if len(parts) == 4 and parts[3] in ("bundle", "install", "preview"):
@@ -511,7 +525,7 @@ def _pipeline() -> dict[str, Any]:
 
 
 def _health() -> dict[str, Any]:
-    from chair_agent import effects, modules, rig, sounds
+    from chair_agent import cuts, effects, modules, piece_plan, sounds
     from chair_agent.client import auth_status_snapshot
     from chair_agent.pieces import macros
 
@@ -528,10 +542,11 @@ def _health() -> dict[str, Any]:
         "last_auth_error": auth_status["last_auth_error"],
         "last_auth_error_at": auth_status["last_auth_error_at"],
         "sounds": sounds.status_snapshot(),
+        "cuts": cuts.status_snapshot(),
         "effects": effects.status_snapshot(),
-        "rig": rig.status_snapshot(),
         "macros": macros.status_snapshot(),
         "modules": modules.status_snapshot() | {"model": modules.module_model()},
+        "piece_plans": piece_plan.status_snapshot(),
         "pipeline": _pipeline(),
         "crew": _crew_status(),
     }
@@ -652,37 +667,6 @@ class _ResolveUnavailable(Exception):
 
 class _ResolveFailed(Exception):
     pass
-
-
-def _rig_status(error: Exception) -> int:
-    from chair_agent import rig
-    from chair_agent.rig import InvalidRig
-
-    if isinstance(error, InvalidRig):
-        return rig.error_status(error)
-    return 400
-
-
-def _rig_generate_body(body: dict[str, Any]) -> dict[str, Any]:
-    from chair_agent import rig
-
-    canvas = body.get("canvas", {})
-    if not isinstance(canvas, dict):
-        raise ValueError("generate needs a 'canvas' object with width and height")
-    try:
-        width = int(canvas.get("width", 0))
-        height = int(canvas.get("height", 0))
-        fps = float(body.get("fps", 0))
-        duration_sec = float(body.get("durationSec", 0))
-    except (TypeError, ValueError) as error:
-        raise ValueError(f"bad generate body: {error}") from error
-    return rig.generate_rig(
-        str(body.get("brief", "")),
-        width=width,
-        height=height,
-        fps=fps,
-        duration_sec=duration_sec,
-    )
 
 
 def _resolve_project(project_name: Any) -> Any:
@@ -810,7 +794,6 @@ def _rig_apply_body(body: dict[str, Any]) -> dict[str, Any]:
     add_effect always lands on a NEW comp version: the current one stays
     untouched, and prev_comp_name in the answer is the undo back.
     """
-    from chair_agent import rig  # noqa: F401  (keeps the route's errors typed)
     from chair_agent.effects import InvalidEffect, get_effect
 
     spec = body.get("spec")
@@ -1035,8 +1018,8 @@ def _sound_snapshot(project: Any, timeline: Any) -> dict[str, Any]:
     }
 
 
-def _free_copy_name(project: Any, original_name: str) -> str:
-    """`<original> (sound copy)`, with ` 2`, ` 3` while the name is taken."""
+def _free_copy_name(project: Any, original_name: str, label: str = "sound copy") -> str:
+    """`<original> (<label>)`, with ` 2`, ` 3` while the name is taken."""
     taken: set[str] = set()
     count = project.GetTimelineCount() or 0
     for index in range(1, count + 1):
@@ -1044,7 +1027,7 @@ def _free_copy_name(project: Any, original_name: str) -> str:
         name = candidate.GetName() if candidate is not None else ""
         if name:
             taken.add(name)
-    base = f"{original_name} (sound copy)"
+    base = f"{original_name} ({label})"
     if base not in taken:
         return base
     suffix = 2
@@ -1200,6 +1183,184 @@ def _sounds_undo_body(body: dict[str, Any]) -> dict[str, Any]:
     return {"current_timeline": original_name, "deleted": deleted}
 
 
+_CUT_APPLY_OPS = frozenset({
+    "trim", "move", "ripple", "remove_clip", "add_clip",
+    "add_track", "remove_track", "add_marker", "remove_marker",
+})
+
+# Ops the writer answers itself: supported ones land, the rest skip with
+# their manifest fallback (or the Piece Maker pointer for effects).
+_CUT_WRITER_OPS = _CUT_APPLY_OPS | frozenset({
+    "set_speed", "add_transition", "remove_transition",
+    "add_effect", "remove_effect", "set_gain", "mute_clip",
+})
+
+_CUT_REPORT_COUNTS = (
+    ("tracks_added", "tracks_added"),
+    ("tracks_removed", "tracks_removed"),
+    ("clips_placed", "clips_added"),
+    ("clips_removed", "clips_removed"),
+    ("clips_changed", "clips_changed"),
+    ("markers_added", "markers_added"),
+    ("markers_removed", "markers_removed"),
+)
+
+
+class _CutsApplyError(Exception):
+    """A /cuts/apply or /cuts/undo failure: status plus one plain sentence."""
+
+    def __init__(self, status: int, message: str) -> None:
+        self.status = status
+        super().__init__(message)
+
+
+def _cuts_job_items(controller: JobController, job_id: str) -> list[Any]:
+    """A finished job's proposal. Raises _CutsApplyError when it cannot apply."""
+    try:
+        job = controller.get(job_id)
+    except JobNotFound:
+        raise _CutsApplyError(404, f"job {job_id!r} is unknown") from None
+    if job.status != "completed":
+        if job.status in ("failed", "moderated", "canceled"):
+            raise _CutsApplyError(
+                400, f"job {job_id!r} {job.status}: {job.error or 'it has no proposal to apply'}"
+            )
+        raise _CutsApplyError(
+            409, f"job {job_id!r} is {job.status}; wait for it to finish"
+        )
+    ops = job.changeset.ops if job.changeset is not None else []
+    items = _sounds_coerce_items(ops, f"job {job_id!r}")
+    if not any(item.op in _CUT_APPLY_OPS for item in items):
+        raise _CutsApplyError(400, f"job {job_id!r} has no cut items to apply")
+    return items
+
+
+def _cuts_apply_body(body: dict[str, Any], controller: JobController) -> dict[str, Any]:
+    """Apply cut items to Resolve as a NEW timeline; the original is untouched.
+
+    Reads the named (or current) timeline, reshapes it with
+    apply_cut_items, and writes `<original> (cut copy)` — which Resolve
+    makes current. Anything the cut writer cannot place skips with a
+    reason, never silently.
+    """
+    import time as _time
+
+    from chair_agent import cuts
+
+    started = _time.perf_counter()
+    job_id = body.get("jobId", "")
+    if isinstance(job_id, str) and job_id.strip():
+        items = _cuts_job_items(controller, job_id.strip())
+    elif isinstance(body.get("items"), list) and body["items"]:
+        items = _sounds_coerce_items(body["items"], "the request")
+        if not any(item.op in _CUT_APPLY_OPS for item in items):
+            raise _CutsApplyError(400, "the request holds no cut items to apply")
+    else:
+        raise _CutsApplyError(
+            400, "apply needs a finished 'jobId' or a non-empty 'items' list"
+        )
+    try:
+        project, timeline_obj = _resolve_project_timeline(
+            body.get("project"), body.get("timeline")
+        )
+    except _ResolveUnavailable as error:
+        raise _CutsApplyError(503, str(error)) from error
+    except _ResolveFailed as error:
+        raise _CutsApplyError(502, str(error)) from error
+    try:
+        from chair_resolve.cut_apply import apply_cut_items
+        from chair_resolve.read import timeline_from_resolve
+        from chair_resolve.write import write_timeline
+    except ImportError as error:
+        raise _CutsApplyError(
+            503, f"chair-adapter-resolve is not importable ({error})"
+        ) from error
+    try:
+        timeline = timeline_from_resolve(_sound_snapshot(project, timeline_obj))
+    except Exception as error:
+        raise _CutsApplyError(
+            502, f"reading the Resolve timeline failed: {error}"
+        ) from error
+    original_name = str(timeline.get("name") or "")
+    skipped: list[dict[str, str]] = []
+    cut: list[dict[str, Any]] = []
+    for item in items:
+        if item.op in _CUT_WRITER_OPS:
+            cut.append(item.model_dump(mode="json", by_alias=True))
+        else:
+            skipped.append({
+                "intent": item.id,
+                "reason": f"the cut writer does not place {item.op} items",
+            })
+    try:
+        copy, report = apply_cut_items(timeline, cut)
+    except Exception as error:
+        raise _CutsApplyError(502, f"placing the cuts failed: {error}") from error
+    counts = {out: len(report.get(key) or []) for key, out in _CUT_REPORT_COUNTS}
+    for entry in report.get("skipped") or []:
+        skipped.append({
+            "intent": str(entry.get("id") or "?"),
+            "reason": str(entry.get("reason") or "skipped"),
+        })
+    if not any(counts.values()):
+        reasons = "; ".join(entry["reason"] for entry in skipped) or "nothing could be placed"
+        raise _CutsApplyError(502, f"Resolve added nothing: {reasons}")
+    try:
+        copy["name"] = _free_copy_name(project, original_name, "cut copy")
+    except Exception as error:
+        raise _CutsApplyError(
+            502, f"listing the Resolve timelines failed: {error}"
+        ) from error
+    try:
+        write_timeline(copy)
+    except Exception as error:
+        raise _CutsApplyError(502, f"writing the Resolve copy failed: {error}") from error
+    fallbacks = report.get("fallbacks") or []
+    fallback = fallbacks[0].get("reason") if fallbacks else None
+    cuts.note_applied(
+        skipped_ops=len(skipped),
+        write_ms=round((_time.perf_counter() - started) * 1000, 1),
+    )
+    return {
+        "timeline_name": copy["name"],
+        "original_timeline": original_name,
+        **counts,
+        "skipped": skipped,
+        "fallback": str(fallback) if fallback else None,
+    }
+
+
+def _cuts_undo_body(body: dict[str, Any]) -> dict[str, Any]:
+    """Undo a cut apply: the original becomes current again, and the copy
+    is deleted only when delete_copy is true. The original's contents are
+    never touched."""
+    from chair_resolve.cut_apply import undo_copy_write
+
+    from chair_agent import cuts
+
+    try:
+        project = _resolve_project(body.get("project"))
+    except _ResolveUnavailable as error:
+        raise _CutsApplyError(503, str(error)) from error
+    except _ResolveFailed as error:
+        raise _CutsApplyError(502, str(error)) from error
+    try:
+        undone = undo_copy_write(
+            project,
+            body.get("timeline_name", ""),
+            body.get("original_timeline", ""),
+            body.get("delete_copy", False),
+        )
+    except ValueError as error:
+        raise _CutsApplyError(400, str(error)) from error
+    except RuntimeError as error:
+        raise _CutsApplyError(502, str(error)) from error
+    except Exception as error:
+        raise _CutsApplyError(502, f"Resolve scripting failed: {error}") from error
+    cuts.note_undone()
+    return undone
+
+
 def _effects_status(error: Exception) -> int:
     from chair_agent import effects
     from chair_agent.effects import InvalidEffect
@@ -1235,9 +1396,21 @@ def _module_summary(record: Any) -> dict[str, Any]:
     }
 
 
-def _modules_generate_body(body: dict[str, Any]) -> dict[str, Any]:
-    from chair_agent import modules
+def _piece_plan_body(body: dict[str, Any]) -> dict[str, Any]:
+    from chair_agent import piece_plan
 
+    brief = body.get("brief", "")
+    if not isinstance(brief, str) or not brief.strip():
+        raise ValueError("plan needs a non-empty 'brief'")
+    return piece_plan.plan_piece(brief).model_dump(mode="json", by_alias=True)
+
+
+def _modules_generate_body(body: dict[str, Any]) -> dict[str, Any]:
+    from chair_agent import modules, piece_plan
+
+    brief = body.get("brief", "")
+    if not isinstance(brief, str) or not brief.strip():
+        raise ValueError("generate needs a non-empty 'brief'")
     canvas = body.get("canvas", {})
     if not isinstance(canvas, dict):
         raise ValueError("generate needs a 'canvas' object with width and height")
@@ -1253,8 +1426,10 @@ def _modules_generate_body(body: dict[str, Any]) -> dict[str, Any]:
     mode = body.get("mode", "spark")
     if mode not in modules.MODES:
         raise ValueError("mode must be 'spark' or 'wonder'")
+    plan = piece_plan.plan_piece(brief)
+    plan_dump = plan.model_dump(mode="json", by_alias=True)
     record = modules.generate_module(
-        str(body.get("brief", "")),
+        brief,
         kind=body.get("kind") if isinstance(body.get("kind"), str) else None,
         width=width,
         height=height,
@@ -1264,8 +1439,16 @@ def _modules_generate_body(body: dict[str, Any]) -> dict[str, Any]:
         piece_ids=[str(p) for p in pieces] if isinstance(pieces, list) else None,
         model=modules.WONDER_MODULE_MODEL if mode == "wonder" else None,
         mode=mode,
+        plan=plan,
     )
-    return _module_summary(record)
+    if record is None:
+        return {
+            "id": None,
+            "plan": plan_dump,
+            "notes": piece_plan.guidance(plan),
+            "preview": None,
+        }
+    return _module_summary(record) | {"plan": plan_dump}
 
 
 def _effect_body(effect_id: str) -> dict[str, Any]:

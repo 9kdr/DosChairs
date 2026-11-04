@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { simulateRig } from "./rig.js";
-import type { Rig } from "./types.js";
+import type { Rig } from "../types.js";
 
 const rig: Rig = {
   inputPath: [

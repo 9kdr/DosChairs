@@ -108,6 +108,20 @@ import { flushSync } from "react-dom";
 import { createRoot } from "react-dom/client";
 import * as Mod from "chair-module-under-test";
 
+// Third-party WebGL (Paper, OGL) leaves preserveDrawingBuffer off, which
+// makes the drawing buffer unreadable after compositing: the coverage
+// measure would read blank and report 0 for a painted frame. Force it on
+// for every context in this harness page (contexts are created at render,
+// after this runs); module code is untouched.
+const __chairGetContext = HTMLCanvasElement.prototype.getContext;
+HTMLCanvasElement.prototype.getContext = function (type, ...rest) {
+  if (type === "webgl" || type === "webgl2" || type === "experimental-webgl") {
+    const attrs = rest[0] && typeof rest[0] === "object" ? rest[0] : {};
+    rest[0] = { ...attrs, preserveDrawingBuffer: true };
+  }
+  return __chairGetContext.call(this, type, ...rest);
+};
+
 const meta = (Mod.meta ?? {});
 const props = (Mod.props ?? {});
 const Effect = Mod.default;
