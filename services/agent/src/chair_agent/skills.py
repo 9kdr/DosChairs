@@ -29,7 +29,10 @@ WONDER_NOTE = (
     "physics or logic, or nothing from the library at all. You still must "
     "pass the same contract: a pure function of (props, history, t), "
     "seekable through the SeekAdapter, deterministic in any order, props "
-    "keyframable, and licence-safe (no copied or paid-company code)."
+    "keyframable, and licence-safe (no copied or paid-company code). "
+    "Render only the element asked for on a transparent background, no "
+    "text unless asked, no decorative extras; gate any fill behind a "
+    "backdrop prop defaulting off."
 )
 
 
@@ -134,6 +137,14 @@ def _entry_text(entry: dict[str, Any]) -> str:
     )
 
 
+def _entry_row(entry: dict[str, Any]) -> str:
+    """Compact library row for the prompt; scoring still uses the full text."""
+    source = entry.get("source", "")
+    summary = entry.get("summary", "")
+    props = ", ".join(p["id"] for p in entry.get("props", []))
+    return f"[{entry.get('id')}] ({source}) {summary} Props: {props}."
+
+
 def context_for(
     brief: str,
     skills: tuple[str, ...] = ("effects", "motion"),
@@ -157,7 +168,7 @@ def context_for(
             key=lambda item: -item[0],
         )
         for _, entry in ranked[:TOP_LIBRARY]:
-            parts.append(_entry_text(entry))
+            parts.append(_entry_row(entry))
         notes = sorted(
             ((_score(f"{n['name']} {n['text']}", tokens), n) for n in example_notes(root)),
             key=lambda item: -item[0],

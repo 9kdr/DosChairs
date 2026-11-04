@@ -2,4 +2,4 @@
 
 Gold: [liquid-boxes.tsx](../../../../../packages/effects/library/liquid-boxes.tsx).
 
-Why it's good: three seekable libraries (OGL SDF, Motion stagger phases, Paper grain) behind one pure render pass — every prop is mirrored into SSR markup, so the probe sees exactly what the client paints.
+Why it's good: OGL SDF + Motion stagger + Paper grain behind one pure render pass — every prop mirrored into SSR markup.

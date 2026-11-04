@@ -110,13 +110,13 @@ def test_generate_checks_and_stores(isolated) -> None:
 @needs_toolchain
 def test_generate_repairs_once_for_prose_then_for_a_clock(isolated) -> None:
     client = FakeClient(["I think you want a fade.", fenced(GOOD)])
-    record = modules.generate_module("fade", client=client)
+    record = modules.generate_module("fade a label in", client=client)
     assert client.calls == 2 and record.repaired
     assert "repaired on retry" in record.notes
     assert modules.status_snapshot()["repaired"] == 1
 
     client = FakeClient([fenced(CLOCK), fenced(GOOD)])
-    record = modules.generate_module("fade", client=client)
+    record = modules.generate_module("fade a label in", client=client)
     assert client.calls == 2
     repair_user = client.last_messages[1].content
     assert "Date.now" in repair_user  # the model sees its own broken file
@@ -249,6 +249,51 @@ def test_modes_produce_different_instructions() -> None:
         assert gold in wonder  # the whole library is offered as one-line rows
     with pytest.raises(InvalidModule, match="unknown mode"):
         modules.build_generate_messages("fade", mode="party")
+
+
+def test_scope_from_brief() -> None:
+    assert modules.scope_from_brief("smoothly merging liquid boxes") == {
+        "wantsBackground": False, "wantsText": False,
+    }
+    assert modules.scope_from_brief("dark title background with big words") == {
+        "wantsBackground": True, "wantsText": True,
+    }
+    assert modules.scope_from_brief("a bg wash")["wantsBackground"] is True
+    assert modules.scope_from_brief("lower subtitle")["wantsText"] is True
+
+
+@needs_toolchain
+def test_generate_rejects_unasked_opaque_frame(isolated) -> None:
+    opaque = GOOD.replace(
+        "const style = { position: \"absolute\", inset: 0, opacity: a };",
+        "const style = { position: \"absolute\", inset: 0, opacity: a, background: \"#101018\" };",
+    )
+    client = FakeClient([fenced(opaque), fenced(opaque)])
+    with pytest.raises(InvalidModule, match="no background") as caught:
+        modules.generate_module("smoothly merging liquid boxes", client=client)
+    assert "failed the check twice" in str(caught.value)
+
+
+def test_generate_threads_brief_scope_into_the_check(isolated, monkeypatch) -> None:
+    seen: list = []
+    report = {
+        "ok": True, "errors": [], "warnings": [],
+        "meta": {"id": "fade-label", "name": "Fade Label"},
+        "props": [{"id": "size"}], "checks": {"deterministic": True},
+    }
+
+    def fake_check(module_id, source, env, scope=None):
+        seen.append(scope)
+        return dict(report)
+
+    monkeypatch.setattr(modules, "_check_source", fake_check)
+    monkeypatch.setattr(modules, "_model_client", lambda model=None: FakeClient([fenced(GOOD)]))
+    modules.generate_module("smoothly merging liquid boxes")
+    modules.generate_module("dark title background with big words")
+    assert seen == [
+        {"wantsBackground": False, "wantsText": False},
+        {"wantsBackground": True, "wantsText": True},
+    ]
 
 
 def test_generate_prompt_carries_skills_and_library() -> None:

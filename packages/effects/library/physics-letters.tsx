@@ -33,6 +33,7 @@ export const props = {
   accent: { type: "color", default: "#ff6a00", title: "Accent" },
   ink: { type: "color", default: "#101018", title: "Ink" },
   paper: { type: "color", default: "#f1ebdd", title: "Paper" },
+  backdrop: { type: "boolean", default: false, title: "Backdrop Fill" },
 } satisfies Record<string, PropSpec>;
 
 type Props = EffectProps<{
@@ -44,6 +45,7 @@ type Props = EffectProps<{
   accent: string;
   ink: string;
   paper: string;
+  backdrop: boolean;
 }>;
 
 interface Placed {
@@ -98,15 +100,22 @@ export default function PhysicsLetters(p: Props): React.ReactElement {
   const placed = layout(t, letters, n("gravity", 1), n("drop", 1100), n("spin", 0.6), size, width, baseline);
   const accent = c("accent", "#ff6a00");
   const ink = c("ink", "#101018");
+  const paper = c("paper", "#f1ebdd");
+  const backdrop = history("backdrop", t) === true;
 
   return (
     <div
-      style={{ position: "absolute", inset: 0, background: c("paper", "#f1ebdd"), overflow: "hidden" }}
+      style={{
+        position: "absolute",
+        inset: 0,
+        background: backdrop ? paper : "transparent",
+        overflow: "hidden",
+      }}
       data-word={word}
       data-frame={Math.round(t * 30)}
       data-y={placed.map((q) => q.y.toFixed(1)).join(",")}
     >
-      <div style={{ position: "absolute", left: 0, right: 0, top: baseline + size * 0.47, height: 3, background: accent }} />
+      <div style={{ position: "absolute", left: 0, right: 0, top: baseline + size * 0.47, height: 3, background: paper }} />
       {letters.map((ch, i) => {
         const q = placed[i] ?? { x: 0, y: 0, angle: 0 };
         return (

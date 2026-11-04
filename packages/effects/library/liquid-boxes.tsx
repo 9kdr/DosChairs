@@ -35,6 +35,7 @@ export const props = {
   ink: { type: "color", default: "#101018", title: "Ink" },
   accent: { type: "color", default: "#ff6a00", title: "Accent" },
   paper: { type: "color", default: "#f1ebdd", title: "Paper" },
+  backdrop: { type: "boolean", default: false, title: "Backdrop Fill" },
 } satisfies Record<string, PropSpec>;
 
 type Props = EffectProps<{
@@ -46,6 +47,7 @@ type Props = EffectProps<{
   ink: string;
   accent: string;
   paper: string;
+  backdrop: boolean;
 }>;
 
 const FRAG = `#version 300 es
@@ -96,6 +98,7 @@ export default function LiquidBoxes(p: Props): React.ReactElement {
   const { t, history, width, height } = p;
   const n = (name: string, fallback: number) => num(history, name, t, fallback);
   const c = (name: string, fallback: string) => String(history(name, t) ?? fallback);
+  const backdrop = history("backdrop", t) === true;
   const spreadPx = n("spread", 220) / Math.min(width, height);
   const [c1, c2] = centers(t, spreadPx, n("speed", 0.6));
   const size = n("size", 150) / Math.min(width, height) / 2;
@@ -156,7 +159,11 @@ export default function LiquidBoxes(p: Props): React.ReactElement {
 
   return (
     <div
-      style={{ position: "absolute", inset: 0 }}
+      style={{
+        position: "absolute",
+        inset: 0,
+        background: backdrop ? c("paper", "#f1ebdd") : "transparent",
+      }}
       data-frame={Math.round(t * 30)}
       data-c1={`${c1.x.toFixed(4)},${c1.y.toFixed(4)}`}
       data-c2={`${c2.x.toFixed(4)},${c2.y.toFixed(4)}`}

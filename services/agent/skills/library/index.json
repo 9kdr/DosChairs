@@ -14,125 +14,350 @@
   "entries": [
     {
       "id": "liquid-boxes",
-      "tags": ["liquid", "metaballs", "sdf", "ogl", "paper", "motion", "background", "generator"],
+      "tags": [
+        "liquid",
+        "metaballs",
+        "sdf",
+        "ogl",
+        "paper",
+        "motion",
+        "background",
+        "generator"
+      ],
       "summary": "Two boxes orbit, touch, and merge through a smooth-min SDF rendered by OGL, with a Paper grain-gradient on top; per-box phase from Motion stagger.",
       "props": [
-        { "id": "spread", "type": "number" },
-        { "id": "speed", "type": "number" },
-        { "id": "merge", "type": "number" },
-        { "id": "size", "type": "number" },
-        { "id": "grain", "type": "number" },
-        { "id": "ink", "type": "color" },
-        { "id": "accent", "type": "color" },
-        { "id": "paper", "type": "color" }
+        {
+          "id": "spread",
+          "type": "number"
+        },
+        {
+          "id": "speed",
+          "type": "number"
+        },
+        {
+          "id": "merge",
+          "type": "number"
+        },
+        {
+          "id": "size",
+          "type": "number"
+        },
+        {
+          "id": "grain",
+          "type": "number"
+        },
+        {
+          "id": "ink",
+          "type": "color"
+        },
+        {
+          "id": "accent",
+          "type": "color"
+        },
+        {
+          "id": "paper",
+          "type": "color"
+        },
+        {
+          "id": "backdrop",
+          "type": "boolean"
+        }
       ],
       "source": "ogl",
       "libraries": [
-        { "name": "ogl", "license": "Unlicense" },
-        { "name": "motion", "license": "MIT" },
-        { "name": "@paper-design/shaders", "license": "Apache-2.0" }
+        {
+          "name": "ogl",
+          "license": "Unlicense"
+        },
+        {
+          "name": "motion",
+          "license": "MIT"
+        },
+        {
+          "name": "@paper-design/shaders",
+          "license": "Apache-2.0"
+        }
       ],
       "license": "Unlicense",
       "path": "library/liquid-boxes.tsx"
     },
     {
       "id": "dither-reveal",
-      "tags": ["dither", "reveal", "paper", "title", "generator"],
+      "tags": [
+        "dither",
+        "reveal",
+        "paper",
+        "title",
+        "generator"
+      ],
       "summary": "A Paper dithering shader wiped away over seconds to reveal the title; pattern, cell, flow, and wipe duration are Inspector controls.",
       "props": [
-        { "id": "colorBack", "type": "color" },
-        { "id": "colorFront", "type": "color" },
-        { "id": "shape", "type": "number" },
-        { "id": "size", "type": "number" },
-        { "id": "speed", "type": "number" },
-        { "id": "reveal", "type": "number" },
-        { "id": "label", "type": "string" }
+        {
+          "id": "colorBack",
+          "type": "color"
+        },
+        {
+          "id": "colorFront",
+          "type": "color"
+        },
+        {
+          "id": "shape",
+          "type": "number"
+        },
+        {
+          "id": "size",
+          "type": "number"
+        },
+        {
+          "id": "speed",
+          "type": "number"
+        },
+        {
+          "id": "reveal",
+          "type": "number"
+        },
+        {
+          "id": "label",
+          "type": "string"
+        },
+        {
+          "id": "backdrop",
+          "type": "boolean"
+        }
       ],
       "source": "paper",
-      "libraries": [{ "name": "@paper-design/shaders", "license": "Apache-2.0" }],
+      "libraries": [
+        {
+          "name": "@paper-design/shaders",
+          "license": "Apache-2.0"
+        }
+      ],
       "license": "Apache-2.0",
       "path": "library/dither-reveal.tsx"
     },
     {
       "id": "lower-third",
-      "tags": ["motion", "spring", "stagger", "title", "lower-third", "overlay"],
+      "tags": [
+        "motion",
+        "spring",
+        "stagger",
+        "title",
+        "lower-third",
+        "overlay"
+      ],
       "summary": "Kicker, title, and rule slide in on a fixed-step spring with Motion stagger delays and a faint idle float; the client seeks a paused Motion animation.",
       "props": [
-        { "id": "kicker", "type": "string" },
-        { "id": "title", "type": "string" },
-        { "id": "sub", "type": "string" },
-        { "id": "size", "type": "number" },
-        { "id": "slide", "type": "number" },
-        { "id": "speed", "type": "number" },
-        { "id": "accent", "type": "color" },
-        { "id": "ink", "type": "color" }
+        {
+          "id": "kicker",
+          "type": "string"
+        },
+        {
+          "id": "title",
+          "type": "string"
+        },
+        {
+          "id": "sub",
+          "type": "string"
+        },
+        {
+          "id": "size",
+          "type": "number"
+        },
+        {
+          "id": "slide",
+          "type": "number"
+        },
+        {
+          "id": "speed",
+          "type": "number"
+        },
+        {
+          "id": "accent",
+          "type": "color"
+        },
+        {
+          "id": "ink",
+          "type": "color"
+        }
       ],
       "source": "motion",
       "libraries": [
-        { "name": "motion", "license": "MIT" },
-        { "name": "@chair/effects", "license": "Chair, own work" }
+        {
+          "name": "motion",
+          "license": "MIT"
+        },
+        {
+          "name": "@chair/effects",
+          "license": "Chair, own work"
+        }
       ],
       "license": "MIT",
       "path": "library/lower-third.tsx"
     },
     {
       "id": "physics-letters",
-      "tags": ["physics", "matter", "anime", "stagger", "letters", "title", "generator"],
+      "tags": [
+        "physics",
+        "matter",
+        "anime",
+        "stagger",
+        "letters",
+        "title",
+        "generator"
+      ],
       "summary": "The word rains from above on a seeded matter-js simulation, letters released with anime stagger delays and spin, landing on a baseline.",
       "props": [
-        { "id": "word", "type": "string" },
-        { "id": "gravity", "type": "number" },
-        { "id": "drop", "type": "number" },
-        { "id": "spin", "type": "number" },
-        { "id": "size", "type": "number" },
-        { "id": "accent", "type": "color" },
-        { "id": "ink", "type": "color" },
-        { "id": "paper", "type": "color" }
+        {
+          "id": "word",
+          "type": "string"
+        },
+        {
+          "id": "gravity",
+          "type": "number"
+        },
+        {
+          "id": "drop",
+          "type": "number"
+        },
+        {
+          "id": "spin",
+          "type": "number"
+        },
+        {
+          "id": "size",
+          "type": "number"
+        },
+        {
+          "id": "accent",
+          "type": "color"
+        },
+        {
+          "id": "ink",
+          "type": "color"
+        },
+        {
+          "id": "paper",
+          "type": "color"
+        },
+        {
+          "id": "backdrop",
+          "type": "boolean"
+        }
       ],
       "source": "matter",
       "libraries": [
-        { "name": "matter-js", "license": "MIT" },
-        { "name": "animejs", "license": "MIT" }
+        {
+          "name": "matter-js",
+          "license": "MIT"
+        },
+        {
+          "name": "animejs",
+          "license": "MIT"
+        }
       ],
       "license": "MIT",
       "path": "library/physics-letters.tsx"
     },
     {
       "id": "morph-icon",
-      "tags": ["flubber", "morph", "icon", "glow", "generator"],
+      "tags": [
+        "flubber",
+        "morph",
+        "icon",
+        "glow",
+        "generator"
+      ],
       "summary": "One path breathes between circle, star, and square on a flubber interpolation, wrapped in the kit glow; blend, stroke, and speed are controls.",
       "props": [
-        { "id": "speed", "type": "number" },
-        { "id": "size", "type": "number" },
-        { "id": "thickness", "type": "number" },
-        { "id": "glow", "type": "number" },
-        { "id": "accent", "type": "color" },
-        { "id": "paper", "type": "color" }
+        {
+          "id": "speed",
+          "type": "number"
+        },
+        {
+          "id": "size",
+          "type": "number"
+        },
+        {
+          "id": "thickness",
+          "type": "number"
+        },
+        {
+          "id": "glow",
+          "type": "number"
+        },
+        {
+          "id": "accent",
+          "type": "color"
+        },
+        {
+          "id": "paper",
+          "type": "color"
+        }
       ],
       "source": "flubber",
       "libraries": [
-        { "name": "flubber", "license": "MIT" },
-        { "name": "@chair/effects", "license": "Chair, own work" }
+        {
+          "name": "flubber",
+          "license": "MIT"
+        },
+        {
+          "name": "@chair/effects",
+          "license": "Chair, own work"
+        }
       ],
       "license": "MIT",
       "path": "library/morph-icon.tsx"
     },
     {
       "id": "mesh-gradient",
-      "tags": ["paper", "mesh-gradient", "background", "generator"],
+      "tags": [
+        "paper",
+        "mesh-gradient",
+        "background",
+        "generator"
+      ],
       "summary": "A Paper mesh-gradient background with four editor colors, distortion, swirl, and grain; speed parks and seeks the mount frame.",
       "props": [
-        { "id": "colorA", "type": "color" },
-        { "id": "colorB", "type": "color" },
-        { "id": "colorC", "type": "color" },
-        { "id": "colorD", "type": "color" },
-        { "id": "distortion", "type": "number" },
-        { "id": "swirl", "type": "number" },
-        { "id": "speed", "type": "number" },
-        { "id": "grain", "type": "number" }
+        {
+          "id": "colorA",
+          "type": "color"
+        },
+        {
+          "id": "colorB",
+          "type": "color"
+        },
+        {
+          "id": "colorC",
+          "type": "color"
+        },
+        {
+          "id": "colorD",
+          "type": "color"
+        },
+        {
+          "id": "distortion",
+          "type": "number"
+        },
+        {
+          "id": "swirl",
+          "type": "number"
+        },
+        {
+          "id": "speed",
+          "type": "number"
+        },
+        {
+          "id": "grain",
+          "type": "number"
+        }
       ],
       "source": "paper",
-      "libraries": [{ "name": "@paper-design/shaders", "license": "Apache-2.0" }],
+      "libraries": [
+        {
+          "name": "@paper-design/shaders",
+          "license": "Apache-2.0"
+        }
+      ],
       "license": "Apache-2.0",
       "path": "library/mesh-gradient.tsx"
     }

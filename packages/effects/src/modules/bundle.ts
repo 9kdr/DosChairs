@@ -21,6 +21,7 @@ import type { OgrafBundle, OgrafProp } from "@chair/ograf";
 import type { EffectMeta } from "../kit/types.js";
 import { effectsPackageDir, isApproved, loadCatalogue } from "./catalogue.js";
 import { scanSource, validateMeta, validateProps } from "./validate.js";
+import { scopeErrors, type ScopeFlags } from "./scope.js";
 
 const PROBE_MARK = "@@CHAIR_PROBE@@";
 const PROBE_TIMEOUT_MS = 20_000;
@@ -82,6 +83,7 @@ interface ProbeOutcome {
   errors: string[];
   warnings: string[];
   checks: Record<string, boolean | number>;
+  scope?: { covers: string[]; text: string } | null;
 }
 
 async function runProbe(entry: string): Promise<ProbeOutcome> {
@@ -139,11 +141,16 @@ function emptyReport(errors: string[]): ModuleReport {
   return { ok: false, errors, warnings: [], meta: null, props: [], checks: {} };
 }
 
+export interface CheckOptions {
+  /** When set, full-frame fills and visible text fail unless asked for. */
+  scope?: ScopeFlags | null | undefined;
+}
+
 /**
  * Check one module file: static scan, import allow-list, then the probe. The
  * report says exactly what failed, in words fit to hand back to the model.
  */
-export async function checkModule(entry: string): Promise<ModuleReport> {
+export async function checkModule(entry: string, opts: CheckOptions = {}): Promise<ModuleReport> {
   const source = await readFile(entry, "utf8");
   const banned = scanSource(source);
   if (banned.length > 0) {
@@ -161,6 +168,7 @@ export async function checkModule(entry: string): Promise<ModuleReport> {
   const meta = validateMeta(outcome.meta);
   const props = validateProps(outcome.props);
   errors.unshift(...meta.errors, ...props.errors);
+  errors.push(...scopeErrors(outcome.scope?.covers ?? [], outcome.scope?.text ?? "", opts.scope ?? null));
   warnings.unshift(...meta.warnings, ...props.warnings);
   return {
     ok: errors.length === 0 && meta.value !== null && props.value !== null,

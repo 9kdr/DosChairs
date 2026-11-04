@@ -17,13 +17,27 @@ async function main(): Promise<void> {
   }
   const entry = resolve(entryArg);
   const flag = rest.indexOf("--out");
+  const dataFlag = rest.indexOf("--data");
+  const raw = dataFlag >= 0 && rest[dataFlag + 1] ? rest[dataFlag + 1]! : undefined;
+  const scope = (() => {
+    try {
+      const parsed = raw ? (JSON.parse(raw) as { scope?: unknown }) : undefined;
+      const flags = parsed?.scope as { wantsBackground?: unknown; wantsText?: unknown } | undefined;
+      if (!flags) return undefined;
+      return {
+        wantsBackground: flags.wantsBackground === true,
+        wantsText: flags.wantsText === true,
+      };
+    } catch {
+      return undefined;
+    }
+  })();
   if (command === "check") {
-    process.stdout.write(`${JSON.stringify({ report: await checkModule(entry) })}\n`);
+    process.stdout.write(`${JSON.stringify({ report: await checkModule(entry, { scope }) })}\n`);
     return;
   }
   const outDir = resolve(flag >= 0 && rest[flag + 1] ? rest[flag + 1]! : ".");
-  const dataFlag = rest.indexOf("--data");
-  const data = dataFlag >= 0 && rest[dataFlag + 1] ? JSON.parse(rest[dataFlag + 1]!) : undefined;
+  const data = raw ? JSON.parse(raw) : undefined;
   const built = await bundleModule(entry, { data });
   let files: string[] = [];
   let id: string | null = null;

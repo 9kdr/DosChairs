@@ -11,6 +11,7 @@ import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 // @ts-expect-error resolved by the bundler alias to the module under test
 import * as Mod from "chair-module-under-test";
+import { describeCovers, extractText } from "./scope.js";
 
 type Json = number | string | boolean | null | Json[] | { [k: string]: Json };
 type History = (name: string, t: number) => number | string | boolean | undefined;
@@ -28,7 +29,8 @@ const report: {
   errors: string[];
   warnings: string[];
   checks: Record<string, boolean | number>;
-} = { meta: null, props: null, errors: [], warnings: [], checks: {} };
+  scope: { covers: string[]; text: string };
+} = { meta: null, props: null, errors: [], warnings: [], checks: {}, scope: { covers: [], text: "" } };
 
 function done(): void {
   process.stdout.write(`\n@@CHAIR_PROBE@@${JSON.stringify(report)}\n`);
@@ -135,6 +137,11 @@ function probeFrames(
   if (!animates) report.warnings.push("frames never changed over time with default or swept props: nothing animates");
   if (slowest > 2000) report.errors.push(`a frame took ${Math.round(slowest)} ms to render; keep physics and loops cheap (Resolve renders every frame)`);
   else if (slowest > 250) report.warnings.push(`slowest frame ${Math.round(slowest)} ms; Resolve renders every frame, keep it cheap`);
+
+  // Scope facts from one mid frame: full-frame opaque fills and visible text.
+  // The bundler turns these into errors when the brief asked for neither.
+  const midHtml = render(swept, dur * 0.5);
+  report.scope = { covers: describeCovers(midHtml), text: extractText(midHtml) };
 
   // Every Inspector control should do something to the frame.
   const mid = dur * 0.5;

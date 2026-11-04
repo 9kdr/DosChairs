@@ -31,6 +31,7 @@ export const props = {
   speed: { type: "number", min: 0, max: 3, default: 0.5, title: "Flow Speed" },
   reveal: { type: "number", min: 2, max: 8, default: 5, title: "Reveal (s)" },
   label: { type: "string", default: "Liquid Light", title: "Title" },
+  backdrop: { type: "boolean", default: false, title: "Backdrop Fill" },
 } satisfies Record<string, PropSpec>;
 
 type Props = EffectProps<{
@@ -41,6 +42,7 @@ type Props = EffectProps<{
   speed: number;
   reveal: number;
   label: string;
+  backdrop: boolean;
 }>;
 
 export default function DitherReveal(p: Props): React.ReactElement {
@@ -52,6 +54,7 @@ export default function DitherReveal(p: Props): React.ReactElement {
   const frame = Math.round(Math.max(0, t) * 1000 * clamp(n("speed", 0.5), 0, 3));
   const wipe = clamp(t / Math.max(0.5, n("reveal", 5)), 0, 1);
   const label = c("label", "Liquid Light");
+  const backdrop = history("backdrop", t) === true;
   const hostRef = React.useRef<HTMLDivElement | null>(null);
   const mountRef = React.useRef<ShaderMount | null>(null);
 
@@ -91,7 +94,11 @@ export default function DitherReveal(p: Props): React.ReactElement {
 
   return (
     <div
-      style={{ position: "absolute", inset: 0, background: "#f1ebdd" }}
+      style={{
+        position: "absolute",
+        inset: 0,
+        background: backdrop ? c("colorBack", "#101018") : "transparent",
+      }}
       data-frame={frame}
       data-wipe={wipe.toFixed(4)}
       data-pattern={`${shape}:${size}`}

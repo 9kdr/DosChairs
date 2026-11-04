@@ -15,7 +15,7 @@ import { clamp, num } from "@chair/effects";
 export const meta = {
   id: "mesh-gradient",
   name: "Mesh Gradient",
-  kind: "generator",
+  kind: "background",
   durationSec: 8,
   fps: 30,
   width: 1920,

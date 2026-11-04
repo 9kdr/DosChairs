@@ -280,7 +280,7 @@ You write Chair effect modules: ONE TSX file that becomes a native DaVinci
 Resolve (OGraf) title. Its props become Fusion Inspector controls the editor
 can keyframe. The file must export exactly:
 
-  export const meta = { id, name, kind: 'generator'|'overlay'|'rig'|'transition',
+  export const meta = { id, name, kind: 'generator'|'overlay'|'rig'|'transition'|'background',
                         durationSec, fps, width, height };
   export const props = {     // each prop becomes an Inspector control
     targetX: { type: 'number', min: 0, max: 1920, default: 960, title: 'Mouse X' },
@@ -303,8 +303,14 @@ Hard rules (a check renders your frames, seeks away and back, and rejects the fi
    Prefer numbers and colors: they are keyframable. Prop ids are plain identifiers and may not be
    t, frame, fps, width, height, history, data. Make every prop visibly change the frame.
 5. Imports: ONLY the approved list below, as written. No relative imports, no other packages.
-6. Fill the frame: position:absolute; inset:0 root, sized to width x height, transparent
-   background for overlay/rig kinds. Colors arrive as lowercase '#rrggbb'.
+6. Scope: render ONLY the element the brief asked for, on a TRANSPARENT background by
+   default. Paint a background only if the brief asks for one, or when kind is
+   'background' (a generator that IS the backdrop). Gate any other fill behind a
+   `backdrop` boolean prop that defaults to false. No text unless the brief asks for
+   text (Resolve has Text+ for titles). No frames, labels, vignettes, or extra shapes:
+   the piece must composite cleanly over footage. Root: position:absolute; inset:0,
+   sized to width x height. Colors arrive as lowercase '#rrggbb'. The check rejects a
+   fully opaque frame or visible text the brief did not ask for, and you get one repair.
 7. Reply with ONE ```tsx code block containing the whole file and nothing else.
 
 Approved imports:
@@ -340,7 +346,9 @@ def _reference_blocks(
 SPARK_BRIEF_NOTE = (
     "Spark works inside constraints: start from the closest gold module or "
     "library adapter below — pick one and adapt it. Keep its shape, its "
-    "typed props, and the house taste; invent only what the brief needs."
+    "typed props, and the house taste; invent only what the brief needs. "
+    "Render only the element asked for on a transparent background (no text "
+    "unless asked); gate any fill behind a backdrop prop defaulting off."
 )
 
 
@@ -518,9 +526,34 @@ def _write_source(module_id: str, source: str, env: Mapping[str, str] | None = N
     return path
 
 
-def _check_source(module_id: str, source: str, env: Mapping[str, str] | None) -> dict[str, Any]:
+_BACKGROUND_WORDS = {"background", "backdrop", "bg", "wallpaper"}
+_TEXT_WORDS = {
+    "text", "title", "caption", "says", "say", "label", "word", "words",
+    "letter", "letters", "type", "typographic", "typography", "heading", "subtitle",
+}
+
+
+def scope_from_brief(brief: str) -> dict[str, bool]:
+    """What the brief asks the frame to carry: background and/or text.
+
+    The check rejects a fully opaque frame or visible text unless the words
+    are here, so a piece stays the element it was asked for on a transparent
+    stage. Background generators set kind background instead of asking.
+    """
+    tokens = set(re.findall(r"[a-z]+", (brief or "").lower()))
+    return {
+        "wantsBackground": not tokens.isdisjoint(_BACKGROUND_WORDS),
+        "wantsText": not tokens.isdisjoint(_TEXT_WORDS),
+    }
+
+
+def _check_source(
+    module_id: str, source: str, env: Mapping[str, str] | None,
+    scope: Mapping[str, bool] | None = None,
+) -> dict[str, Any]:
     path = _write_source(module_id, source, env)
-    report = run_cli("check", path)["report"]
+    data = json.dumps({"scope": dict(scope)}) if scope is not None else None
+    report = run_cli("check", path, None, data)["report"]
     _count_check(report)
     return report
 
@@ -567,6 +600,9 @@ def generate_module(
     """Draft with Muse Spark (or Wonder), check, repair once, then store."""
     if width <= 0 or height <= 0 or fps <= 0 or duration_sec <= 0:
         raise InvalidModule("canvas width, height, fps, and durationSec must be positive")
+    if mode not in MODES:
+        raise InvalidModule(f"unknown mode: {mode!r} (want 'spark' or 'wonder')")
+    scope = scope_from_brief(brief)
     active = client if client is not None else _model_client(model)
     model = getattr(getattr(active, "models", None), "executor", None) or module_model(env)
     messages = build_generate_messages(
@@ -584,7 +620,7 @@ def generate_module(
         errors: list[str]
         try:
             source = parse_code(completion.text)
-            report = _check_source(module_id, source, env)
+            report = _check_source(module_id, source, env, scope)
             errors = [] if report["ok"] else list(report["errors"])
         except InvalidModule as parse_error:
             if str(parse_error).startswith("module toolchain"):
@@ -596,7 +632,7 @@ def generate_module(
             retry = active.execute(build_repair_messages(source, errors))
             try:
                 source = parse_code(retry.text)
-                report = _check_source(module_id, source, env)
+                report = _check_source(module_id, source, env, scope)
             except InvalidModule as second:
                 if str(second).startswith("module toolchain"):
                     raise

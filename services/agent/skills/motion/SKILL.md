@@ -9,6 +9,8 @@ model: muse-spark-1.3-contributor
 
 Momentum in, overshoot a little, settle. Staggered entrances, one idea per beat.
 
+Scope: only the asked-for element, transparent by default. No text unless asked, no extras. Fills need a `backdrop` boolean defaulting off.
+
 ## Contract
 
 - Springs re-simulate from 0..t at a fixed step (`simulateSpring`, `followProp`, matter `simulateWorld`). Never keep velocity between frames.

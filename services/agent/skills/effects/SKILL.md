@@ -11,6 +11,7 @@ Write Chair effect modules: one TSX file that becomes a native Resolve (OGraf) t
 
 ## Contract
 
+- Scope: only the asked-for element, transparent by default. No text unless asked, no frames/labels/vignettes/extras. Fills need a `backdrop` boolean defaulting off; kind `background` excepted.
 - The frame is a pure function of (props, history, t). No clocks, no `Math.random` (use `mulberry32`/`hash2`), no rAF loops, no timers, no network, no module-level mutable state.
 - Physics re-simulates from 0..t at a fixed step from `history()` (see `simulateWorld`, `simulateSpring`, `followProp`, `verletChain`).
 - Time arrives only as `t` (seconds). Animation libraries stay paused and move only through `seek(t)`: `seekPaper`, `seekOgl`, `seekMotion`, `seekAnime`, `simulateWorld`, `seekTransition`, `morphAt`, `seekWaapi`.
