@@ -16,6 +16,7 @@ from chair_agent.client import (
     load_settings,
     set_key,
 )
+from chair_agent.crew import handle_direct
 from chair_agent.jobs import (
     Job,
     JobConflict,
@@ -31,7 +32,9 @@ from chair_agent.projects import detect_projects
 from chair_agent.review import ReviewUnavailable, build_review
 from chair_agent.transcribe import handle_transcribe
 
-HANDLERS: dict[str, TaskHandler] = {"transcribe": handle_transcribe, "edit": handle_edit}
+HANDLERS: dict[str, TaskHandler] = {
+    "transcribe": handle_transcribe, "edit": handle_edit, "direct": handle_direct,
+}
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -403,7 +406,15 @@ def _health() -> dict[str, Any]:
         "macros": macros.status_snapshot(),
         "modules": modules.status_snapshot() | {"model": modules.module_model()},
         "pipeline": _pipeline(),
+        "crew": _crew_status(),
     }
+
+
+def _crew_status() -> dict[str, Any]:
+    """Crew counters for /health; zeros when the crew never ran."""
+    from chair_agent.crew import status_snapshot
+
+    return status_snapshot()
 
 
 def _pieces_body(path: str) -> dict[str, Any]:

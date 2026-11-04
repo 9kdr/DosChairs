@@ -167,6 +167,23 @@ class ModelClient:
     def verify(self, messages: Sequence[Message]) -> Completion:
         return self.complete("verifier", messages)
 
+    def complete_model(self, model: str, messages: Sequence[Message]) -> Completion:
+        """One call with an explicit model name, bypassing the role map.
+
+        Lets a subagent pick Spark or Wonder per task without rewiring roles.
+        """
+        if not isinstance(model, str) or not model.strip():
+            raise ValueError("model must be a non-empty string")
+        payload = self.transport.post_json(
+            "/chat/completions",
+            {
+                "model": model,
+                "messages": [message.model_dump(mode="json") for message in messages],
+            },
+            self._api_key,
+        )
+        return Completion(model=model, text=completion_text(payload))
+
     def complete(self, role: RoleName, messages: Sequence[Message]) -> Completion:
         model = self._model_name(role)
         payload = self.transport.post_json(
