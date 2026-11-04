@@ -10,8 +10,8 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { exportOGraf } from "@chair/effects";
-import type { EffectSpec } from "@chair/effects";
+import { exportOGraf } from "@chair/effects/node";
+import type { EffectSpec } from "@chair/effects/node";
 import { wrapReactComponent } from "@chair/ograf";
 
 function outDir(): string {

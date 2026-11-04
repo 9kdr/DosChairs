@@ -189,6 +189,12 @@ export type ProjectStore = {
   acceptItem: (id: string) => void;
   rejectItem: (id: string) => void;
   acceptAll: () => void;
+  /**
+   * Apply one person-made edit (Effect Maker) through the accept pipeline:
+   * same history entry and inverse as a proposal item. Returns its item id
+   * on success, or null with `refusal` set when it cannot be undone.
+   */
+  applyItem: (item: ChangesetItem) => string | null;
   /** Rewind one entry plus its tail, applying the inverses at once. */
   undoToHere: (itemId: string) => void;
   /** Rewind the newest entry, applying its inverse at once. */
@@ -376,6 +382,35 @@ export function useProject(
     setRefusal(blocked);
   };
 
+  const applyItem = (item: ChangesetItem): string | null => {
+    if (!timeline) {
+      setRefusal({ itemId: item.id, reason: "No cut is loaded to apply onto." });
+      return null;
+    }
+    const own: Changeset = {
+      schemaVersion: "0.1.0",
+      id: `cs-${item.id}`,
+      baseRevision: changeset?.baseRevision ?? "local",
+      items: [{ ...item, status: "accepted" }],
+    };
+    const checked = tryHistoryEntry(
+      own,
+      own.items[0]!,
+      timeline,
+      STAND_IN_ACCEPTED_BY,
+      new Date().toISOString(),
+      STAND_IN_TASK_ID,
+      "user",
+    );
+    if (!checked.ok) {
+      setRefusal({ itemId: item.id, reason: checked.reason });
+      return null;
+    }
+    recordEntries([checked.entry]);
+    setRefusal(null);
+    return item.id;
+  };
+
   const rejectItem = (id: string) => {
     if (!changeset?.items.some((entry) => entry.id === id)) return;
     setChangeset(reviewItem(changeset, id, "rejected"));
@@ -449,6 +484,7 @@ export function useProject(
     acceptItem,
     rejectItem,
     acceptAll,
+    applyItem,
     undoToHere,
     undoLast,
     retry: () => setNonce((current) => current + 1),
