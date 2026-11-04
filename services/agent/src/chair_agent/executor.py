@@ -333,7 +333,7 @@ def _place_sfx(
             )]
         duration = moment
         start = 0.0
-    clip_id = f"sfx-{kind.replace('-', '')}-1"
+    clip_id = f"sfx-{kind}-1"
     return [sfx_clip_op(
         f"sfx-{kind}-1", track_id, clip_id,
         f"{entry.name} lands on {moment:.2f}s.",
