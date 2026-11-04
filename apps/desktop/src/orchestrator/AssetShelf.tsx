@@ -430,6 +430,8 @@ function ProxyBadge({ className }: { className?: string }) {
   );
 }
 
+export type AssetKindScope = "all" | "media" | "sounds";
+
 type AssetShelfProps = {
   className?: string;
   /** Which project's listing to render, through the agent assets endpoint. */
@@ -438,6 +440,10 @@ type AssetShelfProps = {
   frozen?: boolean;
   /** Lock indicator transitions so highlights track 1:1 mid-morph. */
   transitionLock?: boolean;
+  /** Narrow the listing to media (video and stills) or sounds. */
+  kindScope?: AssetKindScope;
+  /** Header title. Defaults to Assets. */
+  title?: string;
   /**
    * Kept for callers that also feed the dock's Pieces section; the shelf
    * itself renders assets only.
@@ -449,7 +455,20 @@ type AssetShelfProps = {
   pieceRefusal?: string | null;
 };
 
-export function AssetShelf({ className, projectId, frozen = false, transitionLock = false }: AssetShelfProps) {
+export function AssetShelf({
+  className,
+  projectId,
+  frozen = false,
+  transitionLock = false,
+  kindScope = "all",
+  title = "Assets",
+}: AssetShelfProps) {
+  const inScope =
+    kindScope === "all"
+      ? () => true
+      : kindScope === "media"
+        ? (kind: AssetKind) => kind !== "audio"
+        : (kind: AssetKind) => kind === "audio";
   const reduce = useReducedMotion();
   const listing = useProjectAssets(projectId);
   // Files the user imports with no linked editor ride above the listing.
@@ -579,14 +598,15 @@ export function AssetShelf({ className, projectId, frozen = false, transitionLoc
         return asset ? [asset] : [];
       });
       const typed = contents.filter(
-        (asset) => typeFilter === "all" || asset.kind === typeFilter,
+        (asset) =>
+          inScope(asset.kind) && (typeFilter === "all" || asset.kind === typeFilter),
       );
       if (typed.length === 0) return false;
       if (!needle) return true;
       if (item.name.toLowerCase().includes(needle)) return true;
       return typed.some((asset) => asset.name.toLowerCase().includes(needle));
     });
-  }, [assets, folder, folders, needle, removedIds, typeFilter]);
+  }, [assets, folder, folders, inScope, needle, removedIds, typeFilter]);
 
   const visible = useMemo(() => {
     const pool = folder
@@ -597,10 +617,11 @@ export function AssetShelf({ className, projectId, frozen = false, transitionLoc
         })
       : assets.filter((item) => !filedIds.has(item.id) && !removedIds.has(item.id));
     return pool.filter((item) => {
+      if (!inScope(item.kind)) return false;
       if (typeFilter !== "all" && item.kind !== typeFilter) return false;
       return item.name.toLowerCase().includes(needle);
     });
-  }, [assets, filedIds, folder, needle, removedIds, typeFilter]);
+  }, [assets, filedIds, folder, inScope, needle, removedIds, typeFilter]);
 
   const importFiles = (list: FileList | null) => {
     if (!list || list.length === 0) return;
@@ -909,7 +930,7 @@ export function AssetShelf({ className, projectId, frozen = false, transitionLoc
       )}
     >
       <div className="flex min-w-0 shrink-0 items-center gap-2">
-        <h2 className="min-w-0 truncate text-sm font-medium text-neutral-100">Assets</h2>
+        <h2 className="min-w-0 truncate text-sm font-medium text-neutral-100">{title}</h2>
         {listing.stale ? (
           <p
             className="flex min-w-0 flex-1 items-center gap-1.5 truncate text-xs text-amber-200/80"
@@ -955,39 +976,41 @@ export function AssetShelf({ className, projectId, frozen = false, transitionLoc
       <div className="grid min-h-0 min-w-0 flex-1 grid-cols-[minmax(0,1fr)] grid-rows-[minmax(0,1fr)] gap-3 overflow-hidden">
         <div className="flex h-full min-h-0 min-w-0 flex-col gap-3">
       <div className="relative z-20 flex min-w-0 shrink-0 flex-wrap items-center gap-1.5">
-          <Menu>
-            <MenuTrigger
-              render={
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="ghost"
-                  className="max-w-full min-w-0 shrink overflow-hidden border-white/12"
-                  aria-label={`Filter: ${filterLabel}`}
-                />
-              }
-            >
-              <ListFilter />
-              <span className="min-w-0 truncate">{filterLabel}</span>
-              <ChevronDown />
-            </MenuTrigger>
-            <MenuPopup align="start" className={MENU_POPUP}>
-              <MenuRadioGroup
-                value={typeFilter}
-                onValueChange={(value) => {
-                  if (value === "all" || value === "video" || value === "image" || value === "audio") {
-                    setTypeFilter(value);
-                  }
-                }}
+          {kindScope === "all" ? (
+            <Menu>
+              <MenuTrigger
+                render={
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    className="max-w-full min-w-0 shrink overflow-hidden border-white/12"
+                    aria-label={`Filter: ${filterLabel}`}
+                  />
+                }
               >
-                {TYPE_FILTERS.map((item) => (
-                  <MenuRadioItem key={item.id} value={item.id} closeOnClick className={MENU_ITEM}>
-                    {item.label}
-                  </MenuRadioItem>
-                ))}
-              </MenuRadioGroup>
-            </MenuPopup>
-          </Menu>
+                <ListFilter />
+                <span className="min-w-0 truncate">{filterLabel}</span>
+                <ChevronDown />
+              </MenuTrigger>
+              <MenuPopup align="start" className={MENU_POPUP}>
+                <MenuRadioGroup
+                  value={typeFilter}
+                  onValueChange={(value) => {
+                    if (value === "all" || value === "video" || value === "image" || value === "audio") {
+                      setTypeFilter(value);
+                    }
+                  }}
+                >
+                  {TYPE_FILTERS.map((item) => (
+                    <MenuRadioItem key={item.id} value={item.id} closeOnClick className={MENU_ITEM}>
+                      {item.label}
+                    </MenuRadioItem>
+                  ))}
+                </MenuRadioGroup>
+              </MenuPopup>
+            </Menu>
+          ) : null}
         <Menu>
           <MenuTrigger
             render={
