@@ -185,23 +185,42 @@ describe("thread copy", () => {
     expect(working).toContain("working on it");
   });
 
-  it("reports the real completed result as proposals only", () => {
+  it("points a finished sound turn at the card that says what landed", () => {
     const text = textForJob(
       job("completed", {
         artifacts: [{ url: "http://127.0.0.1:8787/p/preview.mp4" }],
-        changeset: { status: "proposed", ops: [{ id: "op-1" }, { id: "op-2" }] },
+        changeset: { status: "proposed", ops: [{ op: "set_gain", patch: { gainDb: -6 } }] },
       }),
     );
     expect(text).toContain("1 preview");
-    expect(text).toContain("2 proposed changes");
+    expect(text).toContain("1 edit");
     expect(text).toContain("http://127.0.0.1:8787/p/preview.mp4");
-    expect(text).toContain("Done: 1 preview, 2 proposed changes.");
+    expect(text).toContain("Writing to Resolve on a copy");
+    expect(text).toContain("the card says what landed, with Undo");
+    expect(text).not.toContain("proposed");
+    expect(text).not.toContain("accept");
+  });
+
+  it("says honestly when other edits have no apply path yet", () => {
+    const text = textForJob(
+      job("completed", {
+        changeset: { status: "proposed", ops: [{ id: "op-1" }, { id: "op-2" }] },
+      }),
+    );
+    expect(text).toContain("2 edits");
+    expect(text).toContain("haven't reached Resolve yet");
+    expect(text).toContain("only sound lands on its own");
+    expect(text).not.toContain("proposed");
+    expect(text).not.toContain("accept");
     expect(text).not.toContain("Review");
   });
 
-  it("says plainly when the agent proposed nothing", () => {
+  it("says plainly when the turn produced nothing", () => {
     const text = textForJob(job("completed"));
-    expect(text).toContain("Done: no previews, no proposed changes.");
+    expect(text).toContain("no previews, no edits");
+    expect(text).toContain("Nothing changed");
+    expect(text).not.toContain("proposed");
+    expect(text).not.toContain("accept");
   });
 
   it("repeats the agent's verbatim error and promises nothing changed", () => {
@@ -252,7 +271,8 @@ describe("live activity", () => {
     const done = activityForLiveJob(
       job("completed", { changeset: { status: "proposed", ops: [{ id: "op-1" }] } }),
     );
-    expect(done.headline).toContain("1 proposed change");
+    expect(done.headline).toContain("1 edit");
+    expect(done.headline).not.toContain("proposed");
     const failed = activityForLiveJob(job("failed", { error: "no preview rendered" }));
     expect(failed.headline).toContain("Couldn't finish");
     expect(failed.steps[2]?.label).toContain("no preview rendered");

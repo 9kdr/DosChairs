@@ -24,9 +24,9 @@ export const UNDO_PROMPT = "Undo this task's changes.";
 
 /**
  * A full thread for one running task. Turns run live on the agent; undo
- * prompts propose rewinding the task's accepted tail as one gated
- * changeset. Each turn carries the composer's model pick and attachments.
- * Sending does not change the timeline.
+ * prompts rewind the task's applied tail at once onto a copy. Each turn
+ * carries the composer's model pick and attachments. Sending does not
+ * change the timeline.
  */
 export function TaskChat({
   task,
@@ -43,7 +43,7 @@ export function TaskChat({
   history: readonly HistoryEntry[];
   onClose: () => void;
   onSend: (text: string) => void;
-  /** Propose rewinding the task's tail; answers the undo prompt. */
+  /** Rewind the task's tail at once; answers the undo prompt. */
   onUndoRequest?: (task: RunningTask) => string;
   onUndoEntry?: (entry: HistoryEntry) => void;
   /** Where the composer's "Add a model key" goes. */

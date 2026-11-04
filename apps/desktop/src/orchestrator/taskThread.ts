@@ -4,9 +4,10 @@
  * Opening a task starts (or resumes, via a stable idempotency key) one real
  * agent turn scoped to that task; every note after that starts its own turn.
  * Poll updates stream each turn's live status into the thread, and the
- * terminal job record becomes the reply: real request ids, real artifact and
- * proposal counts, or the agent's verbatim error. Nothing here applies a
- * changeset or touches the timeline; finished turns only describe proposals.
+ * terminal job record becomes the reply: real artifact and edit counts,
+ * or the agent's verbatim error. Finished sound turns fire the Resolve
+ * write on arrival; the thread says what landed instead of asking
+ * anyone to accept. Nothing here touches the timeline itself.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ServiceError, type FetchFn, type ServicesClient } from "../lib/services/client";
@@ -702,9 +703,17 @@ export function textForJob(job: AgentJob): string {
   const ops = job.changeset?.ops.length ?? 0;
   const previewBit =
     previews === 0 ? "no previews" : previews === 1 ? "1 preview" : `${previews} previews`;
-  const opBit =
-    ops === 0 ? "no proposed changes" : ops === 1 ? "1 proposed change" : `${ops} proposed changes`;
-  let text = `Done: ${previewBit}, ${opBit}.`;
+  const opBit = ops === 0 ? "no edits" : ops === 1 ? "1 edit" : `${ops} edits`;
+  // Finished sound turns fire the Resolve write on arrival, so the reply
+  // points at the card that says what landed, with Undo. Other edit ops
+  // have no apply path yet: described honestly, never silently landed.
+  const landing =
+    ops === 0
+      ? "Nothing changed."
+      : hasSoundItems(job)
+        ? "Writing to Resolve on a copy — the card says what landed, with Undo."
+        : "They haven't reached Resolve yet — only sound lands on its own.";
+  let text = `Done: ${previewBit}, ${opBit}. ${landing}`;
   if (previews > 0) {
     text += ` Preview files: ${job.artifacts.map((artifact) => artifact.url).join(", ")}.`;
   }
@@ -759,8 +768,7 @@ export function activityForLiveJob(job: AgentJob): TaskActivity {
   const ops = job.changeset?.ops.length ?? 0;
   const previewBit =
     previews === 0 ? "no previews" : previews === 1 ? "1 preview" : `${previews} previews`;
-  const opBit =
-    ops === 0 ? "no proposed changes" : ops === 1 ? "1 proposed change" : `${ops} proposed changes`;
+  const opBit = ops === 0 ? "no edits" : ops === 1 ? "1 edit" : `${ops} edits`;
   const done =
     job.status === "completed"
       ? { headline: `Done: ${opBit}, ${previewBit}`, result: `Done: ${opBit}, ${previewBit}` }
