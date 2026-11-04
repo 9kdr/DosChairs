@@ -145,14 +145,14 @@ export function HistoryCard({
     <section
       aria-label="History"
       className={cn(
-        "flex flex-col gap-1 rounded-[28px] bg-[#1a1a1a] p-4 text-neutral-100 shadow-raised ring-1 ring-white/8",
+        "flex flex-col gap-1 rounded-card bg-card p-4 text-neutral-100",
         className,
       )}
     >
       <div className="flex items-center gap-2 px-1 pb-1">
         <HistoryIcon className="size-4 text-neutral-400" aria-hidden="true" />
-        <h2 className="text-sm font-semibold tracking-wide text-neutral-100">History</h2>
-        <span className="text-xs tabular-nums text-neutral-500">
+        <h2 className="text-sm font-medium text-neutral-100">History</h2>
+        <span className="text-xs tabular-nums text-muted-foreground">
           {entries.length === 1 ? "1 entry" : `${entries.length} entries`}
         </span>
         {onUndoLast && entries.length > 0 ? (
@@ -168,12 +168,12 @@ export function HistoryCard({
             Undo
           </Button>
         ) : (
-          <p className="ml-auto text-xs text-neutral-500">Applied onto a copy. Undo is one key.</p>
+          <p className="ml-auto text-xs text-muted-foreground">Applied onto a copy. Undo is one key.</p>
         )}
       </div>
       {entries.length === 0 ? (
-        <p className="px-1 py-2 text-xs text-neutral-500">
-          Nothing applied yet — new edits land here in History with their undo point.
+        <p className="px-1 py-2 text-xs text-muted-foreground">
+          Nothing applied yet.
         </p>
       ) : (
         <ol aria-label="History entries" className="flex min-h-0 flex-col">
@@ -191,7 +191,7 @@ export function HistoryCard({
                   index === focusedIndex && "bg-white/[0.05] ring-1 ring-lime-300/60 ring-inset",
                 )}
               >
-                <span className="w-7 shrink-0 pt-0.5 text-xs tabular-nums text-neutral-500">
+                <span className="w-7 shrink-0 pt-0.5 text-xs tabular-nums text-muted-foreground">
                   #{index + 1}
                 </span>
                 <div className="min-w-0 flex-1">
@@ -199,30 +199,30 @@ export function HistoryCard({
                     <span className="truncate">
                       {opLabel(entry.op)}
                       {entry.targetId ? (
-                        <span className="ml-2 font-normal text-neutral-500">
+                        <span className="ml-2 font-normal text-muted-foreground">
                           {entry.targetId}
                         </span>
                       ) : null}
                     </span>
                     <HistoryActorBadge actor={entry.actor} />
                   </p>
-                  <p className="mt-0.5 text-xs text-neutral-500">
+                  <p className="mt-0.5 text-xs text-muted-foreground">
                     Applied {clockTime(entry.acceptedAt)} by {entry.acceptedBy}
                   </p>
                   <HistoryFallbackLine entry={entry} />
                   {open ? (
-                    <div className="mt-1.5 rounded-xl bg-black/30 p-3 ring-1 ring-white/[0.06]">
+                    <div className="mt-1.5 rounded-xl bg-black/30 p-3">
                       <p className="truncate font-mono text-xs text-neutral-400">
                         {entry.itemId}
                       </p>
-                      <p className="mt-1 text-xs leading-5 text-neutral-500">
+                      <p className="mt-1 text-xs leading-5 text-muted-foreground">
                         Rewinds with {opLabel(entry.inverse.op)}
                         {entry.inverse.targetId ? ` on ${entry.inverse.targetId}` : ""}
                         {entry.beatId ? <span> · step {entry.beatId}</span> : null}
                       </p>
                     </div>
                   ) : (
-                    <p className="mt-0.5 truncate text-xs text-neutral-600">
+                    <p className="mt-0.5 truncate text-xs text-neutral-500">
                       <span className="font-mono">{entry.itemId}</span>
                       {entry.beatId ? <span> · step {entry.beatId}</span> : null}
                     </p>
@@ -250,8 +250,8 @@ export function HistoryCard({
         </ol>
       )}
       {entries.length > 0 ? (
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-white/[0.06] px-1 pt-2.5 pb-1 text-[11px] leading-5 text-neutral-500">
-          <KeyboardIcon className="size-3.5 text-neutral-600" aria-hidden="true" />
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-white/[0.06] px-1 pt-2.5 pb-1 text-[11px] leading-5 text-muted-foreground">
+          <KeyboardIcon className="size-3.5 text-neutral-500" aria-hidden="true" />
           <span className="flex items-center gap-1">
             <Kbd>j</Kbd>
             <Kbd>k</Kbd>
@@ -281,9 +281,9 @@ export function HistoryCard({
           <Dialog.Backdrop className="fixed inset-0 z-50 bg-black/70 transition-opacity duration-150 data-[ending-style]:opacity-0 data-[starting-style]:opacity-0" />
           <Dialog.Popup
             aria-label="History shortcuts"
-            className="fixed top-1/2 left-1/2 z-50 max-h-[85vh] w-[calc(100%-2rem)] max-w-md -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-2xl bg-[#161616] p-6 ring-1 ring-white/10 transition-[scale,opacity] duration-150 data-[ending-style]:scale-[0.98] data-[ending-style]:opacity-0 data-[starting-style]:scale-[0.98] data-[starting-style]:opacity-0"
+            className="fixed top-1/2 left-1/2 z-50 max-h-[85vh] w-[calc(100%-2rem)] max-w-md -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-card bg-popover p-6 ring-1 ring-white/10 transition-[scale,opacity] duration-150 data-[ending-style]:scale-[0.98] data-[ending-style]:opacity-0 data-[starting-style]:scale-[0.98] data-[starting-style]:opacity-0"
           >
-            <Dialog.Title className="text-base font-semibold text-neutral-100">
+            <Dialog.Title className="text-base font-medium text-neutral-100">
               History shortcuts
             </Dialog.Title>
             <Dialog.Description className="mt-1 text-sm text-neutral-400">
@@ -304,7 +304,7 @@ export function HistoryCard({
                 </li>
               ))}
             </ul>
-            <p className="mt-4 text-xs leading-5 text-neutral-500">
+            <p className="mt-4 text-xs leading-5 text-muted-foreground">
               Every apply lands on a copy, so every undo has a way back.
             </p>
             <div className="mt-5 flex justify-end">

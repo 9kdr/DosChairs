@@ -2,8 +2,10 @@ import { RefreshCwIcon } from "lucide-react";
 import packageJson from "../../package.json";
 import { motion, useReducedMotion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
+import { DitherArt } from "@/components/dither-art";
 import { SmoothScrollTarget } from "@/components/smooth-scroll";
 import { Button } from "@/components/ui/button";
+import { Empty, EmptyArt } from "@/components/ui/empty";
 import { cn } from "@/lib/utils";
 import { ChairMark } from "./ChairMark";
 import { EditorLogo } from "./EditorLogo";
@@ -30,9 +32,6 @@ import { SettingsScreen } from "../settings/SettingsScreen";
 import { useElementWidth } from "./use-element-width";
 import { useProjects } from "./useProjects";
 
-/** Halfway between Tailwind neutral-900 (#171717) and 950 (#0a0a0a). */
-const HOME_BG = "#111111";
-
 type HomeScreenProps = {
   onOpenProject: (projectId: string) => void;
 };
@@ -57,8 +56,7 @@ export function HomeScreen({ onOpenProject }: HomeScreenProps) {
   return (
     <section
       aria-label="Home"
-      className="relative flex h-full min-h-0 flex-col overflow-hidden text-neutral-100"
-      style={{ backgroundColor: HOME_BG }}
+      className="relative flex h-full min-h-0 flex-col overflow-hidden bg-background text-neutral-100"
     >
       <div
         ref={scrollRef}
@@ -77,12 +75,7 @@ export function HomeScreen({ onOpenProject }: HomeScreenProps) {
                   <PiecesShelf />
                 </div>
               ) : null}
-              {tab === "marketplace" ? (
-                <PlaceholderPane
-                  title="Marketplace"
-                  body="Download pieces other people publish. Wired later — the dock slot is here so the home layout stays honest."
-                />
-              ) : null}
+              {tab === "marketplace" ? <PlaceholderPane title="Marketplace" /> : null}
             </>
           )}
         </div>
@@ -93,15 +86,12 @@ export function HomeScreen({ onOpenProject }: HomeScreenProps) {
         aria-hidden="true"
         className="pointer-events-none absolute inset-x-0 bottom-0 z-10 h-24"
         style={{
-          background: `linear-gradient(to top, ${HOME_BG} 0%, color-mix(in srgb, ${HOME_BG} 85%, transparent) 55%, transparent 100%)`,
+          background: `linear-gradient(to top, var(--background) 0%, color-mix(in srgb, var(--background) 85%, transparent) 55%, transparent 100%)`,
         }}
       />
 
-      <div className="pointer-events-none absolute bottom-5 left-5 z-20 flex items-center gap-2.5 text-neutral-400">
+      <div className="pointer-events-none absolute bottom-5 left-5 z-20 flex items-center text-neutral-400">
         <ChairMark className="h-8 w-auto text-neutral-200" />
-        <span className="text-base font-medium tracking-wide text-neutral-200">
-          Chair
-        </span>
       </div>
 
       <div className="pointer-events-none absolute bottom-5 right-5 z-20 flex h-8 items-center text-xs text-neutral-500">
@@ -228,7 +218,7 @@ function ProjectsPane({
         ) : detected.phase === "error" ? (
           <ProjectsNotice
             title="Couldn't reach the agent"
-            body="Chair looks for projects through its agent, and the agent didn't answer. Start it and try again."
+            body="The agent didn't answer. Start it and try again."
             actionLabel="Retry"
             onAction={detected.rescan}
           />
@@ -239,11 +229,7 @@ function ProjectsPane({
                 ? "No editors connected"
                 : "No projects found"
             }
-            body={
-              detected.editors.every((editor) => editor.status === "stopped")
-                ? "Open a project in your editor, then press Rescan and it will show up here."
-                : "Nothing to show yet. Open a project in your editor and press Rescan."
-            }
+            body="Open a project in your editor, then Rescan."
             actionLabel="Rescan"
             onAction={detected.rescan}
             loading={detected.scanning}
@@ -391,7 +377,7 @@ function ProjectsGrid({
                   onBlur={() => onHover(null)}
                   className={cn(
                     "absolute top-0 bottom-0 z-10 rounded-xl outline-none",
-                    "focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-[#111111]",
+                    "focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
                     emphasized ? "inset-x-[9%]" : "inset-x-0",
                   )}
                 />
@@ -412,10 +398,10 @@ function ProjectsSkeleton({ columns, gapClass }: { columns: number; gapClass: st
     >
       {Array.from({ length: Math.max(columns * 2, 4) }, (_, index) => (
         <div key={index} className="flex w-full flex-col gap-2">
-          <div className="aspect-[16/10] rounded-xl bg-neutral-800/80 ring-1 ring-white/[0.06]" />
+          <div className="aspect-[16/10] rounded-xl bg-card" />
           <div className="flex flex-col gap-1.5 px-0.5 py-0.5">
-            <div className="h-3.5 w-3/4 rounded bg-neutral-800" />
-            <div className="h-3 w-1/3 rounded bg-neutral-800/70" />
+            <div className="h-3.5 w-3/4 rounded bg-card" />
+            <div className="h-3 w-1/3 rounded bg-card" />
           </div>
         </div>
       ))}
@@ -462,8 +448,8 @@ function EditorsStrip({ editors }: { editors: EditorInfo[] }) {
       className={cn(
         // self-start: flex-col parent would otherwise stretch this full width
         "inline-flex h-9 w-fit shrink-0 items-center gap-0.5 self-start rounded-full p-1",
-        "bg-[#1a1a1a]/95 shadow-raised ring-1 ring-white/[0.08] backdrop-blur-md",
-        "supports-[backdrop-filter]:bg-[#1a1a1a]/88",
+        "bg-card/95 shadow-rim backdrop-blur-md",
+        "supports-[backdrop-filter]:bg-card/88",
       )}
     >
       {editors.map((editor) => (
@@ -477,7 +463,7 @@ function EditorsStrip({ editors }: { editors: EditorInfo[] }) {
           <span
             aria-hidden="true"
             className={cn(
-              "pointer-events-none absolute top-1 right-1 size-1.5 rounded-full ring-2 ring-[#1a1a1a]",
+              "pointer-events-none absolute top-1 right-1 size-1.5 rounded-full ring-2 ring-card",
               STATUS_DOT[editor.status],
             )}
           />
@@ -487,11 +473,15 @@ function EditorsStrip({ editors }: { editors: EditorInfo[] }) {
   );
 }
 
-function PlaceholderPane({ title, body }: { title: string; body: string }) {
+function PlaceholderPane({ title }: { title: string }) {
   return (
-    <div className="mx-auto flex w-full max-w-lg flex-col items-start gap-2 rounded-2xl bg-white/[0.03] px-5 py-6 ring-1 ring-white/[0.06]">
-      <h2 className="text-base font-medium">{title}</h2>
-      <p className="text-sm leading-6 text-neutral-400">{body}</p>
+    <div className="mx-auto w-full max-w-lg rounded-card bg-card p-5">
+      <Empty className="gap-4 py-6">
+        <EmptyArt>
+          <DitherArt seed={3} />
+        </EmptyArt>
+        <p className="text-sm text-muted-foreground">{title}</p>
+      </Empty>
     </div>
   );
 }

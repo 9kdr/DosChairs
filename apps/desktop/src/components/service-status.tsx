@@ -16,11 +16,6 @@ function shortLabel(name: string, state: ServiceState): string {
   return `${name} checking`;
 }
 
-/** What the pill shows: a plain offline word next to the red dot when down. */
-function pillLabel(name: string, state: ServiceState): string {
-  return state.phase === "down" ? `${name} offline` : name;
-}
-
 function detailLine(name: string, state: ServiceState, extra: string | null): string {
   if (state.phase === "up") {
     const when = new Date(state.checkedAt).toLocaleTimeString();
@@ -49,20 +44,14 @@ export function ServiceStatus({ className }: { className?: string }) {
             aria-label={`Services: ${shortLabel("Agent", agent)}, ${shortLabel("Sidecar", sidecar)}. Activate to check again.`}
             title="Check again"
             className={cn(
-              "h-7 cursor-pointer gap-2.5 rounded-full border-white/10 bg-white/[0.04] px-2.5 font-normal text-neutral-400",
+              "h-7 cursor-pointer gap-2 rounded-full border-transparent bg-transparent px-2 font-normal",
               className,
             )}
           />
         }
       >
-        <span className="flex items-center gap-1.5">
-          <span aria-hidden="true" className={cn("size-1.5 rounded-full", dotClass(agent))} />
-          <span className="text-xs">{pillLabel("Agent", agent)}</span>
-        </span>
-        <span className="flex items-center gap-1.5">
-          <span aria-hidden="true" className={cn("size-1.5 rounded-full", dotClass(sidecar))} />
-          <span className="text-xs">{pillLabel("Sidecar", sidecar)}</span>
-        </span>
+        <span aria-hidden="true" className={cn("size-1.5 rounded-full", dotClass(agent))} />
+        <span aria-hidden="true" className={cn("size-1.5 rounded-full", dotClass(sidecar))} />
       </TooltipTrigger>
       <TooltipPopup side="bottom" align="end" className="max-w-72">
         <span className="flex flex-col gap-1 text-left">

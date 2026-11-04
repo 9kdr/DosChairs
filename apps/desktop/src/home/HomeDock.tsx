@@ -40,8 +40,8 @@ export function HomeDock({ tab, onTab, onAccount, onSettings }: HomeDockProps) {
         <div
           className={cn(
             "flex h-12 max-w-full items-center gap-1 rounded-full px-2",
-            "bg-[#1a1a1a]/95 shadow-raised ring-1 ring-white/[0.08] backdrop-blur-md",
-            "supports-[backdrop-filter]:bg-[#1a1a1a]/88",
+            "bg-card/95 shadow-rim backdrop-blur-md",
+            "supports-[backdrop-filter]:bg-card/88",
           )}
         >
           <DockButton

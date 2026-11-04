@@ -12,6 +12,7 @@ import {
   MenuSeparator,
   MenuTrigger,
 } from "@/components/ui/menu";
+import { ditherMaskStyle, type DitherMatrix } from "@/lib/dither";
 import { cn } from "@/lib/utils";
 import { EditorLogo } from "./EditorLogo";
 import { editorShort, formatEditedAt, type Project } from "./data";
@@ -63,6 +64,22 @@ function thumbGradient(id: string): string {
   return `linear-gradient(135deg, ${from} 0%, ${to} 100%)`;
 }
 
+const THUMB_MATRICES: readonly DitherMatrix[] = [
+  "bayer2",
+  "bayer4",
+  "bayer8",
+  "blue-noise",
+];
+
+/** Stable dither grain for a project name: a short hash picks the matrix. */
+function thumbMatrix(name: string): DitherMatrix {
+  let hash = 0;
+  for (let index = 0; index < name.length; index += 1) {
+    hash = (hash * 31 + name.charCodeAt(index)) >>> 0;
+  }
+  return THUMB_MATRICES[hash % THUMB_MATRICES.length]!;
+}
+
 /** Visual project tile with quiet overflow menu and context menu. */
 export function ProjectCard({
   project,
@@ -87,10 +104,7 @@ export function ProjectCard({
         }
       >
         <div
-          className={cn(
-            "relative aspect-[16/10] overflow-hidden rounded-xl",
-            "ring-1 ring-white/[0.06]",
-          )}
+          className="relative aspect-[16/10] overflow-hidden rounded-xl"
           style={{ backgroundImage: thumbGradient(project.id) }}
         >
           <div className="absolute inset-0 grid place-items-center">
@@ -112,6 +126,11 @@ export function ProjectCard({
                 "linear-gradient(to bottom, transparent 55%, rgb(0 0 0 / 0.55))",
             }}
           />
+          <div
+            aria-hidden="true"
+            className="absolute inset-0 bg-white/[0.05]"
+            style={ditherMaskStyle(0.35, { matrix: thumbMatrix(project.name) })}
+          />
 
           {/* Quiet overflow control */}
           <div className="absolute top-2 right-2 z-20 pointer-events-none group-hover:pointer-events-auto group-focus-within:pointer-events-auto group-data-[emphasized]:pointer-events-auto">
@@ -121,11 +140,11 @@ export function ProjectCard({
                 aria-label={`Actions for ${project.name}`}
                 className={cn(
                   "flex size-7 items-center justify-center rounded-lg text-neutral-400 outline-none transition-colors",
-                  "bg-[#1a1a1a]/80 shadow-raised ring-1 ring-white/[0.08] backdrop-blur-md",
+                  "bg-card/80 shadow-rim backdrop-blur-md",
                   "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 group-data-[emphasized]:opacity-100",
-                  "hover:bg-[#1a1a1a] hover:text-neutral-100",
-                  "focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-[#111111]",
-                  "data-[popup-open]:bg-[#1a1a1a] data-[popup-open]:text-neutral-100",
+                  "hover:bg-card hover:text-neutral-100",
+                  "focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
+                  "data-[popup-open]:bg-card data-[popup-open]:text-neutral-100",
                   "data-[popup-open]:opacity-100 data-[popup-open]:pointer-events-auto",
                 )}
               >
@@ -134,7 +153,7 @@ export function ProjectCard({
               <MenuPopup
                 align="end"
                 sideOffset={4}
-                className="min-w-44 rounded-xl border border-white/10 bg-[#1a1a1a]/95 p-1 text-neutral-100 shadow-raised ring-1 ring-white/[0.08] backdrop-blur-md"
+                className="min-w-44 rounded-xl border border-white/10 bg-popover/95 p-1 text-neutral-100 ring-1 ring-white/[0.08] backdrop-blur-md"
               >
                 <ProjectCardActions onOpen={onOpen} />
               </MenuPopup>
@@ -144,7 +163,7 @@ export function ProjectCard({
 
         <div className="min-w-0 px-0.5">
           <p className="truncate text-sm font-medium text-neutral-100">{project.name}</p>
-          <p className="flex items-center gap-1.5 text-xs text-neutral-500">
+          <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
             <EditorLogo id={editorId} className="size-3.5" />
             <span className="sr-only">{editorShort(editorId)}</span>
             <span aria-hidden="true">·</span>
@@ -154,7 +173,7 @@ export function ProjectCard({
       </ContextMenuTrigger>
       <ContextMenuPopup
         align="start"
-        className="min-w-44 rounded-xl border border-white/10 bg-[#1a1a1a]/95 p-1 text-neutral-100 shadow-raised ring-1 ring-white/[0.08] backdrop-blur-md"
+        className="min-w-44 rounded-xl border border-white/10 bg-popover/95 p-1 text-neutral-100 ring-1 ring-white/[0.08] backdrop-blur-md"
       >
         <ProjectCardActions onOpen={onOpen} />
       </ContextMenuPopup>

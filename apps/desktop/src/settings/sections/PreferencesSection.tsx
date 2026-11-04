@@ -22,11 +22,11 @@ export function PreferencesSection({
     <div className="flex flex-col gap-8">
       <section
         aria-label="Apply mode"
-        className="flex flex-col gap-2 rounded-[28px] bg-surface p-5 shadow-raised ring-1 ring-white/8"
+        className="flex flex-col gap-2 rounded-card bg-card p-5"
       >
         <div className="flex flex-wrap items-center gap-3">
           <div className="min-w-0 flex-1">
-            <h2 className="text-sm font-semibold text-neutral-100">Apply mode</h2>
+            <h2 className="text-sm font-medium text-neutral-100">Apply mode</h2>
             <p className="mt-1 text-sm leading-6 text-neutral-400">
               {applyMode === "auto"
                 ? "Auto: agent edits apply on arrival onto a copy and land in history, undoable with one key."

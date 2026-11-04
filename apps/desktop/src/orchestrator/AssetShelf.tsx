@@ -28,6 +28,7 @@ import type {
   ReactNode,
   Ref,
 } from "react";
+import { DitherArt } from "@/components/dither-art";
 import { SmoothScrollTarget } from "@/components/smooth-scroll";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -35,10 +36,10 @@ import type { ClipChoice } from "@/effects/EffectMaker";
 import type { ChangesetItem } from "@chair/timeline-ir";
 import {
   Empty,
+  EmptyArt,
   EmptyContent,
   EmptyDescription,
   EmptyHeader,
-  EmptyMedia,
   EmptyTitle,
 } from "@/components/ui/empty";
 import { Input } from "@/components/ui/input";
@@ -161,7 +162,7 @@ const SHELF_BUTTON = cn(
 );
 
 const MENU_POPUP =
-  "min-w-36 rounded-2xl border-0 bg-[#1a1a1a] text-neutral-100 shadow-raised ring-1 ring-white/10 before:hidden";
+  "min-w-36 rounded-2xl border-0 bg-popover text-neutral-100 ring-1 ring-white/10 before:hidden";
 
 const MENU_ITEM =
   "min-h-0 grid-cols-1 gap-0 rounded-xl px-2.5 py-1.5 text-sm data-checked:bg-white/8 [&>span:first-child]:hidden [&>span:last-child]:col-start-1 [&>span:last-child]:flex [&>span:last-child]:items-center [&>span:last-child]:gap-2";
@@ -334,7 +335,7 @@ function SearchField({
 }: SearchFieldProps) {
   return (
     <div className="relative min-w-0 flex-1">
-      <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-neutral-500" />
+      <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
       <Input
         ref={inputRef}
         type="search"
@@ -384,7 +385,7 @@ function ShelfError({
     >
       <div className="flex items-center gap-2">
         <TriangleAlert className="size-4 shrink-0 text-amber-300" aria-hidden="true" />
-        <h3 className="text-sm font-semibold tracking-wide text-neutral-100">
+        <h3 className="text-sm font-medium text-neutral-100">
           Couldn&apos;t load the assets
         </h3>
       </div>
@@ -404,9 +405,9 @@ function ShelfEmpty({ onRetry, still }: { onRetry: () => void; still: boolean })
     <motion.div {...(still ? FADE_STILL : FADE_MOVE)}>
       <Empty className="py-8 md:py-10">
         <EmptyHeader>
-          <EmptyMedia variant="icon">
-            <Film />
-          </EmptyMedia>
+          <EmptyArt>
+            <DitherArt seed={4} />
+          </EmptyArt>
           <EmptyTitle>No assets yet</EmptyTitle>
           <EmptyDescription>Import, or connect Resolve.</EmptyDescription>
         </EmptyHeader>
@@ -903,13 +904,12 @@ export function AssetShelf({ className, projectId, frozen = false, transitionLoc
       ref={shelfRef}
       data-transition-lock={transitionLock ? "true" : undefined}
       className={cn(
-        "flex min-h-0 min-w-0 flex-col gap-3 overflow-hidden rounded-[28px] bg-[#1a1a1a] p-5 text-neutral-100 shadow-raised ring-1 ring-white/8",
+        "flex min-h-0 min-w-0 flex-col gap-3 overflow-hidden rounded-card bg-card p-5 text-neutral-100",
         className,
       )}
     >
       <div className="flex min-w-0 shrink-0 items-center gap-2">
-        <Film className="size-4 shrink-0 text-neutral-400" />
-        <h2 className="min-w-0 truncate text-sm font-semibold tracking-wide text-neutral-100">Assets</h2>
+        <h2 className="min-w-0 truncate text-sm font-medium text-neutral-100">Assets</h2>
         <Button
           type="button"
           size="sm"
@@ -1031,7 +1031,7 @@ export function AssetShelf({ className, projectId, frozen = false, transitionLoc
           />
         )}
         {narrow && searchOpen ? (
-          <div className="absolute inset-0 flex items-center bg-[#1a1a1a]">
+          <div className="absolute inset-0 flex items-center bg-card">
             <SearchField
               value={query}
               placeholder={searchLabel}
@@ -1218,7 +1218,7 @@ export function AssetShelf({ className, projectId, frozen = false, transitionLoc
                                 />
                                 <span className="min-w-0 flex-1 truncate text-left">{item.name}</span>
                                 {view === "more" ? (
-                                  <span className="shrink-0 text-[10px] font-normal text-neutral-500">
+                                  <span className="shrink-0 text-[10px] font-normal text-muted-foreground">
                                     Folder
                                   </span>
                                 ) : null}
@@ -1240,7 +1240,7 @@ export function AssetShelf({ className, projectId, frozen = false, transitionLoc
                             </DragHandle>
                             <span className="min-w-0 flex-1 truncate text-left">{item.name}</span>
                             {view === "more" ? (
-                              <span className="shrink-0 text-[10px] font-normal text-neutral-500">
+                              <span className="shrink-0 text-[10px] font-normal text-muted-foreground">
                                 Folder
                               </span>
                             ) : null}
@@ -1306,7 +1306,7 @@ export function AssetShelf({ className, projectId, frozen = false, transitionLoc
                   {filteredEmpty ? (
                     <motion.p
                       key="empty"
-                      className="px-1 text-sm text-neutral-500"
+                      className="px-1 text-sm text-muted-foreground"
                       {...(reduce || frozen ? FADE_STILL : FADE_MOVE)}
                     >
                       Nothing matches.
@@ -1576,7 +1576,7 @@ function Row({
   const proxied = item.scope === "assets" && item.proxy === "ready";
   const proxy = proxied ? <ProxyBadge /> : null;
   const meta = dense ? (
-    <span className="shrink-0 text-[10px] font-normal text-neutral-500">{kindLabel}</span>
+    <span className="shrink-0 text-[10px] font-normal text-muted-foreground">{kindLabel}</span>
   ) : null;
   return (
     <Button

@@ -13,7 +13,6 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
-import { ChairMark } from "./home/ChairMark";
 import type { EditorId } from "./home/data";
 import { EditorLogo } from "./home/EditorLogo";
 import { buildUndoChangeset } from "@chair/timeline-ir";
@@ -30,9 +29,6 @@ import { HistoryCard } from "./project/HistoryCard";
 import { historyForTask, useProject } from "./project/store";
 import { SettingsScreen } from "./settings/SettingsScreen";
 import { useSettings } from "./settings/useSettings";
-
-/** Same field as the home gallery (`HomeScreen`). */
-const SHELL_BG = "#111111";
 
 type ProjectShellProps = {
   projectId: string;
@@ -111,7 +107,11 @@ function SidePanel({
   return (
     <>
       <Tabs value={tab} onValueChange={(value) => onTab(value as SideTab)}>
-        <TabsList size="sm" className="grid w-full shrink-0 grid-cols-3">
+        <TabsList
+          variant="underline"
+          size="sm"
+          className="grid w-full shrink-0 grid-cols-3 border-b border-line"
+        >
           <TabsTab value="plan">Plan</TabsTab>
           <TabsTab value="shelf">Shelf</TabsTab>
           <TabsTab value="history">History</TabsTab>
@@ -255,8 +255,7 @@ export function ProjectShell({ projectId, projectName, editorId, onHome }: Proje
   return (
     <section
       aria-label={projectName}
-      className="@container absolute inset-0 flex min-h-0 flex-col overflow-hidden text-neutral-100"
-      style={{ backgroundColor: SHELL_BG }}
+      className="@container absolute inset-0 flex min-h-0 flex-col overflow-hidden bg-background text-neutral-100"
     >
       <header className="flex h-12 shrink-0 items-center gap-2.5 pr-28 pl-3">
         <Tooltip>
@@ -281,7 +280,7 @@ export function ProjectShell({ projectId, projectName, editorId, onHome }: Proje
           {projectName}
         </h1>
         {cutBits ? (
-          <span className="hidden shrink-0 text-xs tabular-nums text-neutral-500 md:block">
+          <span className="hidden shrink-0 text-xs tabular-nums text-muted-foreground md:block">
             {cutBits}
           </span>
         ) : null}
@@ -345,11 +344,6 @@ export function ProjectShell({ projectId, projectName, editorId, onHome }: Proje
                       setTaskNote({ id: Date.now(), text: UNDO_PROMPT });
                     }}
                   />
-                  {liveTasks.length === 0 ? (
-                    <p className="px-1 text-sm leading-6 text-neutral-500">
-                      Say what to cut below. Every applied edit lands on a copy — undo is one key.
-                    </p>
-                  ) : null}
                 </div>
               </div>
               <div className="mx-auto flex w-full max-w-3xl shrink-0 flex-col gap-2 pb-20 @max-[760px]:max-w-none">
@@ -360,7 +354,7 @@ export function ProjectShell({ projectId, projectName, editorId, onHome }: Proje
                         key={text}
                         type="button"
                         onClick={() => setSuggestion({ id: Date.now(), text })}
-                        className="rounded-full bg-white/[0.06] px-2.5 py-1 text-xs text-neutral-300 ring-1 ring-white/10 transition-colors hover:bg-white/[0.1] hover:text-neutral-100 focus-visible:ring-2 focus-visible:ring-ring"
+                        className="rounded-full bg-white/[0.06] px-2.5 py-1 text-xs text-neutral-300 transition-colors hover:bg-white/[0.1] hover:text-neutral-100 focus-visible:ring-2 focus-visible:ring-ring"
                       >
                         {text}
                       </button>
@@ -396,7 +390,7 @@ export function ProjectShell({ projectId, projectName, editorId, onHome }: Proje
         {showSide ? (
         <aside
           aria-label="Project panel"
-          className="flex min-h-0 w-80 shrink-0 flex-col overflow-hidden rounded-[28px] bg-[#1a1a1a] p-4 text-neutral-100 shadow-raised ring-1 ring-white/8 @max-[760px]:hidden xl:w-96"
+          className="flex min-h-0 w-80 shrink-0 flex-col overflow-hidden rounded-card bg-card p-4 text-neutral-100 @max-[760px]:hidden xl:w-96"
         >
           <SidePanel
             tab={sideTab}
@@ -421,7 +415,7 @@ export function ProjectShell({ projectId, projectName, editorId, onHome }: Proje
         aria-hidden="true"
         className="pointer-events-none absolute inset-x-0 bottom-0 z-10 h-24"
         style={{
-          background: `linear-gradient(to top, ${SHELL_BG} 0%, color-mix(in srgb, ${SHELL_BG} 78%, transparent) 38%, transparent 100%)`, // taste-skill-ignore: neutral scrim keeps the dock legible over scrolled content.
+          background: `linear-gradient(to top, var(--background) 0%, color-mix(in srgb, var(--background) 78%, transparent) 38%, transparent 100%)`, // taste-skill-ignore: neutral scrim keeps the dock legible over scrolled content.
         }}
       />
       <TooltipProvider delay={220} closeDelay={120} timeout={500}>
@@ -432,8 +426,8 @@ export function ProjectShell({ projectId, projectName, editorId, onHome }: Proje
           <div
             className={cn(
               "flex h-12 max-w-full items-center gap-1 rounded-full px-2",
-              "bg-[#1a1a1a]/95 shadow-raised ring-1 ring-white/[0.08] backdrop-blur-md",
-              "supports-[backdrop-filter]:bg-[#1a1a1a]/88",
+              "bg-card/95 shadow-rim backdrop-blur-md",
+              "supports-[backdrop-filter]:bg-card/88",
             )}
           >
             {SECTIONS.map((item) => {
@@ -464,14 +458,6 @@ export function ProjectShell({ projectId, projectName, editorId, onHome }: Proje
           </Tooltip>
         </nav>
       </TooltipProvider>
-      {taskChat ? null : (
-        <div className="pointer-events-none absolute bottom-5 left-5 z-20 flex items-center gap-2.5 text-neutral-400 @max-[760px]:hidden">
-          <ChairMark className="h-8 w-auto text-neutral-200" />
-          <span className="text-base font-medium tracking-wide text-neutral-200">
-            Chair
-          </span>
-        </div>
-      )}
     </section>
   );
 }

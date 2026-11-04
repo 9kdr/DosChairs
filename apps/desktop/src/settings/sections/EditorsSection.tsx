@@ -120,7 +120,7 @@ function EditorCard({
   );
 
   return (
-    <div className="rounded-2xl bg-white/[0.03] px-5 py-4 ring-1 ring-white/[0.06]">
+    <div className="rounded-card bg-card px-5 py-4">
       <div className="flex items-baseline justify-between gap-3">
         <h3 className="text-sm font-medium text-neutral-100">{editor.name}</h3>
         <p className="flex shrink-0 items-center gap-2 text-xs text-neutral-400">
@@ -131,7 +131,7 @@ function EditorCard({
           {EDITOR_CONNECTION_LABEL[state]}
         </p>
       </div>
-      <p className="mt-0.5 text-xs text-neutral-500">{editor.blurb}</p>
+      <p className="mt-0.5 text-xs text-muted-foreground">{editor.blurb}</p>
 
       <div className="mt-3 flex items-center gap-2">
         {editor.endpointLabel != null && !linked ? (
@@ -177,7 +177,7 @@ function EditorCard({
         )}
       </div>
 
-      <p className="mt-2 truncate text-xs text-neutral-500">
+      <p className="mt-2 truncate text-xs text-muted-foreground">
         {state === "connected"
           ? "Linked · the agent answered."
           : state === "unreachable"
@@ -189,7 +189,7 @@ function EditorCard({
                 : "Not linked yet — open your project in Studio, then Connect."}
       </p>
 
-      <div className="mt-3 space-y-1 border-t border-white/[0.06] pt-3 text-xs text-neutral-500">
+      <div className="mt-3 space-y-1 border-t border-white/[0.06] pt-3 text-xs text-muted-foreground">
         <p>
           <span className="text-neutral-400">Native:</span>{" "}
           {native.map((cap) => cap.label).join(", ")}
@@ -208,7 +208,7 @@ function EditorCard({
             {unsupported.map((cap) => cap.label).join(", ")}
           </p>
         ) : null}
-        <p className="text-neutral-500">
+        <p className="text-muted-foreground">
           From the {editor.name} adapter manifest · v{editor.version}
         </p>
       </div>

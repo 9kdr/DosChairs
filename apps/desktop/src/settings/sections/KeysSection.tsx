@@ -90,7 +90,7 @@ export function KeysSection({
       </p>
 
       <section aria-label="Providers">
-        <div className="rounded-[28px] bg-surface text-neutral-100 shadow-raised ring-1 ring-white/8">
+        <div className="rounded-card bg-card text-neutral-100">
           <div className="flex items-center justify-between gap-3 border-b border-white/[0.06] px-5 py-3">
             <p className="text-sm text-neutral-400">
               {PROVIDERS.length} providers
@@ -219,7 +219,7 @@ function ProviderRow({
           </span>
           <span
             title={enabled ? CONNECTION_LABEL[state] : "Off"}
-            className="mt-0.5 block truncate text-xs text-neutral-500"
+            className="mt-0.5 block truncate text-xs text-muted-foreground"
           >
             {enabled ? CONNECTION_LABEL[state] : "Off"}
           </span>
@@ -283,7 +283,7 @@ function ProviderDetail({
           {CONNECTION_LABEL[state]}
         </p>
       </div>
-      <p className="mt-0.5 text-xs text-neutral-500">
+      <p className="mt-0.5 text-xs text-muted-foreground">
         {source ? `Key ${source} · ` : null}
         <code className="font-mono">{provider.envVar}</code>
       </p>
@@ -361,7 +361,7 @@ function KeyBlock({
     <div className="mt-4">
       <p className="text-sm font-medium text-neutral-100">API key</p>
       {saved == null ? (
-        <p className="mt-1 text-xs text-neutral-500">
+        <p className="mt-1 text-xs text-muted-foreground">
           {envKey
             ? "Nothing saved here · the agent sees a key in its environment"
             : "No key — paste one below"}
@@ -415,7 +415,7 @@ function KeyBlock({
         ) : null}
       </div>
       {hint != null ? (
-        <p className="mt-1 text-xs text-neutral-500">{hint}</p>
+        <p className="mt-1 text-xs text-muted-foreground">{hint}</p>
       ) : null}
     </div>
   );
@@ -481,7 +481,7 @@ function ModelsBlock({
     <div className="mt-4 border-t border-white/[0.06] pt-4">
       <p className="text-sm font-medium text-neutral-100">Models</p>
       {known.length === 0 && customModels.length === 0 ? (
-        <p className="mt-2 text-xs text-neutral-500">
+        <p className="mt-2 text-xs text-muted-foreground">
           No models on file yet. Add one below.
         </p>
       ) : (
@@ -492,7 +492,7 @@ function ModelsBlock({
               <li
                 key={name}
                 className={cn(
-                  "flex items-center gap-2 rounded-xl bg-white/[0.03] px-3 py-1.5 shadow-rim ring-1 ring-white/[0.06]",
+                  "flex items-center gap-2 rounded-xl bg-white/[0.03] px-3 py-1.5",
                   off && "opacity-60",
                 )}
               >
@@ -513,7 +513,7 @@ function ModelsBlock({
               <li
                 key={name}
                 className={cn(
-                  "flex items-center gap-2 rounded-xl bg-white/[0.03] px-3 py-1.5 shadow-rim ring-1 ring-white/[0.06]",
+                  "flex items-center gap-2 rounded-xl bg-white/[0.03] px-3 py-1.5",
                   off && "opacity-60",
                 )}
               >
@@ -586,7 +586,7 @@ function ModelsBlock({
             </Button>
           </div>
           {duplicate ? (
-            <p className="mt-1 text-xs text-neutral-500">
+            <p className="mt-1 text-xs text-muted-foreground">
               Already listed for {provider.label}.
             </p>
           ) : null}
