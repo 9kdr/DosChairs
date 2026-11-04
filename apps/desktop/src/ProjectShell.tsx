@@ -1,26 +1,31 @@
-import { ArrowLeft, HistoryIcon, HomeIcon, PanelRight, X } from "lucide-react";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { ArrowLeft, HistoryIcon, HomeIcon } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import { ChatPrompt } from "@/components/chat-prompt";
 import { ServiceStatus } from "@/components/service-status";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTab } from "@/components/ui/tabs";
+import { ToastProvider, toastManager } from "@/components/ui/toast";
 import type { Timeline } from "@chair/timeline-ir";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "@/components/ui/tooltip";
 import { formatCutDuration } from "@/lib/format";
 import type { EditorId } from "./home/data";
 import { EditorLogo } from "./home/EditorLogo";
 import { buildUndoChangeset } from "@chair/timeline-ir";
-import { AssetShelf } from "./orchestrator/AssetShelf";
-import { CreationBoard } from "./orchestrator/CreationBoard";
+import { EffectMaker } from "./effects/EffectMaker";
 import { parseAction } from "./orchestrator/actions";
 import { PlanDoc } from "./orchestrator/PlanDoc";
 import { RunningTasks, type RunningTask } from "./orchestrator/RunningTasks";
-import { ShelfPieces } from "./orchestrator/ShelfPieces";
+import type { ProjectPlan } from "./orchestrator/plan-api";
+import { Shelf } from "./orchestrator/Shelf";
+import { suggestionsFor, type Suggestion } from "./orchestrator/suggestions";
 import { TaskChat, UNDO_PROMPT } from "./orchestrator/TaskChat";
 import { setupTask } from "./orchestrator/taskSetup";
 import {
+  hasCutItems,
+  hasSoundItems,
   isLiveTaskSettled,
   landedFor,
+  onTaskSettled,
   redoLandedWrite,
   retryLandedWrite,
   retryLiveTask,
@@ -28,7 +33,6 @@ import {
   undoLandedWrite,
   useLiveTasks,
 } from "./orchestrator/taskThread";
-import { PanelDrawer } from "./PanelDrawer";
 import { HistoryCard } from "./project/HistoryCard";
 import { historyKeyAction, historyKeyAllowed } from "./project/history-keys";
 import { historyForTask, useProject } from "./project/store";
@@ -40,14 +44,6 @@ type ProjectShellProps = {
   editorId?: EditorId;
   onHome: () => void;
 };
-
-/** Suggested prompts that fill the composer on the empty board. Demo-only: every one lands in Resolve today. */
-const SUGGESTIONS = [
-  "Riser into the reveal",
-  "Duck music under my voice",
-  "Make a dither title piece",
-  "Bouncy cursor on the click",
-];
 
 /** Compact cut line for the header from the timeline the store already has. */
 function cutSummary(timeline: Timeline | null): string | null {
@@ -72,61 +68,11 @@ function cutSummary(timeline: Timeline | null): string | null {
 /** Main-area pages: the board, or one full page with a Back button. */
 type Page = "board" | "maker" | "history";
 type SideTab = "plan" | "shelf";
+/** Narrow windows switch the single column between tasks, plan, and shelf. */
+type NarrowTab = "tasks" | SideTab;
 type PlanMode = "edit" | "talk";
 
-/**
- * The tabbed Plan/Shelf card, shared by the side column and the narrow
- * drawer. In the drawer, one header row holds the tabs plus the close
- * button; the side column has no close button.
- */
-function SidePanel({
-  tab,
-  onTab,
-  plan,
-  shelf,
-  onClose,
-}: {
-  tab: SideTab;
-  onTab: (tab: SideTab) => void;
-  plan: ReactNode;
-  shelf: ReactNode;
-  onClose?: () => void;
-}) {
-  return (
-    <Tabs
-      value={tab}
-      onValueChange={(value) => onTab(value as SideTab)}
-      className="flex min-h-0 flex-1 flex-col"
-    >
-      <div className="flex shrink-0 items-center gap-2">
-        <TabsList
-          variant="underline"
-          size="sm"
-          className="grid w-full flex-1 grid-cols-2 border-b border-line"
-        >
-          <TabsTab value="plan">Plan</TabsTab>
-          <TabsTab value="shelf">Shelf</TabsTab>
-        </TabsList>
-        {onClose ? (
-          <Button
-            type="button"
-            size="icon-sm"
-            variant="ghost"
-            aria-label="Close panel"
-            onClick={onClose}
-            autoFocus
-            className="shrink-0 self-start"
-          >
-            <X />
-          </Button>
-        ) : null}
-      </div>
-      <div className="mt-3 min-h-0 flex-1 overflow-hidden">{tab === "plan" ? plan : shelf}</div>
-    </Tabs>
-  );
-}
-
-/** The board in the center, Plan/Shelf in the side panel. */
+/** The dashboard: tasks on top, Plan and Shelf below on one canvas. */
 export function ProjectShell({ projectId, projectName, editorId, onHome }: ProjectShellProps) {
   const [page, setPage] = useState<Page>("board");
   const [sideTab, setSideTab] = useState<SideTab>("plan");
@@ -140,7 +86,9 @@ export function ProjectShell({ projectId, projectName, editorId, onHome }: Proje
   const [notice, setNotice] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [suggestion, setSuggestion] = useState<{ id: number; text: string } | null>(null);
-  const [panelOpen, setPanelOpen] = useState(false);
+  // The structured plan, mirrored up from the Plan card so suggestions follow it.
+  const [plan, setPlan] = useState<ProjectPlan | null>(null);
+  const [narrowTab, setNarrowTab] = useState<NarrowTab>("tasks");
   // Bumped after card Undo/Redo/Retry so the rows repaint at once, not next poll.
   const [liveNonce, setLiveNonce] = useState(0);
   const liveTasks = useLiveTasks(createdTasks, liveNonce);
@@ -206,6 +154,7 @@ export function ProjectShell({ projectId, projectName, editorId, onHome }: Proje
     if (!undone.ok) return `Can't rewind ${task.name} yet: ${undone.reason}`;
     project.undoToHere(tip.itemId);
     const count = entries.length === 1 ? "1 edit" : `${entries.length} edits`;
+    toastManager.add({ type: "success", title: `Undone: ${task.name}` });
     return `Rewound ${count} for ${task.name}.`;
   };
 
@@ -218,7 +167,6 @@ export function ProjectShell({ projectId, projectName, editorId, onHome }: Proje
   const openHistoryPage = () => {
     setTaskChat(null);
     setTaskNote(null);
-    setPanelOpen(false);
     setPage("history");
   };
 
@@ -226,7 +174,6 @@ export function ProjectShell({ projectId, projectName, editorId, onHome }: Proje
   const openMakerPage = () => {
     setTaskChat(null);
     setTaskNote(null);
-    setPanelOpen(false);
     setPage("maker");
   };
 
@@ -265,6 +212,7 @@ export function ProjectShell({ projectId, projectName, editorId, onHome }: Proje
       const entries = historyForTask(project.history, task.jobId ?? task.id);
       const tip = entries[entries.length - 1];
       if (tip) project.undoToHere(tip.itemId);
+      toastManager.add({ type: "success", title: `Undone: ${task.name}` });
       setLiveNonce((nonce) => nonce + 1);
     })();
   };
@@ -277,9 +225,39 @@ export function ProjectShell({ projectId, projectName, editorId, onHome }: Proje
     })();
   };
 
-  // The Effect Maker takes the full width: the side panel steps aside
-  // while it (or Settings) owns the screen. History keeps the panel.
+  // Toasts for real task transitions: a finished turn lands or plans,
+  // a failed turn says so. Tasks that were already finished on first
+  // load never reach here — only session-polled jobs announce.
+  useEffect(
+    () =>
+      onTaskSettled(({ task, job }) => {
+        if (job.status === "completed") {
+          const landed = hasSoundItems(job) || hasCutItems(job);
+          toastManager.add({
+            id: `task-${task.id}`,
+            type: "success",
+            title: `${landed ? "Landed" : "Planned"}: ${task.name}`,
+          });
+        } else if (job.status === "failed") {
+          toastManager.add({
+            id: `task-${task.id}`,
+            type: "error",
+            title: `Failed: ${task.name}`,
+          });
+        }
+      }),
+    [],
+  );
+
+  // The Effect Maker takes the full width while it (or Settings) owns
+  // the screen. History keeps the dashboard. Narrow windows keep a panel.
   const showSide = page !== "maker" && !settingsOpen;
+  // Narrow windows get one underline switch instead of two columns.
+  // The task thread owns the whole narrow screen, like before.
+  const showNarrowTabs = showSide && !taskChat;
+  const narrowShowsPanel = showNarrowTabs && narrowTab !== "tasks";
+  const allTasks = [...workingTasks, ...recentTasks];
+  const suggestions = suggestionsFor({ plan, tasks: allTasks });
 
   const planPane = (
     <div className="h-full min-h-0 overflow-y-auto overscroll-contain">
@@ -293,29 +271,64 @@ export function ProjectShell({ projectId, projectName, editorId, onHome }: Proje
         }}
         onClose={() => setPlanOpen(false)}
         notice={notice}
+        onPlan={setPlan}
       />
     </div>
   );
   const shelfPane = (
-    <div className="flex h-full min-h-0 flex-col gap-3 overflow-hidden">
-      <AssetShelf
-        projectId={projectId}
-        clips={effectClips}
-        onApplyPiece={project.applyItem}
-        onUndoPiece={(itemId) => project.undoToHere(itemId)}
-        onOpenHistory={openHistoryPage}
-        pieceRefusal={project.refusal?.reason ?? null}
-        className="min-h-0 flex-1"
-      />
-      <ShelfPieces onCreate={openMakerPage} className="min-h-0 flex-1" />
-    </div>
+    <Shelf
+      projectId={projectId}
+      clips={effectClips}
+      onApplyPiece={project.applyItem}
+      onUndoPiece={(itemId) => project.undoToHere(itemId)}
+      onOpenHistory={openHistoryPage}
+      pieceRefusal={project.refusal?.reason ?? null}
+      landings={project.landings}
+      onRecordLanding={project.recordLanding}
+      onCreate={openMakerPage}
+    />
+  );
+  const hasTasks = workingTasks.length + recentTasks.length > 0;
+  /** A chip: retry the failed task, or drop the prompt into the bar. */
+  const pickSuggestion = (item: Suggestion) => {
+    if (item.kind === "retry") {
+      const target = allTasks.find((task) => task.id === item.taskId);
+      if (target) retryTask(target);
+    } else {
+      setSuggestion({ id: Date.now(), text: item.text });
+    }
+  };
+  const tasksList = (
+    <RunningTasks
+      projectId={projectId}
+      history={project.history}
+      // Chips live in the empty card; once tasks exist they sit above the bar.
+      suggestions={hasTasks ? [] : suggestions}
+      onSuggest={pickSuggestion}
+      tasks={workingTasks}
+      recentTasks={recentTasks}
+      onOpen={openTask}
+      onUndo={(task) => {
+        setTaskChat(task);
+        setTaskNote({ id: Date.now(), text: UNDO_PROMPT });
+      }}
+      onRetry={retryTask}
+      onUndoResolve={undoResolveWrite}
+      onRedoResolve={redoResolveWrite}
+      onOpenHistory={openHistoryPage}
+    />
   );
 
   return (
-    <section
-      aria-label={projectName}
-      className="@container absolute inset-0 flex min-h-0 flex-col overflow-hidden bg-background text-neutral-100"
+    <ToastProvider
+      position="bottom-right"
+      viewportClassName="data-[position*=bottom]:bottom-36 min-[1000px]:data-[position*=bottom]:bottom-28 data-[position*=right]:right-3 [--toast-inset:--spacing(3)] sm:[--toast-inset:--spacing(3)]"
+      toastClassName="rounded-2xl border-white/[0.06]"
     >
+      <section
+        aria-label={projectName}
+        className="@container absolute inset-0 flex min-h-0 flex-col overflow-hidden bg-background text-neutral-100"
+      >
       <header className="flex h-12 shrink-0 items-center gap-2.5 pr-28 pl-3">
         <Tooltip>
           <TooltipTrigger
@@ -359,22 +372,35 @@ export function ProjectShell({ projectId, projectName, editorId, onHome }: Proje
             </TooltipTrigger>
             <TooltipPopup side="bottom">History</TooltipPopup>
           </Tooltip>
-          <Button
-            type="button"
-            size="icon-sm"
-            variant="ghost"
-            aria-label="Project panel"
-            aria-expanded={panelOpen}
-            onClick={() => setPanelOpen(true)}
-            className="@min-[761px]:hidden rounded-lg text-neutral-400 hover:bg-white/[0.06] hover:text-neutral-100"
-          >
-            <PanelRight />
-          </Button>
           <ServiceStatus />
         </div>
       </header>
-      <div className="flex min-h-0 flex-1 gap-3 px-3 pb-3">
-        <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+      <div className="flex min-h-0 flex-1 flex-col gap-2 px-3 pb-3">
+        {showNarrowTabs ? (
+          <Tabs
+            value={narrowTab}
+            onValueChange={(value) => {
+              const next = value as NarrowTab;
+              setNarrowTab(next);
+              if (next !== "tasks") setSideTab(next);
+            }}
+            className="@min-[761px]:hidden w-full shrink-0"
+          >
+            <TabsList
+              variant="underline"
+              size="sm"
+              className="grid w-full grid-cols-3 border-b border-line"
+            >
+              <TabsTab value="tasks">Tasks</TabsTab>
+              <TabsTab value="plan">Plan</TabsTab>
+              <TabsTab value="shelf">Shelf</TabsTab>
+            </TabsList>
+          </Tabs>
+        ) : null}
+        <div className="flex min-h-0 flex-1 gap-3">
+          <main
+            className={`flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden${narrowShowsPanel ? " @max-[760px]:hidden" : ""}`}
+          >
           {settingsOpen ? (
             <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-2 py-2 overscroll-contain">
               <div className="mx-auto flex w-full max-w-4xl shrink-0">
@@ -408,39 +434,41 @@ export function ProjectShell({ projectId, projectName, editorId, onHome }: Proje
           ) : page === "board" ? (
             <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden">
               <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
-                <div className="mx-auto flex w-full max-w-5xl flex-col gap-3 py-2 @max-[760px]:max-w-none">
-                  <RunningTasks
-                    history={project.history}
-                    tasks={workingTasks}
-                    recentTasks={recentTasks}
-                    onOpen={openTask}
-                    onUndo={(task) => {
-                      setTaskChat(task);
-                      setTaskNote({ id: Date.now(), text: UNDO_PROMPT });
-                    }}
-                    onRetry={retryTask}
-                    onUndoResolve={undoResolveWrite}
-                    onRedoResolve={redoResolveWrite}
-                    onOpenHistory={openHistoryPage}
-                  />
+                <div className="mx-auto flex min-h-full w-full flex-col gap-3 pt-2 pb-4">
+                  {tasksList}
+                  <div className="grid grid-cols-1 gap-3 @min-[1000px]:max-h-[560px] @min-[1000px]:min-h-[340px] @min-[1000px]:flex-1 @min-[1000px]:grid-cols-12 @min-[1000px]:grid-rows-1">
+                    <section
+                      aria-label="Plan"
+                      className="flex min-h-0 flex-col rounded-card bg-card p-4 text-neutral-100 @max-[760px]:hidden @min-[1000px]:col-span-7"
+                    >
+                      {planPane}
+                    </section>
+                    <section
+                      aria-label="Shelf"
+                      className="flex h-[420px] min-h-0 flex-col rounded-card bg-card p-4 text-neutral-100 @max-[760px]:hidden @min-[1000px]:col-span-5 @min-[1000px]:h-auto"
+                    >
+                      {shelfPane}
+                    </section>
+                  </div>
                 </div>
               </div>
               <div className="mx-auto flex w-full max-w-3xl shrink-0 flex-col gap-2 @max-[760px]:max-w-none">
-                {createdTasks.length === 0 ? (
+                {hasTasks && suggestions.length > 0 ? (
                   <div
                     className="flex flex-wrap gap-1.5 px-1"
                     role="group"
-                    aria-label="Suggested prompts"
+                    aria-label="Suggested next steps"
                   >
-                    {SUGGESTIONS.map((text) => (
-                      <button
-                        key={text}
+                    {suggestions.map((item) => (
+                      <Button
+                        key={item.label}
                         type="button"
-                        onClick={() => setSuggestion({ id: Date.now(), text })}
-                        className="rounded-full bg-white/[0.06] px-2.5 py-1 text-xs text-neutral-300 transition-colors hover:bg-white/[0.1] hover:text-neutral-100 focus-visible:ring-2 focus-visible:ring-ring"
+                        size="sm"
+                        variant="outline"
+                        onClick={() => pickSuggestion(item)}
                       >
-                        {text}
-                      </button>
+                        {item.label}
+                      </Button>
                     ))}
                   </div>
                 ) : null}
@@ -462,28 +490,16 @@ export function ProjectShell({ projectId, projectName, editorId, onHome }: Proje
             </div>
           ) : page === "maker" ? (
             <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-2 py-2 overscroll-contain">
-              <div className="mx-auto flex w-full max-w-4xl shrink-0">
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="ghost"
-                  aria-label="Back to tasks"
-                  onClick={() => setPage("board")}
-                >
-                  <ArrowLeft />
-                  Back
-                </Button>
-              </div>
               <div className="mx-auto min-h-0 w-full max-w-4xl flex-1">
-                <CreationBoard
+                <EffectMaker
                   clips={effectClips}
-                  onApplyEffect={project.applyItem}
-                  onUndoEffect={(itemId) => project.undoToHere(itemId)}
+                  onApply={project.applyItem}
+                  onUndo={(itemId) => project.undoToHere(itemId)}
                   onOpenHistory={openHistoryPage}
                   refusal={project.refusal?.reason ?? null}
                   landings={project.landings}
                   onRecordLanding={project.recordLanding}
-                  startOnNewPiece
+                  onBack={() => setPage("board")}
                 />
               </div>
             </div>
@@ -510,25 +526,20 @@ export function ProjectShell({ projectId, projectName, editorId, onHome }: Proje
               </div>
             </div>
           )}
-        </main>
-        {showSide ? (
-          <aside
-            aria-label="Project panel"
-            className="flex min-h-0 w-80 shrink-0 flex-col overflow-hidden rounded-card bg-card p-4 text-neutral-100 @max-[760px]:hidden xl:w-96"
-          >
-            <SidePanel tab={sideTab} onTab={setSideTab} plan={planPane} shelf={shelfPane} />
-          </aside>
-        ) : null}
-        <PanelDrawer open={panelOpen} onClose={() => setPanelOpen(false)}>
-          <SidePanel
-            tab={sideTab}
-            onTab={setSideTab}
-            plan={planPane}
-            shelf={shelfPane}
-            onClose={() => setPanelOpen(false)}
-          />
-        </PanelDrawer>
+          </main>
+          {narrowShowsPanel ? (
+            <aside
+              aria-label="Project panel"
+              className="flex min-h-0 w-full min-w-0 flex-1 flex-col overflow-hidden rounded-card bg-card p-4 text-neutral-100 @min-[761px]:hidden"
+            >
+              <div className="min-h-0 flex-1 overflow-hidden">
+                {sideTab === "plan" ? planPane : shelfPane}
+              </div>
+            </aside>
+          ) : null}
+        </div>
       </div>
     </section>
+    </ToastProvider>
   );
 }

@@ -306,6 +306,32 @@ export function settledTaskRows(): RunningTask[] {
   return [...settledRows.values()];
 }
 
+/** One task's terminal job, for in-app notifications. Fires once per job. */
+export type TaskSettledEvent = { task: RunningTask; job: AgentJob };
+
+const settleListeners = new Set<(event: TaskSettledEvent) => void>();
+/** Request ids already announced, so a re-poll never double-fires. */
+const announcedJobs = new Set<string>();
+
+/** Subscribe to task settle transitions. Returns the unsubscribe. */
+export function onTaskSettled(listener: (event: TaskSettledEvent) => void): () => void {
+  settleListeners.add(listener);
+  return () => {
+    settleListeners.delete(listener);
+  };
+}
+
+/**
+ * Announce one settled job to subscribers, once. Only jobs this session
+ * polled to terminal arrive here, so tasks that were already finished
+ * on first load never fire.
+ */
+function announceSettled(task: RunningTask, job: AgentJob): void {
+  if (announcedJobs.has(job.request_id)) return;
+  announcedJobs.add(job.request_id);
+  for (const listener of settleListeners) listener({ task, job });
+}
+
 /** Seen finished tasks, per project: the Recent dot clears once looked at. */
 const SEEN_KEY_PREFIX = "chair.seenTasks.";
 const SEEN_CAP = 200;
@@ -365,6 +391,8 @@ export function resetLiveJobs(): void {
   pollFailures.clear();
   appliedJobs.clear();
   landedByTask.clear();
+  settleListeners.clear();
+  announcedJobs.clear();
 }
 
 /**
@@ -874,6 +902,7 @@ export function useLiveTasks(
               jobId: entry.requestId,
               jobStatus: job.status,
             });
+            announceSettled(entry.task, job);
           }
         }
         for (const requestId of merged.forget) forgetLiveJob(requestId);
