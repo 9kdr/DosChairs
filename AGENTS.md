@@ -1,6 +1,6 @@
 # Chair
 
-You are working on Chair, a video editor that proposes edits and waits for a person to accept them. The repo is [9kdr/DosChairs](https://github.com/9kdr/DosChairs). Product rule: [propose, never apply](docs/philosophy.md).
+You are working on Chair, a video editor that applies its edits on copies and keeps every step undoable. The repo is [9kdr/DosChairs](https://github.com/9kdr/DosChairs). Product rule: [never destructive, always undoable](docs/philosophy.md).
 
 Talk to the user in plain language. Say what you are doing, which issue it belongs to, and what you need from them. Use the project words once, then the plain version: a changeset is a proposed edit, a timeline is the cut, an adapter is the link to one editing app.
 
@@ -13,7 +13,7 @@ Talk to the user in plain language. Say what you are doing, which issue it belon
 - **Always give proof to the user on the changes; this is mainly what you must remember from this.** Proof scales with the change (see Working with Mel): a screenshot for a screen, pasted command output or status numbers for backend work, the check plus the score for pure code. If the harness cannot take a screenshot, give the exact click path plus what each step should show, in words.
 - Never merge, and never turn on auto-merge, until the user answers a direct question. See the desk skill for the wording.
 - Commit early and often on the branch while work lands; checkpoint commits need no review. The check-and-score review happens once, when you want to open the pull request. Nothing merges until that review passes and the user answers.
-- A pending proposed edit does not change the timeline. Do not overwrite source video or audio. Name the editor's presets. If an adapter cannot do something, use the fallback in its capability manifest.
+- An applied edit lands on a copy: a new timeline, a new comp version, a new track. Do not overwrite source video or audio, and never mutate the person's existing timeline in place. Name the editor's presets. If an adapter cannot do something, use the fallback in its capability manifest.
 - When you add a feature on the user's behalf, name the model you are in your reply (e.g. built with Muse Spark). The user tracks which model built what.
 
 ## Working with Mel

@@ -81,6 +81,17 @@ export type EditOp =
   | "set_gain"
   | "mute_clip";
 
+/**
+ * The adapter could not place this item directly. Capability is the
+ * manifest capability id (e.g. fusionComps); reason is the plain-words
+ * substitute the reviewer accepts instead, composed by the agent from
+ * the adapter's capability manifest.
+ */
+export interface ChangesetFallback {
+  capability: string;
+  reason: string;
+}
+
 export interface ChangesetItem {
   id: string;
   op: EditOp;
@@ -88,6 +99,7 @@ export interface ChangesetItem {
   beatId?: string;
   rationale: string;
   patch?: Record<string, unknown>;
+  fallback?: ChangesetFallback;
   status: "pending" | "accepted" | "rejected";
 }
 

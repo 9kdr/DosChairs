@@ -5,7 +5,7 @@ A concise pre-flight checklist for the Chair rough-cut pitch.
 ## Pitch framing
 
 - **Pitch angle:** Chair delivers a strong rough draft with full accept/reject control.
-- **Core rule:** [Propose, never apply](philosophy.md). The agent generates proposed changesets and proxy previews; nothing applies to the timeline without explicit user approval, and source media is never overwritten.
+- **Core rule:** [Never destructive, always undoable](philosophy.md). The agent applies edits directly onto copies (new timelines, versions, tracks); history shows every step with who did it and undo is one key, and source media is never overwritten.
 
 ## Rehearsal checklist
 

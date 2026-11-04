@@ -1,6 +1,6 @@
 import { ArrowRightIcon, SparklesIcon, VolumeXIcon } from "lucide-react";
 import type { ReactNode } from "react";
-import type { ChangesetItem } from "@chair/timeline-ir";
+import type { ChangesetFallback, ChangesetItem } from "@chair/timeline-ir";
 import { cn } from "@/lib/utils";
 
 /** Safe readers over the free-form patch blob. */
@@ -308,6 +308,18 @@ function panelsForOp(item: ChangesetItem): { before: ReactNode; after: ReactNode
         ),
       };
   }
+}
+
+/**
+ * The inline fallback line for an item the adapter could not place
+ * directly, or null when it placed the item as proposed. The reason
+ * is the agent's plain-words substitute; callers render it before
+ * accept so no fallback stays silent. History entries carry the same
+ * shape, so this reads both.
+ */
+export function fallbackNotice(item: { fallback?: ChangesetFallback }): string | null {
+  const reason = item.fallback?.reason;
+  return typeof reason === "string" && reason.length > 0 ? reason : null;
 }
 
 /**

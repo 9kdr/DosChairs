@@ -59,7 +59,7 @@ Give the child one issue, the paragraph above, and nothing else from the parent 
 - Grok 4.7: the goal, the constraints, and what to leave alone. Ask it to decide and then do the work. For a screen, name the window a person will look at. Pass `reasoning_effort=high`, `fastMode=false`, and `contextWindow=256k` in `target.options`, not only in the prompt.
 - Auto: the cleanup chat after a bloat deduction of 2 or 3. It may only delete or shrink what Gemini named.
 
-A mid-task review is one question the builder cannot settle, for example "Does this pending edit change the timeline? Point at the line." The reviewer does not start a second branch.
+A mid-task review is one question the builder cannot settle, for example "Does this apply land on a copy and leave source media alone? Point at the line." The reviewer does not start a second branch.
 
 ## Score the implementation
 
@@ -70,7 +70,7 @@ Be strict. A high score must be earned. Praise without line evidence is invalid.
 Each gate is worth 2 points, or 0. The score is the sum, out of 10.
 
 1. **The issue.** The diff does what the issue asked. Files outside that work are untouched. Partial delivery or drive-by edits score 0.
-2. **The rules.** A pending edit does not change the timeline. Source video and audio stay untouched. No secrets, footage, or weights. Any violation scores 0.
+2. **The rules.** Applied edits land on copies/versions/new tracks, are logged in history, and are undoable. Source video and audio stay untouched. No secrets, footage, or weights. Any violation scores 0.
 3. **The check.** It re-runs the check for the packages that changed in this environment and reports the exact command and result. Trusting the builder's claim without re-running scores 0. A failure scores 0.
 4. **The code.** It opens every changed file and names the lines that do the work for each acceptance point. A score with no line references, or only file names, is 0.
 5. **The screen.** If `apps/desktop` or `packages/ui` changed, it runs `pnpm --filter @chair/desktop dev`, opens `http://localhost:1420`, and takes a screenshot of the screen a person would use. It says what is on that screen. No screenshot scores 0. If those paths did not change, this gate scores 2 and the report says there was no screen to shoot.
@@ -121,7 +121,7 @@ Good:
 
 "I'm on issue 1, the Kdenlive round trip. Nobody else has it. DeepSeek will do the adapter. I won't merge until you say so."
 
-"DeepSeek hit a schema question. I asked Gemini one thing: does this pending edit change the timeline? I'll wait for that before more code."
+"DeepSeek hit a schema question. I asked Gemini one thing: does this apply land on a copy? I'll wait for that before more code."
 
 "Gemini scored this 8/10. The pull request is ready: link. Checks are green. I have not merged it. Should I merge it into main?"
 

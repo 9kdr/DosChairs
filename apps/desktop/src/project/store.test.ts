@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { Changeset, HistoryEntry, Timeline } from "@chair/timeline-ir";
 import { emptyTimeline } from "@chair/timeline-ir";
 import {
+  advanceMirror,
   canUndoTask,
   historyForTask,
   reviewItem,
@@ -137,6 +138,36 @@ describe("tryHistoryEntry", () => {
       },
       acceptedAt: "2026-10-31T12:00:00.000Z",
       acceptedBy: "you",
+      actor: "user",
+    });
+  });
+
+  it("marks agent applies and carries the adapter fallback", () => {
+    const changeset = makeChangeset();
+    const item = {
+      ...changeset.items[0]!,
+      fallback: {
+        capability: "fusionComps",
+        reason: "Resolve can't place this directly — pre-rendered clip instead",
+      },
+    };
+    const checked = tryHistoryEntry(
+      changeset,
+      item,
+      makeTimeline(),
+      "agent",
+      "2026-10-31T12:00:00.000Z",
+      "task-1",
+      "agent",
+    );
+
+    expect(checked.ok).toBe(true);
+    if (!checked.ok) return;
+    expect(checked.entry.actor).toBe("agent");
+    expect(checked.entry.acceptedBy).toBe("agent");
+    expect(checked.entry.fallback).toEqual({
+      capability: "fusionComps",
+      reason: "Resolve can't place this directly — pre-rendered clip instead",
     });
   });
 
@@ -173,6 +204,44 @@ describe("tryHistoryEntry", () => {
     );
     expect(checked.ok).toBe(true);
     if (checked.ok) expect(checked.entry.taskId).toBe("task-1");
+  });
+});
+
+describe("advanceMirror", () => {
+  it("moves the local copy with what applied so the next inverse snapshots it", () => {
+    const timeline = makeTimeline();
+    const changeset = makeChangeset();
+    const marker = tryHistoryEntry(
+      changeset,
+      changeset.items[0]!,
+      timeline,
+      "agent",
+      "2026-10-31T12:00:00.000Z",
+      "task-1",
+      "agent",
+    );
+    const trim = tryHistoryEntry(
+      changeset,
+      changeset.items[1]!,
+      timeline,
+      "agent",
+      "2026-10-31T12:00:00.000Z",
+      "task-1",
+      "agent",
+    );
+    if (!marker.ok || !trim.ok) throw new Error("fixtures must invert");
+
+    const next = advanceMirror(timeline, [marker.entry, trim.entry]);
+    expect(next.markers.map((entry) => entry.id)).toEqual(["mark-hook-beat"]);
+    expect(next.tracks[0]!.clips[0]!.timelineRange.start).toEqual({ value: 12, rate: 24 });
+    // The input mirror is untouched: the advance is a copy.
+    expect(timeline.markers).toEqual([]);
+    expect(timeline.tracks[0]!.clips[0]!.timelineRange.start).toEqual({ value: 0, rate: 24 });
+  });
+
+  it("leaves the mirror alone with no entries", () => {
+    const timeline = makeTimeline();
+    expect(advanceMirror(timeline, [])).toBe(timeline);
   });
 });
 
@@ -223,15 +292,15 @@ describe("undoSummaryForTask", () => {
     const history = [acceptedEntry("a", "task-1"), acceptedEntry("b", "task-2"), acceptedEntry("c", "task-1")];
 
     expect(undoSummaryForTask(history, "task-1", "Assemble rough cut")).toBe(
-      "2 accepted edits for Assemble rough cut, newest first: " +
+      "2 applied edits for Assemble rough cut, newest first: " +
         "Add Marker; Add Marker. " +
-        "Pick Undo to here in History to propose the rewind — it lands in Review for accept.",
+        "Press u or pick Undo to here in History to rewind — it applies at once onto a copy.",
     );
   });
 
   it("says so honestly with nothing to rewind", () => {
     expect(undoSummaryForTask([], "task-1", "Assemble rough cut")).toBe(
-      "No accepted edits to rewind for Assemble rough cut yet.",
+      "No applied edits to rewind for Assemble rough cut yet.",
     );
   });
 });

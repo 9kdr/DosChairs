@@ -108,6 +108,7 @@ function acceptForTest(
     inverse: inverted.inverse,
     acceptedAt: "2026-11-01T12:00:00.000Z",
     acceptedBy: "you",
+    actor: "agent",
   };
   const next = applyAccepted(timeline, {
     schemaVersion: "0.1.0",
@@ -477,6 +478,7 @@ describe("buildUndoChangeset", () => {
       inverse: inverted.inverse,
       acceptedAt: "2026-11-01T12:00:00.000Z",
       acceptedBy: "you",
+      actor: "agent",
     };
   }
 

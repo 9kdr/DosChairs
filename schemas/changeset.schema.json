@@ -51,6 +51,16 @@
         },
         "rationale": { "type": "string" },
         "patch": { "type": "object" },
+        "fallback": {
+          "type": "object",
+          "description": "The adapter could not place this directly: capability id plus the plain-words substitute the reviewer accepts instead.",
+          "additionalProperties": false,
+          "required": ["capability", "reason"],
+          "properties": {
+            "capability": { "type": "string", "minLength": 1 },
+            "reason": { "type": "string", "minLength": 1 }
+          }
+        },
         "status": { "enum": ["pending", "accepted", "rejected"] }
       }
     }

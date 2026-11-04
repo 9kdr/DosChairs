@@ -4,6 +4,7 @@ import { DitherShader } from "@/lib/dither";
 import { SmoothScrollTarget } from "@/components/smooth-scroll";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { HistoryActorBadge, HistoryFallbackLine } from "../project/HistoryCard";
 import { clockTime, opLabel } from "../project/ReviewBoard";
 import type { HistoryEntry } from "../project/store";
 import { LANE_INK, TASK_FIELD, type RunningTask } from "./RunningTasks";
@@ -50,8 +51,8 @@ export function activityForTask(task: RunningTask): TaskActivity {
 /**
  * Live rail beside the thread: what this task is doing right now, plus what
  * it already landed. The thread feeds the live run; without one the panel
- * falls back to the task's own status. The accepted-entries card is the
- * task's undo history: each row proposes rewinding to before it.
+ * falls back to the task's own status. The applied-entries card is the
+ * task's undo history: each row rewinds to before it at once.
  */
 export function TaskActivityPanel({
   task,
@@ -88,7 +89,7 @@ export function TaskActivityPanel({
             aria-hidden
             className="pointer-events-none absolute inset-0"
             style={{
-              background: "linear-gradient(to top, #1a1a1a 0%, #1a1a1a 45%, transparent 100%)",
+              background: "linear-gradient(to top, #1a1a1a 0%, #1a1a1a 45%, transparent 100%)", // taste-skill-ignore: neutral scrim keeps the headline legible over the task art.
             }}
           />
           <p className="absolute inset-x-3 bottom-2 text-xs leading-5 text-neutral-300">
@@ -142,37 +143,43 @@ export function TaskActivityPanel({
       <div className="flex flex-col gap-1 rounded-[28px] bg-[#1a1a1a] p-4 text-neutral-100 shadow-raised ring-1 ring-white/8">
         <div className="flex items-center gap-2 px-1 pb-1">
           <HistoryIcon className="size-4 text-neutral-400" aria-hidden="true" />
-          <h2 className="text-sm font-semibold tracking-wide text-neutral-100">Accepted edits</h2>
+          <h2 className="text-sm font-semibold tracking-wide text-neutral-100">Applied edits</h2>
           <span className="text-xs tabular-nums text-neutral-500">
             {history.length === 1 ? "1 entry" : `${history.length} entries`}
           </span>
         </div>
         {history.length === 0 ? (
           <p className="px-1 py-1 text-xs text-neutral-500">
-            No accepted edits yet — accepts land here with their undo point.
+            No applied edits yet — applied edits land here with their undo point.
           </p>
         ) : (
           <ol className="flex min-h-0 flex-col">
             {history.map((entry, index) => (
               <li
                 key={entry.itemId}
-                className="flex items-center gap-2 border-t border-white/[0.06] px-1 py-2.5 first:border-t-0 first:pt-1 last:pb-1"
+                className="flex items-start gap-2 border-t border-white/[0.06] px-1 py-2.5 first:border-t-0 first:pt-1 last:pb-1"
               >
-                <span className="w-6 shrink-0 text-xs tabular-nums text-neutral-500">
+                <span className="w-6 shrink-0 pt-0.5 text-xs tabular-nums text-neutral-500">
                   #{index + 1}
                 </span>
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-[13px] font-medium text-neutral-100">
-                    {opLabel(entry.op)}
-                    {entry.targetId ? (
-                      <span className="ml-1.5 font-normal text-neutral-500">{entry.targetId}</span>
-                    ) : null}
+                  <p className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[13px] font-medium text-neutral-100">
+                    <span className="truncate">
+                      {opLabel(entry.op)}
+                      {entry.targetId ? (
+                        <span className="ml-1.5 font-normal text-neutral-500">
+                          {entry.targetId}
+                        </span>
+                      ) : null}
+                    </span>
+                    <HistoryActorBadge actor={entry.actor} />
                   </p>
                   <p className="mt-0.5 truncate text-xs text-neutral-600">
                     <span className="font-mono">{entry.itemId}</span>
                     {entry.beatId ? <span> · step {entry.beatId}</span> : null}
                     <span> · {clockTime(entry.acceptedAt)}</span>
                   </p>
+                  <HistoryFallbackLine entry={entry} />
                 </div>
                 <Button
                   type="button"
@@ -181,7 +188,7 @@ export function TaskActivityPanel({
                   disabled={!onUndoEntry}
                   title={
                     onUndoEntry
-                      ? `Propose rewinding to before ${entry.itemId}`
+                      ? `Rewind to before ${entry.itemId}`
                       : "Undo is unavailable here"
                   }
                   aria-label={`Undo to here: ${opLabel(entry.op)}${entry.targetId ? ` on ${entry.targetId}` : ""}`}
