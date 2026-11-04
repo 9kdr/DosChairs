@@ -173,7 +173,10 @@ export async function checkModule(entry: string, opts: CheckOptions = {}): Promi
   const props = validateProps(outcome.props);
   errors.unshift(...meta.errors, ...props.errors);
   const scope = opts.scope ?? null;
-  errors.push(...scopeErrors(outcome.scope?.covers ?? [], outcome.scope?.text ?? "", scope));
+  // A background-kind piece IS the backdrop: full-frame fills are what was
+  // asked for, so the full-frame rules do not apply. Recorded, not silent.
+  const backgroundKind = meta.value?.kind === "background";
+  errors.push(...scopeErrors(backgroundKind ? [] : (outcome.scope?.covers ?? []), outcome.scope?.text ?? "", scope));
   if (scope) {
     // The SSR probe cannot see client-only state (a ShaderPass compile
     // fallback) or canvas paint (a semi-transparent wash), so re-check the
@@ -186,11 +189,17 @@ export async function checkModule(entry: string, opts: CheckOptions = {}): Promi
         );
       } else {
         checks["browserVerified"] = true;
+        if (backgroundKind) checks["coverageExempt"] = true;
         if (typeof seen.paintCoverage === "number") checks["paintCoverage"] = seen.paintCoverage;
         if (typeof seen.shadersStatus === "string") checks["shadersStatus"] = seen.shadersStatus;
-        errors.push(...scopeErrors(seen.covers ?? [], seen.text ?? "", scope, seen.shaderLog ?? null));
-        const wash = coverageError(seen.paintCoverage ?? null, scope.wantsBackground);
-        if (wash) errors.push(wash);
+        errors.push(...scopeErrors(backgroundKind ? [] : (seen.covers ?? []), seen.text ?? "", scope, seen.shaderLog ?? null));
+        if (!backgroundKind) {
+          const wash = coverageError(seen.paintCoverage ?? null, scope.wantsBackground);
+          if (wash) errors.push(wash);
+        }
+        if (!seen.shaderFailed && seen.paintCoverage === 0) {
+          errors.push("piece painted nothing at the mid frame: the canvas is blank (check uniforms, sizes, and frame setup)");
+        }
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);

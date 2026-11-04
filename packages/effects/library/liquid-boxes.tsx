@@ -1,20 +1,22 @@
 /**
  * Liquid Boxes (gold module): two boxes orbit, touch, and merge through a
- * smooth-min SDF, rendered by OGL with a Paper grain-gradient over the top.
+ * smooth-min SDF, rendered by OGL on transparent pixels with a Paper
+ * grain-gradient multiplied over the boxes only.
  *
  * Seeking: OGL paints one frame per seek (`u_time = t`, render once) and the
- * Paper mount is parked with `setFrame(t * 1000)` at speed 0. Per-box phase
- * offsets come from motion's pure `stagger()`, so the render pass — the one
- * the determinism probe reads — computes the exact same centers the client
- * mounts paint. Mirror attributes (`data-c1`, `data-frame`, ...) carry every
- * prop into SSR markup.
+ * Paper mount is parked with `setFrame(t * 1000)` at speed 0; a 2D composite
+ * masks the grain with the OGL alpha and multiplies it over the boxes.
+ * Per-box phase offsets come from motion's pure `stagger()`, so the render
+ * pass — the one the determinism probe reads — computes the exact same
+ * centers the client mounts paint. Mirror attributes (`data-c1`,
+ * `data-frame`, ...) carry every prop into SSR markup.
  */
 import React from "react";
 import { Renderer, Program, Mesh, Triangle } from "ogl";
 import { stagger } from "motion";
 import { ShaderMount, getShaderColorFromString, grainGradientFragmentShader } from "@paper-design/shaders";
 import type { EffectProps, PropSpec } from "@chair/effects";
-import { clamp, hexToRgb01, num } from "@chair/effects";
+import { PAPER_OBJECT_SIZING, clamp, hexToRgb01, num } from "@chair/effects";
 
 export const meta = {
   id: "liquid-boxes",
@@ -62,7 +64,6 @@ uniform float u_size;
 uniform float u_merge;
 uniform vec3 u_ink;
 uniform vec3 u_accent;
-uniform vec3 u_paper;
 float sdBox(vec2 p, vec2 b) {
   vec2 d = abs(p) - b;
   return length(max(d, 0.0)) + min(max(d.x, d.y), 0.0);
@@ -76,10 +77,12 @@ void main() {
   float wob = 0.06 * sin(u_time * 1.7 + px.x * 4.0) * sin(u_time * 1.3 + px.y * 3.0);
   float d = smin(sdBox(px - u_c1, vec2(u_size)), sdBox(px - u_c2, vec2(u_size)), u_merge * 0.55 + 0.02);
   float edge = smoothstep(0.012 + wob * 0.2, -0.012 + wob * 0.2, d);
-  vec3 col = mix(u_paper, u_ink, edge);
-  float glow = exp(-max(d, 0.0) * 6.0) * step(0.0, d);
-  col = mix(col, u_accent, glow * 0.85);
-  oColor = vec4(col, 1.0);
+  float glow = exp(-max(d, 0.0) * 18.0) * step(0.0, d);
+  // Boxes and their halo on transparency: ink core, accent falloff, and
+  // exactly zero (no unmultiplied leak) everywhere else.
+  float halo = glow * 0.85 * (1.0 - edge);
+  vec3 col = u_ink * edge + u_accent * halo;
+  oColor = vec4(col, clamp(edge + halo, 0.0, 1.0));
 }`;
 
 const delayFor = stagger(0.9, { from: "center" });
@@ -106,15 +109,19 @@ export default function LiquidBoxes(p: Props): React.ReactElement {
   const grain = clamp(n("grain", 0.35), 0, 1);
   const oglRef = React.useRef<HTMLDivElement | null>(null);
   const grainRef = React.useRef<HTMLDivElement | null>(null);
+  const compRef = React.useRef<HTMLDivElement | null>(null);
+  const compCanvasRef = React.useRef<HTMLCanvasElement | null>(null);
+  const tempCanvasRef = React.useRef<HTMLCanvasElement | null>(null);
 
   React.useLayoutEffect(() => {
-    if (!oglRef.current || !grainRef.current) return;
+    if (!oglRef.current || !grainRef.current || !compRef.current) return;
     // Client enhancement only; the render pass above is what the probe checks.
     let renderer: Renderer | null = null;
     let mount: ShaderMount | null = null;
     try {
-      renderer = new Renderer({ width, height, dpr: 1 });
+      renderer = new Renderer({ width, height, dpr: 1, alpha: true });
       const gl = renderer.gl;
+      gl.canvas.style.display = "none";
       oglRef.current.appendChild(gl.canvas);
       const program = new Program(gl, {
         vertex: `#version 300 es
@@ -130,11 +137,22 @@ export default function LiquidBoxes(p: Props): React.ReactElement {
           u_merge: { value: merge },
           u_ink: { value: hexToRgb01(c("ink", "#101018")) },
           u_accent: { value: hexToRgb01(c("accent", "#ff6a00")) },
-          u_paper: { value: hexToRgb01(c("paper", "#f1ebdd")) },
         },
       });
       renderer.render({ scene: new Mesh(gl, { geometry: new Triangle(gl), program }) });
-      mount = new ShaderMount(grainRef.current, grainGradientFragmentShader, {}, undefined, 0, Math.round(t * 1000));
+      // Paper only queries uniform locations for keys passed here; every key the
+      // grain later sets must be present, or the grain layer stays blank.
+      // PAPER_OBJECT_SIZING: the mount never sets the vertex sizing uniforms.
+      mount = new ShaderMount(grainRef.current, grainGradientFragmentShader, {
+        ...PAPER_OBJECT_SIZING,
+        u_colorBack: getShaderColorFromString(c("paper", "#f1ebdd")),
+        u_colors: [c("ink", "#101018"), c("accent", "#ff6a00"), c("paper", "#f1ebdd")].map((hex) => getShaderColorFromString(hex)),
+        u_colorsCount: 3,
+        u_softness: 0.5,
+        u_intensity: 0.8,
+        u_noise: grain,
+        u_shape: 2,
+      }, undefined, 0, Math.round(t * 1000));
       mount.setUniforms({
         u_colorBack: getShaderColorFromString(c("paper", "#f1ebdd")),
         u_colors: [c("ink", "#101018"), c("accent", "#ff6a00"), c("paper", "#f1ebdd")].map((hex) => getShaderColorFromString(hex)),
@@ -146,6 +164,42 @@ export default function LiquidBoxes(p: Props): React.ReactElement {
       });
       mount.setSpeed(0);
       mount.setFrame(Math.round(t * 1000));
+      // Grain only inside the boxes: mask the full-frame grain with the OGL
+      // alpha, then multiply it over the boxes. Both draws are synchronous,
+      // so the GL buffers are valid to read in this same task.
+      const paperCanvas = grainRef.current.querySelector("canvas");
+      if (paperCanvas) {
+        paperCanvas.style.display = "none";
+        if (!compCanvasRef.current) {
+          const made = document.createElement("canvas");
+          made.width = width;
+          made.height = height;
+          made.style.cssText = "position:absolute;inset:0;width:100%;height:100%";
+          compRef.current.appendChild(made);
+          compCanvasRef.current = made;
+        }
+        if (!tempCanvasRef.current) {
+          const made = document.createElement("canvas");
+          made.width = width;
+          made.height = height;
+          tempCanvasRef.current = made;
+        }
+        const temp = tempCanvasRef.current.getContext("2d");
+        const comp = compCanvasRef.current.getContext("2d");
+        if (temp && comp) {
+          temp.globalCompositeOperation = "source-over";
+          temp.clearRect(0, 0, width, height);
+          temp.drawImage(paperCanvas, 0, 0, width, height);
+          temp.globalCompositeOperation = "destination-in";
+          temp.drawImage(gl.canvas, 0, 0, width, height);
+          comp.globalCompositeOperation = "source-over";
+          comp.clearRect(0, 0, width, height);
+          comp.drawImage(gl.canvas, 0, 0, width, height);
+          comp.globalCompositeOperation = "multiply";
+          comp.drawImage(tempCanvasRef.current, 0, 0);
+          comp.globalCompositeOperation = "source-over";
+        }
+      }
     } catch {
       // No WebGL on this host: the mirrored markup still describes the frame.
     }
@@ -170,7 +224,8 @@ export default function LiquidBoxes(p: Props): React.ReactElement {
       data-props={[merge.toFixed(3), size.toFixed(4), grain.toFixed(3), c("ink", ""), c("accent", ""), c("paper", "")].join("|")}
     >
       <div ref={oglRef} style={{ position: "absolute", inset: 0 }} />
-      <div ref={grainRef} style={{ position: "absolute", inset: 0, pointerEvents: "none", opacity: 0.5 }} />
+      <div ref={grainRef} style={{ position: "absolute", inset: 0, pointerEvents: "none" }} />
+      <div ref={compRef} style={{ position: "absolute", inset: 0, pointerEvents: "none" }} />
     </div>
   );
 }
