@@ -231,7 +231,9 @@ def test_manifest_declares_api_builds() -> None:
 
 
 def test_add_effect_builds_new_comp_and_undo_switches_back(tmp_path: Path) -> None:
+    FakeComp = _FAKES["FakeComp"]
     item = FakeItem()
+    item.comps["Comp 1"] = FakeComp()  # previous comp already has a frame
     op = add_effect(item, _spec(), cache_dir=tmp_path)
     assert item.imported == []  # build-by-API writes no .comp file
     assert list(tmp_path.iterdir()) == []
@@ -241,6 +243,23 @@ def test_add_effect_builds_new_comp_and_undo_switches_back(tmp_path: Path) -> No
     assert op["prev_comp_name"] == "Comp 1"
     assert remove_effect(item, op) is True
     assert item.loaded == ["Comp 1"]
+    assert item.deleted == []
+
+
+def test_remove_effect_removes_the_added_version_without_a_frame(tmp_path: Path) -> None:
+    """No framed previous comp: undo deletes the added version, never loads (#290)."""
+    item = FakeItem()
+    op = add_effect(item, _spec(), cache_dir=tmp_path)
+    assert remove_effect(item, op) is True
+    assert item.loaded == []
+    assert item.deleted == ["Comp 2"]
+    assert item.GetFusionCompNameList() == ["Comp 1"]
+
+
+def test_remove_effect_fallback_is_a_noop() -> None:
+    item = FakeItem()
+    assert remove_effect(item, {"effect_id": "fx-1", "fallback": {}}) is True
+    assert item.loaded == [] and item.deleted == []
 
 
 def test_add_effect_import_fast_path_when_ingested(tmp_path: Path) -> None:
