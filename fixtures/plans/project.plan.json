@@ -1,0 +1,35 @@
+{
+  "schemaVersion": "0.1.0",
+  "id": "plan_dawn_bread",
+  "status": "draft",
+  "front": {
+    "script_md": "# Dawn bread\n\n## Beat hook\nOpen on the oven door.\n",
+    "beats": [
+      { "id": "beat_hook", "role": "hook", "text": "Open on the oven door.", "startSec": 0, "endSec": 6 }
+    ],
+    "board": [
+      {
+        "id": "style-x",
+        "kind": "style",
+        "title": "Warm morning grade",
+        "images": ["https://example.com/still.jpg"],
+        "notes": "amber highlights, soft shadows",
+        "tags": ["warm", "morning"]
+      }
+    ]
+  },
+  "back": {
+    "tasks": [
+      { "id": "task_1", "title": "Cut the hook on the oven door", "detail": "First six seconds." }
+    ],
+    "constraints": { "do": ["Keep the face on the A-roll."], "dont": ["Do not touch source audio."] },
+    "digests": {
+      "style-x": {
+        "palette": ["#d9a05b"],
+        "mood": "warm and quiet",
+        "motionWords": ["slow push-in"],
+        "keywords": ["morning", "bread"]
+      }
+    }
+  }
+}

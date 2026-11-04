@@ -55,6 +55,18 @@
   --color-dither-grey: var(--dither-color-grey);
 }
 
+/* Grok-Bot look (#258 batch A): card/control/pill radii and the 3-size
+ * type scale. These generate the rounded-card, rounded-control,
+ * rounded-pill, text-body, text-meta, and text-title utilities. */
+@theme {
+  --radius-card: 24px;
+  --radius-control: 16px;
+  --radius-pill: 9999px;
+  --text-body: 15px;
+  --text-meta: 13px;
+  --text-title: 15px;
+}
+
 :root {
   color-scheme: light;
   --destructive-foreground: var(--color-red-700);
@@ -107,7 +119,7 @@
 }
 
 html {
-  font-size: 20px;
+  font-size: 16px;
 }
 
 @layer base {
@@ -158,6 +170,8 @@ body,
 body {
   margin: 0;
   color: var(--foreground);
+  font-size: var(--text-body);
+  line-height: 1.6;
   font-family: "Inter Variable", "Segoe UI", sans-serif;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
@@ -173,6 +187,7 @@ body {
   overflow: hidden;
   background: var(--background);
   border-radius: 16px;
+  --dither-cell: 2px;
   /* WebKitGTK needs the prefix; force descendants so home labels stay inert. */
   -webkit-user-select: none;
   user-select: none;
@@ -212,9 +227,9 @@ html[data-window-maximized] .chair-shell {
   --warning-foreground: var(--color-amber-400);
   --accent: rgb(245 245 245 / 4.5%);
   --accent-foreground: var(--color-neutral-100);
-  --background: #0C0C0C;
-  --border: rgb(245 245 245 / 6%);
-  --card: #141414;
+  --background: #0A0A0A;
+  --border: transparent;
+  --card: #1B1B1B;
   --card-foreground: var(--color-neutral-100);
   --destructive: color-mix(in srgb, var(--color-red-500) 90%, var(--color-white));
   --foreground: var(--color-neutral-100);
@@ -228,8 +243,8 @@ html[data-window-maximized] .chair-shell {
   --ring: var(--color-neutral-500);
   --secondary: rgb(245 245 245 / 4%);
   --secondary-foreground: var(--color-neutral-100);
-  --sidebar: #141414;
-  --surface-raised: #1F1F1F;
+  --sidebar: #0F0F0F;
+  --surface-raised: #242424;
   --subtle: var(--color-neutral-500);
   --line: rgb(245 245 245 / 7%);
   --surface-fill: #1A1A1A;

@@ -243,6 +243,141 @@ def transition_op(
     )
 
 
+def sfx_track_op(
+    id: str,
+    rationale: str,
+    *,
+    track_id: str = "audio-sfx-1",
+    name: str = "SFX",
+    beat_id: str | None = None,
+) -> ChangesetItem:
+    """Add a NEW audio track for placed sound cues. Nothing is overwritten."""
+    if not track_id:
+        raise ValueError("sfx track needs a track id")
+    return _item(
+        id, "add_track", rationale,
+        {"track": {"id": track_id, "kind": "audio", "name": name, "clips": []},
+         "trackId": track_id},
+        beat_id=beat_id,
+    )
+
+
+def sfx_clip_op(
+    id: str,
+    track_id: str,
+    clip_id: str,
+    rationale: str,
+    *,
+    media_ref: str,
+    name: str,
+    start_seconds: float,
+    duration_seconds: float,
+    rate: float = 30.0,
+    gain_db: float = -10.0,
+    kind: str = "sfx",
+    source: str = "synth",
+    license: str = "generated",
+    beat_id: str | None = None,
+) -> ChangesetItem:
+    """Place one SFX file on the SFX track as a full clip snapshot.
+
+    The snapshot carries sourceRange/timelineRange so the desktop applier
+    can place it without guessing; kind/gain ride alongside for the
+    adapter. Risers end exactly on the cut: pass start = cut - duration.
+    """
+    if not media_ref.strip():
+        raise ValueError("sfx clip needs a media_ref file path")
+    if start_seconds < 0 or duration_seconds <= 0 or rate <= 0:
+        raise ValueError("sfx clip needs start_seconds >= 0, duration > 0, rate > 0")
+    if gain_db > 0:
+        raise ValueError("sfx gain stays at or below 0 dB")
+    return _item(
+        id, "add_clip", rationale,
+        {
+            "clip": {
+                "id": clip_id,
+                "name": name,
+                "mediaRef": media_ref.strip(),
+                "sourceRange": {
+                    "start": {"value": 0, "rate": rate},
+                    "duration": {"value": round(duration_seconds * rate), "rate": rate},
+                },
+                "timelineRange": {
+                    "start": {"value": round(start_seconds * rate), "rate": rate},
+                    "duration": {"value": round(duration_seconds * rate), "rate": rate},
+                },
+            },
+            "clipId": clip_id,
+            "kind": kind,
+            "gainDb": gain_db,
+            "source": source,
+            "license": license,
+        },
+        target_id=track_id, beat_id=beat_id,
+    )
+
+
+def duck_keyframes(
+    regions_seconds: list[tuple[float, float]],
+    *,
+    duck_db: float = -12.0,
+    ramp_seconds: float = 0.2,
+) -> list[dict[str, float]]:
+    """Volume keyframes ducking music under dialogue: ~-12 dB with ramps.
+
+    Each region gets four points (down-ramp, hold, hold, up-ramp), clamped
+    at zero. Ramps default to 0.2s, inside the 150-300 ms window.
+    """
+    if duck_db >= 0:
+        raise ValueError("ducking gain stays below 0 dB")
+    if not 0.15 <= ramp_seconds <= 0.3:
+        raise ValueError("ducking ramps stay within 150-300 ms")
+    points: list[dict[str, float]] = []
+    for start, end in sorted(regions_seconds):
+        if end <= start:
+            continue
+        down = max(0.0, start - ramp_seconds)
+        points.extend([
+            {"timeSeconds": round(down, 3), "gainDb": 0.0},
+            {"timeSeconds": round(start, 3), "gainDb": duck_db},
+            {"timeSeconds": round(end, 3), "gainDb": duck_db},
+            {"timeSeconds": round(end + ramp_seconds, 3), "gainDb": 0.0},
+        ])
+    return points
+
+
+def duck_op(
+    id: str,
+    target_id: str,
+    rationale: str,
+    *,
+    regions_seconds: list[tuple[float, float]],
+    duck_db: float = -12.0,
+    ramp_seconds: float = 0.2,
+    beat_id: str | None = None,
+) -> ChangesetItem:
+    """Duck music under dialogue regions with volume keyframes on a copy.
+
+    A set_gain item: the adapter interprets the keyframes (or records its
+    fallback), the timeline IR itself is untouched.
+    """
+    keyframes = duck_keyframes(
+        regions_seconds, duck_db=duck_db, ramp_seconds=ramp_seconds
+    )
+    if not keyframes:
+        raise ValueError("ducking needs at least one dialogue region")
+    return _item(
+        id, "set_gain", rationale,
+        {
+            "gainDb": duck_db,
+            "regionsSeconds": [[s, e] for s, e in sorted(regions_seconds) if e > s],
+            "rampSeconds": ramp_seconds,
+            "keyframes": keyframes,
+        },
+        target_id=target_id, beat_id=beat_id,
+    )
+
+
 def marker_op(
     id: str,
     rationale: str,

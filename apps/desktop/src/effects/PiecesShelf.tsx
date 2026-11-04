@@ -8,7 +8,14 @@ import { writeChairRefs } from "@/lib/chair-ref";
 import { cn } from "@/lib/utils";
 import type { ChangesetItem } from "@chair/timeline-ir";
 import { EffectMaker, type ClipChoice } from "./EffectMaker";
-import { fetchPieces, PIECE_KIND_LABEL, type PieceInfo, type PieceKind } from "./pieces-api";
+import {
+  fetchPieces,
+  PIECE_KIND_LABEL,
+  PiecesError,
+  type PieceInfo,
+  type PieceKind,
+  type PiecesFailureKind,
+} from "./pieces-api";
 
 export type PiecesShelfProps = {
   className?: string;
@@ -30,6 +37,13 @@ const KIND_FILTERS: { id: KindFilter; label: string }[] = [
   { id: "sound", label: "Sound" },
 ];
 
+/** The real reason a pieces load failed, in plain words. */
+function failureText(failure: { kind: PiecesFailureKind; reason: string }): string {
+  return failure.kind === "offline"
+    ? `${failure.reason}. Start the agent with mise run dev:agent, then check again.`
+    : failure.reason;
+}
+
 /**
  * The one Pieces shelf: every macro, effect, motion, and sound piece the
  * agent knows, each with its kind. Opening or creating an effect-kind
@@ -44,8 +58,11 @@ export function PiecesShelf({
   onOpenHistory,
   refusal = null,
 }: PiecesShelfProps) {
+  /** The last good list; a failed reload never clears it. */
   const [pieces, setPieces] = useState<PieceInfo[] | null>(null);
-  const [failed, setFailed] = useState(false);
+  const [failure, setFailure] = useState<{ kind: PiecesFailureKind; reason: string } | null>(
+    null,
+  );
   const [query, setQuery] = useState("");
   const [kindFilter, setKindFilter] = useState<KindFilter>("all");
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -53,18 +70,19 @@ export function PiecesShelf({
   const [editing, setEditing] = useState<{ id: string; name: string } | null>(null);
 
   const load = () => {
-    setPieces(null);
-    setFailed(false);
+    setFailure(null);
     const controller = new AbortController();
     fetchPieces("", { limit: 50, signal: controller.signal })
       .then((found) => {
         setPieces(found);
-        setFailed(false);
+        setFailure(null);
       })
       .catch((error: unknown) => {
         if (error instanceof Error && error.name === "AbortError") return;
-        setPieces([]);
-        setFailed(true);
+        setFailure({
+          kind: error instanceof PiecesError ? error.kind : "refused",
+          reason: error instanceof Error ? error.message : "pieces failed to load",
+        });
       });
     return () => controller.abort();
   };
@@ -155,20 +173,44 @@ export function PiecesShelf({
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+        {failure && pieces !== null && pieces.length > 0 ? (
+          <p className="px-1 pb-2 text-xs leading-5 text-neutral-500">
+            Couldn&apos;t refresh pieces — {failureText(failure)}. Showing the last good
+            list.
+          </p>
+        ) : null}
         {pieces === null ? (
-          <p className="px-1 py-2 text-sm text-neutral-400">Loading pieces…</p>
+          failure ? (
+            <div className="flex flex-col items-start gap-2 rounded-2xl bg-white/[0.03] px-5 py-6 ring-1 ring-white/[0.06]">
+              <h3 className="text-sm font-medium text-neutral-200">Couldn&apos;t load pieces</h3>
+              <p className="text-sm leading-6 text-neutral-400">{failureText(failure!)}</p>
+              <Button type="button" size="sm" variant="outline" onClick={load}>
+                Check again
+              </Button>
+            </div>
+          ) : (
+            <p className="px-1 py-2 text-sm text-neutral-400">Loading pieces…</p>
+          )
         ) : pieces.length === 0 ? (
-          <div className="flex flex-col items-start gap-2 rounded-2xl bg-white/[0.03] px-5 py-6 ring-1 ring-white/[0.06]">
-            <h3 className="text-sm font-medium text-neutral-200">No pieces yet</h3>
-            <p className="text-sm leading-6 text-neutral-400">
-              {failed
-                ? "The agent is not running, so pieces cannot load."
-                : "Pieces the agent offers land here — macros, effects, motion, sound."}
-            </p>
-            <Button type="button" size="sm" variant="outline" onClick={load}>
-              Check again
-            </Button>
-          </div>
+          failure ? (
+            <div className="flex flex-col items-start gap-2 rounded-2xl bg-white/[0.03] px-5 py-6 ring-1 ring-white/[0.06]">
+              <h3 className="text-sm font-medium text-neutral-200">Couldn&apos;t load pieces</h3>
+              <p className="text-sm leading-6 text-neutral-400">{failureText(failure!)}</p>
+              <Button type="button" size="sm" variant="outline" onClick={load}>
+                Check again
+              </Button>
+            </div>
+          ) : (
+            <div className="flex flex-col items-start gap-2 rounded-2xl bg-white/[0.03] px-5 py-6 ring-1 ring-white/[0.06]">
+              <h3 className="text-sm font-medium text-neutral-200">No pieces yet</h3>
+              <p className="text-sm leading-6 text-neutral-400">
+                Pieces the agent offers land here — macros, effects, motion, sound.
+              </p>
+              <Button type="button" size="sm" variant="outline" onClick={load}>
+                Check again
+              </Button>
+            </div>
+          )
         ) : visible.length === 0 ? (
           <p className="px-1 py-2 text-sm text-neutral-500">Nothing matches.</p>
         ) : (

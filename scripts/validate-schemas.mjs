@@ -18,6 +18,7 @@ const pairs = [
   ["plan-grade.schema.json", "plans/grade.plan.json"],
   ["plan-motion.schema.json", "plans/motion.plan.json"],
   ["story-plan.schema.json", "plans/story.plan.json"],
+  ["project-plan.schema.json", "plans/project.plan.json"],
   ["effect-spec.schema.json", "effects/bounce-title.effect.json"],
 ];
 

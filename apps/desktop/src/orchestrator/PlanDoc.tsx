@@ -30,6 +30,9 @@ import {
 import { Tabs, TabsList, TabsTab } from "@/components/ui/tabs";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
+import { parsePlanMarkdown, usePlan, type BoardItem } from "./plan-api";
+import { PlanBeats } from "./PlanBeats";
+import { AgentView, PlanBoard } from "./PlanBoard";
 import { skeletonGroupsForText, splitMarkdownBlocks } from "./planSkeleton";
 
 type PlanMode = "edit" | "talk";
@@ -73,7 +76,18 @@ type PlanDocProps = {
   onClose: () => void;
   notice?: string | null;
   className?: string;
+  projectId?: string | null;
 };
+
+type PlanSection = "script" | "beats" | "board";
+
+function PlanNotice({ loading, error }: { loading: boolean; error: string | null }) {
+  return (
+    <p className="rounded-3xl bg-white/[0.04] p-5 text-sm leading-6 text-neutral-400">
+      {loading ? "Loading the plan…" : (error ?? "The plan needs the agent running.")}
+    </p>
+  );
+}
 
 function wrapSelection(value: string, start: number, end: number, marker: string) {
   const selected = value.slice(start, end) || "text";
@@ -510,7 +524,10 @@ function MarkdownText({
   return <div className="flex min-h-0 flex-col gap-3">{blocks}</div>;
 }
 
-export function PlanDoc({ open, mode, onOpen, onClose, notice, className }: PlanDocProps) {
+export function PlanDoc({ open, mode, onOpen, onClose, notice, className, projectId }: PlanDocProps) {
+  const [section, setSection] = useState<PlanSection>("script");
+  const { plan, loading, error, saveState, updateFront, appendBoard, generate, digest } = usePlan(projectId ?? null);
+  const [digesting, setDigesting] = useState<string | null>(null);
   const [tabs, setTabs] = useState<DocTab[]>(INITIAL_TABS);
   const [doc, setDoc] = useState<string>("brief");
   const [texts, setTexts] = useState<Record<string, string>>(INITIAL_TEXT);
@@ -1121,6 +1138,55 @@ export function PlanDoc({ open, mode, onOpen, onClose, notice, className }: Plan
 
   const excerpt = (texts.brief ?? "").split("\n")[0] ?? "";
 
+  // Markdown import fills the plan front (beats and board) and mirrors the
+  // script into the Brief doc so the Script tab shows what was pasted.
+  const importPlanMarkdown = (text: string) => {
+    const front = parsePlanMarkdown(text);
+    const base = plan?.front ?? { script_md: "", beats: [], board: [] };
+    updateFront({
+      script_md: front.script_md || base.script_md,
+      beats: front.beats.length > 0 ? front.beats : base.beats,
+      board: [...base.board, ...front.board],
+    });
+    if (front.script_md) {
+      setTexts((current) => ({ ...current, brief: front.script_md }));
+      setDoc("brief");
+    }
+  };
+
+  const addBoardFiles = (files: File[]) => {
+    if (!plan || files.length === 0) return;
+    const reads = files.map(
+      (file) =>
+        new Promise<BoardItem | null>((resolve) => {
+          const reader = new FileReader();
+          reader.onload = () =>
+            resolve(
+              typeof reader.result === "string"
+                ? {
+                    id: `board-${Date.now()}-${Math.floor(Math.random() * 1e6)}`,
+                    kind: "reference",
+                    title: file.name.replace(/\.[^.]+$/, "") || "Image",
+                    images: [reader.result],
+                    notes: "",
+                    tags: [],
+                  }
+                : null,
+            );
+          reader.onerror = () => resolve(null);
+          reader.readAsDataURL(file);
+        }),
+    );
+    void Promise.all(reads).then((items) => {
+      appendBoard(items.filter((item): item is BoardItem => item !== null));
+    });
+  };
+
+  const runDigest = (itemId: string) => {
+    setDigesting(itemId);
+    digest(itemId).finally(() => setDigesting(null));
+  };
+
   const applyFormat = (id: FormatId) => {
     const el = activeEditor();
     if (!el || !editingBlock) return;
@@ -1232,11 +1298,11 @@ export function PlanDoc({ open, mode, onOpen, onClose, notice, className }: Plan
         <div className="flex gap-2">
           <Button type="button" size="sm" variant="outline" onClick={() => onOpen("edit")}>
             <PenLine />
-            Edit
+            Edit plan
           </Button>
           <Button type="button" size="sm" variant="ghost" onClick={() => onOpen("talk")}>
             <MessageSquare />
-            Talk
+            Discuss
           </Button>
         </div>
       </article>
@@ -1370,16 +1436,24 @@ export function PlanDoc({ open, mode, onOpen, onClose, notice, className }: Plan
       <Tabs value={mode} onValueChange={(value) => onOpen(value as PlanMode)}>
         <TabsList size="sm" className="grid w-full grid-cols-2 rounded-full bg-white/5 p-1 [&>[data-slot=tab-indicator]]:hidden">
           <TabsTab value="edit" className="rounded-full data-active:bg-white/10">
-            Edit
+            Edit plan
           </TabsTab>
           <TabsTab value="talk" className="rounded-full data-active:bg-white/10">
-            Talk
+            Discuss
           </TabsTab>
         </TabsList>
       </Tabs>
 
       {mode === "edit" ? (
         <>
+          <Tabs value={section} onValueChange={(value) => setSection(value as PlanSection)}>
+            <TabsList size="sm" variant="underline" className="w-full justify-start gap-4">
+              <TabsTab value="script">Script</TabsTab>
+              <TabsTab value="beats">Beats</TabsTab>
+              <TabsTab value="board">Board</TabsTab>
+            </TabsList>
+          </Tabs>
+          {section === "script" ? (
           <Tabs value={doc} onValueChange={(value) => setDoc(value)}>
             <TabsList
               size="sm"
@@ -1433,6 +1507,9 @@ export function PlanDoc({ open, mode, onOpen, onClose, notice, className }: Plan
               </Button>
             </TabsList>
           </Tabs>
+          ) : null}
+          {section === "script" ? (
+          <>
           <div
             role="toolbar"
             aria-label="Format the plan"
@@ -1633,6 +1710,39 @@ export function PlanDoc({ open, mode, onOpen, onClose, notice, className }: Plan
             ) : null}
           </div>
           <SmoothScrollTarget target={planScrollRef} lerp={0.075} />
+          </>
+          ) : section === "beats" ? (
+            plan ? (
+              <PlanBeats
+                beats={plan.front.beats}
+                onChange={(beats) => updateFront({ ...plan.front, beats })}
+                onImport={importPlanMarkdown}
+              />
+            ) : (
+              <PlanNotice loading={loading} error={error} />
+            )
+          ) : plan ? (
+            <PlanBoard
+              items={plan.front.board}
+              digests={Object.fromEntries(
+                Object.entries(plan.back.digests).map(([id, digest]) => [id, { mood: digest.mood }]),
+              )}
+              digesting={digesting}
+              onChange={(board) => updateFront({ ...plan.front, board })}
+              onDigest={runDigest}
+              onFiles={addBoardFiles}
+            />
+          ) : (
+            <PlanNotice loading={loading} error={error} />
+          )}
+          <AgentView
+            tasks={plan?.back.tasks ?? []}
+            stale={plan?.back.stale ?? false}
+            busy={loading}
+            saveState={saveState}
+            notice={error}
+            onGenerate={generate}
+          />
         </>
       ) : (
         <>

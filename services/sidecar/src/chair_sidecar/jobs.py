@@ -33,6 +33,8 @@ class JobKind(StrEnum):
     MEASURE_AUDIO = "measure_audio"
     ANALYZE_MUSIC = "analyze_music"
     SCENE_CUTS = "scene_cuts"
+    SYNTH_SFX = "synth_sfx"
+    TAPE_STOP = "tape_stop"
 
 
 FFMPEG_TOOLS: dict[str, JobKind] = {
@@ -44,6 +46,13 @@ FFMPEG_TOOLS: dict[str, JobKind] = {
 
 MUSIC_TOOLS: dict[str, JobKind] = {
     "analyze_music": JobKind.ANALYZE_MUSIC,
+}
+
+#: Sound jobs: synth needs no source file; tape_stop renders a new file
+#: from one. Neither ever overwrites source media.
+SYNTH_TOOLS: dict[str, JobKind] = {
+    "synth_sfx": JobKind.SYNTH_SFX,
+    "tape_stop": JobKind.TAPE_STOP,
 }
 
 
@@ -184,6 +193,51 @@ class MusicRequest(BaseModel):
     def fps_positive(cls, value: float | None) -> float | None:
         if value is not None and value <= 0:
             raise ValueError("fps must be > 0")
+        return value
+
+
+class SynthRequest(BaseModel):
+    """Synthesize one SFX shape from scratch. No source, no assets."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    kind: Literal["riser", "tape-stop", "whoosh", "impact"]
+    duration: float | None = None
+
+    @field_validator("duration")
+    @classmethod
+    def duration_in_range(cls, value: float | None) -> float | None:
+        if value is not None and not 0.3 <= value <= 8.0:
+            raise ValueError("synth duration stays within 0.3-8.0 seconds")
+        return value
+
+
+class TapeStopRequest(BaseModel):
+    """Slow the program tail to a stop; renders a NEW audio file."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    source: str
+    at: float | None = None
+    duration: float | None = None
+
+    @field_validator("source")
+    @classmethod
+    def source_not_blank(cls, value: str) -> str:
+        return _checked_source(value)
+
+    @field_validator("at")
+    @classmethod
+    def at_non_negative(cls, value: float | None) -> float | None:
+        if value is not None and value < 0:
+            raise ValueError("tape stop start must be >= 0")
+        return value
+
+    @field_validator("duration")
+    @classmethod
+    def duration_in_range(cls, value: float | None) -> float | None:
+        if value is not None and not 0.3 <= value <= 8.0:
+            raise ValueError("tape stop window stays within 0.3-8.0 seconds")
         return value
 
 
@@ -365,8 +419,11 @@ class JobStore:
     def submit(
         self,
         tool: str,
-        request: MediaRequest | Sam3Request | MusicRequest | SamAudioRequest,
+        request: MediaRequest | Sam3Request | MusicRequest | SamAudioRequest
+        | SynthRequest | TapeStopRequest,
     ) -> dict:
+        synth: dict | None = None
+        source: Path | None = None
         if tool in FFMPEG_TOOLS:
             if not isinstance(request, MediaRequest):
                 raise ValueError(f"{tool} needs source and time fields")
@@ -399,10 +456,28 @@ class JobStore:
             min_shot = DEFAULT_MIN_SHOT
             prompt = None
             music = {"fps": request.fps, "words": [word.model_dump() for word in request.words]}
+        elif tool in SYNTH_TOOLS:
+            kind = SYNTH_TOOLS[tool]
+            if tool == "synth_sfx":
+                if not isinstance(request, SynthRequest):
+                    raise ValueError("synth_sfx needs a kind field")
+                synth = {"kind": request.kind, "duration": request.duration}
+                source = None
+            else:
+                if not isinstance(request, TapeStopRequest):
+                    raise ValueError("tape_stop needs source, at, and duration fields")
+                synth = {"at": request.at, "duration": request.duration}
+                source = Path(request.source).expanduser().resolve()
+            time_s = None
+            threshold = DEFAULT_SCENE_THRESHOLD
+            min_shot = DEFAULT_MIN_SHOT
+            prompt = None
+            music = None
         else:
             raise ValueError(f"unknown tool: {tool}")
-        source = Path(request.source).expanduser().resolve()
-        if not source.is_file():
+        if tool not in SYNTH_TOOLS:
+            source = Path(request.source).expanduser().resolve()
+        if source is not None and not source.is_file():
             raise ValueError(f"source is not a file: {source}")
         job = JobRecord(
             id=uuid.uuid4().hex,
@@ -417,7 +492,7 @@ class JobStore:
             snapshot = job.public()
         threading.Thread(
             target=self._run,
-            args=(job.id, tool, source, time_s, prompt, music, threshold, min_shot),
+            args=(job.id, tool, source, time_s, prompt, music, threshold, min_shot, synth),
             daemon=True,
         ).start()
         return snapshot
@@ -456,17 +531,30 @@ class JobStore:
         self,
         job_id: str,
         tool: str,
-        source: Path,
+        source: Path | None,
         time_s: float | None,
         prompt: dict | None,
         music: dict | None,
         threshold: float = DEFAULT_SCENE_THRESHOLD,
         min_shot: float = DEFAULT_MIN_SHOT,
+        synth: dict | None = None,
     ) -> None:
         self._update(job_id, status="running")
-        before = _fingerprint(source)
+        before = _fingerprint(source) if source is not None else None
         try:
-            if tool == "render_preview":
+            if tool == "synth_sfx":
+                if synth is None:
+                    raise RuntimeError("synth_sfx requires synth params")
+                result = self._synth_sfx(job_id, synth["kind"], synth["duration"])
+            elif tool == "tape_stop":
+                if source is None or synth is None:
+                    raise RuntimeError("tape_stop requires a source and synth params")
+                result = self._render_tape_stop(
+                    job_id, source, synth["at"], synth["duration"]
+                )
+            elif source is None:
+                raise RuntimeError(f"{tool} requires a source file")
+            elif tool == "render_preview":
                 result = self._render_preview(job_id, source)
             elif tool == "get_frame":
                 result = self._get_frame(job_id, source, time_s)
@@ -486,12 +574,58 @@ class JobStore:
                 result = self._separate_stem(job_id, source, prompt)
             else:
                 result = self._measure_audio(job_id, source)
-            if _fingerprint(source) != before:
+            if source is not None and _fingerprint(source) != before:
                 raise RuntimeError("source media changed during the job")
         except Exception as exc:
             self._update(job_id, status="failed", error=str(exc) or exc.__class__.__name__)
             return
         self._update(job_id, status="done", progress=1.0, result=result, error=None)
+
+    def _synth_sfx(self, job_id: str, kind: str, duration: float | None) -> dict:
+        from chair_sidecar.synth import DEFAULT_DURATIONS, synthesize
+
+        seconds = DEFAULT_DURATIONS[kind] if duration is None else duration
+        dest = self.proxy_dir / f"synth-{kind}-{job_id}.wav"
+        payload = synthesize(kind, dest, duration=seconds)
+        return {**payload, "cached": False}
+
+    def _render_tape_stop(
+        self, job_id: str, source: Path, at: float | None, duration: float | None
+    ) -> dict:
+        from chair_sidecar.music import SAMPLE_RATE
+        from chair_sidecar.synth import tape_stop_tail, write_wav
+
+        window = 1.5 if duration is None else duration
+        info = self._probe(source)
+        if not _has_stream(info, "audio"):
+            raise RuntimeError("source has no audio stream")
+        total = _duration(info)
+        start = min(max(0.0, 0.0 if at is None else at), max(0.0, total - 0.1))
+        span = min(window, max(0.3, total - start))
+        samples = self._decode_mono(source)
+        rate = SAMPLE_RATE
+        first = max(0, int(start * rate))
+        rendered = tape_stop_tail(
+            array.array("h", samples[first:first + int(span * rate)]),
+            rate,
+            window_seconds=span,
+        )
+        dest = self._output(source, f"tape-stop-{_cache_key(source, f'{start:.2f}')}.wav")
+        part = self._part(dest, job_id)
+        try:
+            write_wav(part, rendered, rate)
+            os.replace(part, dest)
+        except Exception:
+            part.unlink(missing_ok=True)
+            raise
+        return {
+            "path": str(dest),
+            "source": str(source),
+            "at_seconds": round(start, 3),
+            "duration_seconds": round(len(rendered) / rate, 3),
+            "sample_rate": rate,
+            "cached": False,
+        }
 
     def _render_preview(self, job_id: str, source: Path) -> dict:
         info = self._probe(source)

@@ -21,6 +21,8 @@ from chair_sidecar.jobs import (
     MusicRequest,
     Sam3Request,
     SamAudioRequest,
+    SynthRequest,
+    TapeStopRequest,
     active_spans,
     default_proxy_dir,
     parse_ebur128,
@@ -960,3 +962,62 @@ def test_health_is_readable_from_the_desktop_origin(server: str) -> None:
     with urlopen(f"{server}/health") as response:
         assert response.status == 200
         assert response.headers["access-control-allow-origin"] == "*"
+
+
+def test_synth_request_validates_kind_and_duration() -> None:
+    SynthRequest.model_validate({"kind": "riser"})
+    with pytest.raises(ValidationError, match="riser"):
+        SynthRequest.model_validate({"kind": "banjo"})
+    with pytest.raises(ValidationError, match="0.3-8.0"):
+        SynthRequest.model_validate({"kind": "riser", "duration": 30.0})
+    with pytest.raises(ValidationError, match="source is required"):
+        TapeStopRequest.model_validate({"source": "  "})
+
+
+def test_synth_shapes_render_valid_wavs(store: JobStore) -> None:
+    from chair_sidecar.synth import DEFAULT_DURATIONS, KINDS, render_samples
+
+    for kind in KINDS:
+        samples = render_samples(kind, DEFAULT_DURATIONS[kind])
+        peak = max(abs(v) for v in samples)
+        assert 0.5 < peak <= 1.0
+    ticket = store.submit("synth_sfx", SynthRequest(kind="riser"))
+    job = _wait_store(store, ticket["id"])
+    assert job["status"] == "done", job["error"]
+    path = Path(job["result"]["path"])
+    assert path.is_file() and path.suffix == ".wav"
+    with wave.open(str(path), "rb") as handle:
+        assert handle.getnchannels() == 1
+        assert abs(handle.getnframes() / handle.getframerate() - 2.0) < 0.05
+
+
+def test_synth_sfx_serves_over_http(server: str) -> None:
+    status, ticket = _request("POST", f"{server}/jobs/synth_sfx", {"kind": "whoosh"})
+    assert status == 202
+    job = _wait(server, ticket["id"])
+    assert job["status"] == "done", job["error"]
+    assert job["result"]["kind"] == "whoosh"
+    assert Path(job["result"]["path"]).is_file()
+
+
+def test_tape_stop_renders_a_new_file(store: JobStore, source_media: Path) -> None:
+    before = _sha256(source_media)
+    ticket = store.submit(
+        "tape_stop", TapeStopRequest(source=str(source_media), at=0.0, duration=0.5)
+    )
+    job = _wait_store(store, ticket["id"])
+    assert job["status"] == "done", job["error"]
+    rendered = Path(job["result"]["path"])
+    assert rendered.is_file() and rendered.resolve() != source_media.resolve()
+    # Linear slowdown 1 -> 0 doubles the window: 0.5s in, ~1.0s out.
+    assert job["result"]["duration_seconds"] == pytest.approx(1.0, abs=0.05)
+    assert _sha256(source_media) == before
+
+
+def test_tape_stop_needs_an_audio_stream(store: JobStore, two_shot_media: Path) -> None:
+    ticket = store.submit(
+        "tape_stop", TapeStopRequest(source=str(two_shot_media), duration=0.4)
+    )
+    job = _wait_store(store, ticket["id"])
+    assert job["status"] == "failed"
+    assert "audio" in (job["error"] or "")

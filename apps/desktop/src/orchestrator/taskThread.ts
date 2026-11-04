@@ -234,6 +234,22 @@ export async function runTurn(
 const liveJobs = new Map<string, RunningTask>();
 /** Tasks whose jobs all reached terminal: out of the list, never resubmitted. */
 const settledTasks = new Set<string>();
+/**
+ * Tasks whose opening turn failed to submit, task id to the plain error.
+ * They stay visible as failed rows (never swallowed) and resubmit on the
+ * next poll; clearing the entry by hand retries even sooner.
+ */
+const submitErrors = new Map<string, string>();
+
+/** The plain submit error for a task, if its turn failed to send. */
+export function liveSubmitError(taskId: string): string | undefined {
+  return submitErrors.get(taskId);
+}
+
+/** Forget a submit failure so the next poll resubmits the turn now. */
+export function retryLiveTask(taskId: string): void {
+  submitErrors.delete(taskId);
+}
 
 /** Remember a submitted turn so the live list can poll it. */
 export function recordLiveJob(requestId: string, task: RunningTask): void {
@@ -260,10 +276,11 @@ export function liveJobEntries(): [string, RunningTask][] {
   return [...liveJobs.entries()];
 }
 
-/** Test support: clear remembered jobs and settled tasks. */
+/** Test support: clear remembered jobs, failures, and settled tasks. */
 export function resetLiveJobs(): void {
   liveJobs.clear();
   settledTasks.clear();
+  submitErrors.clear();
 }
 
 /** One row per task from a live job. Null when the job already finished. */
@@ -315,13 +332,58 @@ export function stopLiveTask(client: ServicesClient, task: RunningTask): Promise
 const LIVE_POLL_MS = 2000;
 
 /**
- * The board's live rows: one per task with a running agent job.
+ * Rows for created tasks with no live job yet: waiting until the turn
+ * sends, then failed with the plain error when sending fails. The board
+ * renders task.status, so these need no row change elsewhere.
+ */
+export function waitingRowsFor(tasks: readonly RunningTask[]): RunningTask[] {
+  const submitted = new Set(liveJobEntries().map(([, entry]) => entry.id));
+  return tasks
+    .filter((task) => !isLiveTaskSettled(task.id) && !submitted.has(task.id))
+    .map((task) => {
+      const failure = submitErrors.get(task.id);
+      return failure === undefined
+        ? { ...task, status: "Waiting for the agent" }
+        : { ...task, status: `Failed: ${failure}` };
+    });
+}
+
+/**
+ * The board's live rows: waiting tasks first, then one per running job.
  *
  * New tasks submit their opening turn on arrival; the thread's identical
- * key and input resume that same job on open, never a duplicate. Each
+ * key and input resume that same job on open, never a duplicate. A task
+ * stays visible from creation: waiting while the turn sends, failed with
+ * the plain error when sending fails (retried on the next poll). Each
  * poll then refreshes every remembered job. Failed polls keep the last
  * rows, so a flaky agent never blanks the list.
  */
+/**
+ * Submit one task's opening turn for the live list. Failures land in the
+ * submit-error map (never swallowed) so the row stays visible as failed;
+ * the next poll resubmits under the same idempotent key.
+ */
+export async function submitLiveTurn(
+  client: ServicesClient,
+  task: RunningTask,
+): Promise<void> {
+  if (isLiveTaskSettled(task.id)) return;
+  const scope = openTurnScope(task.id, task.lane, true);
+  // Same key and input as the thread's primary opening turn, so opening
+  // the row resumes this job instead of conflicting.
+  try {
+    const handle = await client.submitAgentJob(
+      EDIT_TASK,
+      inputForTurn(task, openingBrief(task), scope.changesetId),
+      { idempotencyKey: scope.key },
+    );
+    recordLiveJob(handle.request_id, task);
+    submitErrors.delete(task.id);
+  } catch (error) {
+    submitErrors.set(task.id, error instanceof Error ? error.message : "unreachable");
+  }
+}
+
 export function useLiveTasks(createdTasks: readonly RunningTask[]): RunningTask[] {
   const client = useServicesClient();
   const [rows, setRows] = useState<RunningTask[]>([]);
@@ -341,19 +403,8 @@ export function useLiveTasks(createdTasks: readonly RunningTask[]): RunningTask[
         for (const task of tasks) {
           if (isLiveTaskSettled(task.id) || submitted.has(task.id)) continue;
           submitted.add(task.id);
-          const scope = openTurnScope(task.id, task.lane, true);
-          // Same key and input as the thread's primary opening turn, so
-          // opening the row resumes this job instead of conflicting.
-          try {
-            const handle = await client.submitAgentJob(
-              EDIT_TASK,
-              inputForTurn(task, openingBrief(task), scope.changesetId),
-              { idempotencyKey: scope.key },
-            );
-            recordLiveJob(handle.request_id, task);
-          } catch {
-            submitted.delete(task.id);
-          }
+          // Failures land in the submit-error map; the next poll retries.
+          void submitLiveTurn(client, task);
         }
         const entries: LiveJobEntry[] = [];
         const stale: RunningTask[] = [];
@@ -375,8 +426,11 @@ export function useLiveTasks(createdTasks: readonly RunningTask[]): RunningTask[
         }
         const merged = liveRowsForJobs(entries);
         for (const requestId of merged.forget) forgetLiveJob(requestId);
-        for (const taskId of merged.settle) settleLiveTask(taskId);
-        if (live) setRows([...stale, ...merged.rows]);
+        for (const taskId of merged.settle) {
+          settleLiveTask(taskId);
+          submitErrors.delete(taskId);
+        }
+        if (live) setRows([...waitingRowsFor(tasks), ...stale, ...merged.rows]);
       } finally {
         ticking = false;
       }
@@ -406,17 +460,16 @@ function modelSuffix(job: AgentJob): string {
 
 /** The thread line for a live job: running status, or the real terminal reply. */
 export function textForJob(job: AgentJob): string {
-  const id = shortRequestId(job.request_id);
   const model = modelSuffix(job);
-  if (job.status === "queued") return `Turn sent — queued on the agent (${id}).${model}`;
-  if (job.status === "in_progress") return `The agent is working on it (${id}).${model}`;
+  if (job.status === "queued") return `Turn sent — queued on the agent.${model}`;
+  if (job.status === "in_progress") return `The agent is working on it.${model}`;
   if (job.status === "failed") {
-    return `The agent couldn't finish this turn (${id}): ${job.error ?? "it failed without a reason"}. Nothing changed.${model}`;
+    return `The agent couldn't finish this turn: ${job.error ?? "it failed without a reason"}. Nothing changed.${model}`;
   }
   if (job.status === "moderated") {
-    return `The agent stopped this turn (${id}): ${job.error ?? "moderated"}. Nothing changed.${model}`;
+    return `The agent stopped this turn: ${job.error ?? "moderated"}. Nothing changed.${model}`;
   }
-  if (job.status === "canceled") return `This turn was canceled (${id}). Nothing changed.${model}`;
+  if (job.status === "canceled") return `This turn was canceled. Nothing changed.${model}`;
   const previews = job.artifacts.length;
   const ops = job.changeset?.ops.length ?? 0;
   const previewBit =
@@ -424,7 +477,7 @@ export function textForJob(job: AgentJob): string {
   const opBit =
     ops === 0 ? "no proposed changes" : ops === 1 ? "1 proposed change" : `${ops} proposed changes`;
   let text =
-    `Done (${id}): ${previewBit}, ${opBit}. ` +
+    `Done: ${previewBit}, ${opBit}. ` +
     "Proposed edits stay proposals until you accept each one from Review — the timeline is unchanged.";
   if (previews > 0) {
     text += ` Preview files: ${job.artifacts.map((artifact) => artifact.url).join(", ")}.`;

@@ -1,4 +1,4 @@
-import { ArrowUp, AudioLines, ChevronDown, Film, ImageIcon, Mic, Paperclip, Puzzle, Slash, Square, Waypoints, X } from "lucide-react";
+import { ArrowUp, AudioLines, ChevronDown, Film, ImageIcon, KeyRound, Mic, Paperclip, Puzzle, Slash, Square, Waypoints, X } from "lucide-react";
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type {
@@ -73,6 +73,10 @@ type ChatPromptProps = {
   /** Full parent width with room to grow, for inline thread composers. */
   wide?: boolean;
   placeholder?: string;
+  /** A picked suggestion fills the composer once, by id. */
+  suggestion?: { id: number; text: string } | null;
+  /** Where "Add a model key" goes: the project screen's Settings. */
+  onOpenSettings?: () => void;
 };
 
 type TextPiece = { type: "text"; id: string; value: string };
@@ -370,6 +374,8 @@ export function ChatPrompt({
   onSend,
   wide = false,
   placeholder = "Ask Chair, or / for an action",
+  suggestion = null,
+  onOpenSettings,
 }: ChatPromptProps) {
   const [parts, setParts] = useState<Piece[]>(() => normalize([]));
   const [model, setModel] = useState<string | null>(null);
@@ -435,6 +441,25 @@ export function ChatPrompt({
 
   const draft = serialize(parts);
   const plain = plainText(parts);
+
+  // A picked suggestion fills the composer once, ready to send or edit.
+  const filledSuggestion = useRef<number | null>(null);
+  useEffect(() => {
+    if (suggestion === null || filledSuggestion.current === suggestion.id) return;
+    filledSuggestion.current = suggestion.id;
+    const fresh = normalize([textPiece(suggestion.text)]);
+    partsRef.current = fresh;
+    caretRef.current = totalSize(fresh);
+    pendingCaret.current = null;
+    setParts(fresh);
+    onOpen();
+    requestAnimationFrame(() => {
+      const editor = editorRef.current;
+      if (!editor) return;
+      editor.focus();
+      placeCaret(editor, fresh, totalSize(fresh));
+    });
+  }, [suggestion, onOpen]);
 
   const commit = (next: { parts: Piece[]; caret: number }, source: "type" | "drop") => {
     partsRef.current = next.parts;
@@ -991,7 +1016,7 @@ export function ChatPrompt({
               {draft.length === 0 ? (
                 <span
                   className={cn(
-                    "pointer-events-none absolute text-sm text-neutral-500",
+                    "pointer-events-none absolute max-w-[calc(100%-2rem)] truncate text-sm text-neutral-500",
                     open ? "top-3 left-4" : "top-1/2 left-4 -translate-y-1/2",
                   )}
                 >
@@ -1111,40 +1136,43 @@ export function ChatPrompt({
                     >
                       {recording ? <Square className="animate-pulse" /> : <Mic />}
                     </Button>
-                    <Menu
-                      open={menuOpen}
-                      onOpenChange={(next) => {
-                        setMenuOpen(next);
-                        if (next) setActionsOpen(false);
-                      }}
-                    >
-                      <MenuTrigger
-                        render={
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="ghost"
-                            className="max-w-44"
-                          />
-                        }
+                    {options.length === 0 ? (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        className="max-w-44"
+                        onClick={() => onOpenSettings?.()}
                       >
-                        <span className="truncate">
-                          {options.length === 0
-                            ? "No models · Settings"
-                            : (model ?? "Select model")}
-                        </span>
-                        <ChevronDown />
-                      </MenuTrigger>
-                      <MenuPopup
-                        side="top"
-                        align="start"
-                        className="rounded-2xl border-white/10 bg-[#1a1a1a] text-neutral-100 shadow-raised ring-1 ring-white/10 before:hidden"
+                        <KeyRound />
+                        <span className="truncate">Add a model key</span>
+                      </Button>
+                    ) : (
+                      <Menu
+                        open={menuOpen}
+                        onOpenChange={(next) => {
+                          setMenuOpen(next);
+                          if (next) setActionsOpen(false);
+                        }}
                       >
-                        {options.length === 0 ? (
-                          <div className="px-3 py-2 text-xs text-neutral-400">
-                            No models available. Add a key in Settings.
-                          </div>
-                        ) : (
+                        <MenuTrigger
+                          render={
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="ghost"
+                              className="max-w-44"
+                            />
+                          }
+                        >
+                          <span className="truncate">{model ?? "Select model"}</span>
+                          <ChevronDown />
+                        </MenuTrigger>
+                        <MenuPopup
+                          side="top"
+                          align="start"
+                          className="rounded-2xl border-white/10 bg-[#1a1a1a] text-neutral-100 shadow-raised ring-1 ring-white/10 before:hidden"
+                        >
                           <MenuRadioGroup
                             value={model ?? undefined}
                             onValueChange={(value) => {
@@ -1171,19 +1199,28 @@ export function ChatPrompt({
                               );
                             })}
                           </MenuRadioGroup>
-                        )}
-                      </MenuPopup>
-                    </Menu>
+                        </MenuPopup>
+                      </Menu>
+                    )}
                   </div>
-                  <Button
-                    type="submit"
-                    size="icon-sm"
-                    className="rounded-full"
-                    aria-label="Send"
-                    disabled={!draft.trim() && files.length === 0}
+                  <span
+                    title={
+                      options.length === 0
+                        ? "Add a model key in Settings to send"
+                        : undefined
+                    }
+                    className="inline-flex shrink-0"
                   >
-                    <ArrowUp />
-                  </Button>
+                    <Button
+                      type="submit"
+                      size="icon-sm"
+                      className="rounded-full"
+                      aria-label="Send"
+                      disabled={(!draft.trim() && files.length === 0) || options.length === 0}
+                    >
+                      <ArrowUp />
+                    </Button>
+                  </span>
                 </div>
               </div>
             </div>

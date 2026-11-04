@@ -109,7 +109,7 @@ export function KeysSection({
           <div className="flex flex-col md:flex-row">
             <div
               aria-label="Provider list"
-              className="shrink-0 divide-y divide-white/[0.06] border-b border-white/[0.06] w-[200px] md:w-[200px] md:border-r md:border-b-0"
+              className="w-[240px] shrink-0 divide-y divide-white/[0.06] border-b border-white/[0.06] md:w-[248px] md:border-r md:border-b-0"
             >
               {PROVIDERS.map((provider) => {
                 const appKey = settings.keys[provider.id] != null;
@@ -189,7 +189,7 @@ function ProviderRow({
   return (
     <div
       className={cn(
-        "flex items-center gap-3 px-5 py-3 transition-colors hover:bg-white/[0.04]",
+        "flex items-center gap-2.5 px-4 py-3 transition-colors hover:bg-white/[0.04]",
         !enabled && "opacity-60",
       )}
     >
@@ -197,7 +197,7 @@ function ProviderRow({
         type="button"
         onClick={onSelect}
         aria-current={active}
-        className="flex min-w-0 flex-1 cursor-pointer items-center gap-3 rounded-lg text-left outline-none focus-visible:ring-2 focus-visible:ring-white/40"
+        className="flex min-w-0 flex-1 cursor-pointer items-center gap-2.5 rounded-lg text-left outline-none focus-visible:ring-2 focus-visible:ring-white/40"
       >
         <span
           aria-hidden="true"
@@ -209,14 +209,18 @@ function ProviderRow({
         <ProviderLogo id={provider.id} />
         <span className="min-w-0 flex-1">
           <span
+            title={provider.label}
             className={cn(
-              "border-b pb-px text-sm font-medium text-neutral-100",
+              "block truncate border-b pb-px text-sm font-medium text-neutral-100",
               active ? "border-neutral-100" : "border-transparent",
             )}
           >
             {provider.label}
           </span>
-          <span className="mt-0.5 block truncate text-xs text-neutral-500">
+          <span
+            title={enabled ? CONNECTION_LABEL[state] : "Off"}
+            className="mt-0.5 block truncate text-xs text-neutral-500"
+          >
             {enabled ? CONNECTION_LABEL[state] : "Off"}
           </span>
         </span>
@@ -225,6 +229,7 @@ function ProviderRow({
         checked={enabled}
         onCheckedChange={(next) => onToggle(next)}
         aria-label={`${provider.label} enabled`}
+        className="shrink-0"
       />
     </div>
   );
