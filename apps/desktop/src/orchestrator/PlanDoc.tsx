@@ -1734,7 +1734,7 @@ export function PlanDoc({ open, mode, onOpen, onClose, notice, className, projec
                     </Button>
                   }
                 />
-                <MenuPopup align="end">
+                <MenuPopup align="end" className="ring-1 ring-white/10">
                   {FORMAT_ACTIONS.filter((action) => OVERFLOW_FORMATS.has(action.id)).map((action) => (
                     <MenuItem
                       key={action.id}
