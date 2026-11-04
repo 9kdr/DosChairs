@@ -5,9 +5,8 @@ import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { DitherShader } from "@/lib/dither";
 import type { DitherColor } from "@/lib/dither";
 import { Button } from "@/components/ui/button";
-import { DitherArt } from "@/components/dither-art";
+import { SleepyChair } from "@/components/sleepy-chair/sleepy-chair";
 import { InfoHint } from "@/components/info-hint";
-import { Empty, EmptyArt } from "@/components/ui/empty";
 import { cn } from "@/lib/utils";
 import { clockTime, historyForTask, opLabel, type HistoryEntry } from "../project/store";
 import { activityForTask } from "./TaskActivity";
@@ -701,14 +700,7 @@ export function RunningTasks({
   const recent = useMemo(() => [...recentTasks].slice(-5).reverse(), [recentTasks]);
   if (working.length === 0 && recent.length === 0) {
     return (
-      <div className={cn("rounded-card bg-card p-5 text-neutral-100", className)}>
-        <Empty className="gap-4 py-6">
-          <EmptyArt>
-            <DitherArt seed={2} />
-          </EmptyArt>
-          <p className="text-sm text-muted-foreground">Nothing running</p>
-        </Empty>
-      </div>
+      <SleepyChair className={cn("h-72", className)} label="Nothing running" />
     );
   }
   const toggle = (id: string) => setExpandedId((current) => (current === id ? null : id));

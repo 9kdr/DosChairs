@@ -67,7 +67,10 @@ MANIFEST = Manifest(
             "used when it actually ingests nodes"
         ),
         "templateScan": "no Fusion folder found: name the macro in the brief by hand",
-        "ografTitles": "install with install_ograf, then drag from Effects > Titles > OGraf",
+        "ografTitles": (
+            "install with install_ograf, then drag from Effects > Titles > OGraf; "
+            "on Linux the agent bakes the piece to a PNG sequence instead"
+        ),
         "placeSfx": (
             "import the SFX file into the media pool, "
             "then append it to a new audio track by hand"
