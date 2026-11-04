@@ -237,7 +237,7 @@ class Handler(BaseHTTPRequestHandler):
             except _ResolveFailed as error:
                 self._send(502, _error("resolve_failed", str(error)))
             except Exception as error:
-                self._send(_rig_status(error), _error("invalid_rig", str(error)))
+                self._send(400, _error("invalid_rig", str(error)))
             return
         if effects_path == "/effects/generate":
             try:
