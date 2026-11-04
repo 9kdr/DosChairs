@@ -134,7 +134,7 @@ Branch from `main` as `feat/<area>/<slug>`. Areas: `desktop`, `ir`, `agent`, `si
 
 ## Docs
 
-- [Product philosophy: propose, never apply](docs/philosophy.md)
+- [Product philosophy: never destructive, always undoable](docs/philosophy.md)
 - [Architecture](docs/architecture.md)
 - [MVP](docs/mvp.md)
 - [ADR 0001: the timeline IR is the agent API](docs/adr/0001-timeline-ir.md)
