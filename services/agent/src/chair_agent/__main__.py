@@ -340,6 +340,8 @@ class Handler(BaseHTTPRequestHandler):
         try:
             if action == "generate":
                 self._send(200, _modules_generate_body(body))
+            elif action == "plan":
+                self._send(200, _piece_plan_body(body))
             elif action == "import":
                 record = modules.register_source(
                     str(body.get("source", "")), brief=str(body.get("brief", ""))
@@ -409,7 +411,7 @@ def _module_paths(path: str) -> tuple[str, str | None, str | None] | None:
     if len(parts) < 3 or parts[0] != "effects" or parts[1] != "modules":
         return None
     if len(parts) == 3:
-        if parts[2] in ("generate", "import"):
+        if parts[2] in ("generate", "import", "plan"):
             return (parts[2], None, None)
         return ("record", parts[2], None)
     if len(parts) == 4 and parts[3] in ("bundle", "install", "preview"):
@@ -496,7 +498,7 @@ def _pipeline() -> dict[str, Any]:
 
 
 def _health() -> dict[str, Any]:
-    from chair_agent import effects, modules, rig, sounds
+    from chair_agent import effects, modules, piece_plan, rig, sounds
     from chair_agent.client import auth_status_snapshot
     from chair_agent.pieces import macros
 
@@ -517,6 +519,7 @@ def _health() -> dict[str, Any]:
         "rig": rig.status_snapshot(),
         "macros": macros.status_snapshot(),
         "modules": modules.status_snapshot() | {"model": modules.module_model()},
+        "piece_plans": piece_plan.status_snapshot(),
         "pipeline": _pipeline(),
         "crew": _crew_status(),
     }
@@ -1173,6 +1176,15 @@ def _module_summary(record: Any) -> dict[str, Any]:
         "repaired": dumped["repaired"],
         "preview": f"/effects/modules/{dumped['id']}/preview",
     }
+
+
+def _piece_plan_body(body: dict[str, Any]) -> dict[str, Any]:
+    from chair_agent import piece_plan
+
+    brief = body.get("brief", "")
+    if not isinstance(brief, str) or not brief.strip():
+        raise ValueError("plan needs a non-empty 'brief'")
+    return piece_plan.plan_piece(brief).model_dump(mode="json", by_alias=True)
 
 
 def _modules_generate_body(body: dict[str, Any]) -> dict[str, Any]:

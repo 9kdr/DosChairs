@@ -1,0 +1,46 @@
+{
+  "schemaVersion": "0.1.0",
+  "brief": "a kinetic title saying LAUNCH over a liquid gradient with grain",
+  "parts": [
+    {
+      "name": "a kinetic title saying LAUNCH",
+      "route": "native",
+      "order": 0,
+      "tool": "Text+",
+      "settings": {
+        "text": "LAUNCH"
+      },
+      "pieceId": null,
+      "props": {},
+      "brief": "a kinetic title saying LAUNCH",
+      "note": ""
+    },
+    {
+      "name": "a liquid gradient",
+      "route": "reuse",
+      "order": 1,
+      "tool": null,
+      "settings": {},
+      "pieceId": "liquid-boxes",
+      "props": {},
+      "brief": "a liquid gradient",
+      "note": "Reuse liquid-boxes; adapt it with props."
+    },
+    {
+      "name": "grain",
+      "route": "native",
+      "order": 2,
+      "tool": "FilmGrain",
+      "settings": {},
+      "pieceId": null,
+      "props": {},
+      "brief": "grain",
+      "note": ""
+    }
+  ],
+  "counts": {
+    "native": 2,
+    "reuse": 1,
+    "new": 0
+  }
+}

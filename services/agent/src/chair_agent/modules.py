@@ -28,6 +28,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict
 
+from chair_agent import piece_plan
 from chair_agent.client import Message, ModelClient
 
 DEFAULT_MODULE_MODEL = "muse-spark-1.3-contributor"
@@ -568,11 +569,16 @@ def register_source(
     brief: str = "",
     env: Mapping[str, str] | None = None,
 ) -> ModuleRecord:
-    """Store a hand-written module file and check it (no model involved)."""
+    """Store a hand-written module file and check it (no model involved).
+
+    The brief's scope applies when one is given: a background or text the
+    brief did not ask for fails the check, like generated pieces.
+    """
     if "export default" not in source:
         raise InvalidModule("module source needs a default export")
     module_id = f"fxm-{uuid.uuid4().hex[:12]}"
-    report = _check_source(module_id, source, env)
+    scope = scope_from_brief(brief) if brief.strip() else None
+    report = _check_source(module_id, source, env, scope)
     if not report["ok"]:
         raise InvalidModule("module failed the check: " + "; ".join(report["errors"][:6]))
     record = _apply_report(
@@ -601,22 +607,41 @@ def generate_module(
     model: str | None = None,
     mode: str = "spark",
 ) -> ModuleRecord:
-    """Draft with Muse Spark (or Wonder), check, repair once, then store."""
+    """Plan the split, draft the new parts, check, repair once, then store.
+
+    The plan routes each part of the brief first (native, reuse, new) and
+    only the new parts reach the model. When every part already has a
+    home, generation refuses with the routing instead of baking a
+    redundant piece.
+    """
     if width <= 0 or height <= 0 or fps <= 0 or duration_sec <= 0:
         raise InvalidModule("canvas width, height, fps, and durationSec must be positive")
     if mode not in MODES:
         raise InvalidModule(f"unknown mode: {mode!r} (want 'spark' or 'wonder')")
-    scope = scope_from_brief(brief)
+    if not brief.strip():
+        raise InvalidModule("generate needs a non-empty 'brief'")
+    plan = piece_plan.plan_piece(brief)
+    new_parts = [part for part in plan.parts if part.route == "new"]
+    if not new_parts:
+        piece_plan.note_refused()
+        raise InvalidModule(piece_plan.refusal_message(plan))
+    scoped = "; ".join(part.brief for part in new_parts)
+    scope = scope_from_brief(scoped)
     active = client if client is not None else _model_client(model)
     model = getattr(getattr(active, "models", None), "executor", None) or module_model(env)
     messages = build_generate_messages(
-        brief, kind=kind, width=width, height=height, fps=fps,
+        scoped, kind=kind, width=width, height=height, fps=fps,
         duration_sec=duration_sec, references=references, piece_ids=piece_ids,
         mode=mode,
     )
     module_id = f"fxm-{uuid.uuid4().hex[:12]}"
     started = time.perf_counter()
     notes = f"Written by {model} from the brief."
+    if len(plan.parts) > 1:
+        notes += (
+            f" Piece plan: {plan.counts.native} native,"
+            f" {plan.counts.reuse} reuse, {plan.counts.new} new."
+        )
     repaired = False
     try:
         completion = active.execute(messages)
@@ -651,7 +676,7 @@ def generate_module(
             notes += " First draft failed the check; repaired on retry."
         record = _apply_report(
             ModuleRecord(
-                id=module_id, brief=brief.strip(), model=model,
+                id=module_id, brief=scoped, model=model,
                 source_path=str(_write_source(module_id, source, env)),
                 notes=notes, repaired=repaired,
             ),
@@ -717,11 +742,16 @@ def bundle_module(
     """Bundle into <state>/modules/<id>/build/<stem>.ograf.json + <stem>.js."""
     record = get_module(module_id)
     table = normalize_keyframes(keyframes)
+    payload: dict[str, Any] = {}
+    if record.brief.strip():
+        payload["scope"] = scope_from_brief(record.brief)
+    if table is not None:
+        payload["keyframes"] = table
+    data = json.dumps(payload) if payload else None
     build_dir = _state_dir(env) / module_id / "build"
     if build_dir.exists():
         shutil.rmtree(build_dir)
     started = time.perf_counter()
-    data = json.dumps({"keyframes": table}) if table is not None else None
     try:
         result = run_cli("bundle", Path(record.source_path), build_dir, data)
     except InvalidModule as error:
