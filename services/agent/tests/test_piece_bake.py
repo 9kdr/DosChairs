@@ -114,10 +114,12 @@ def test_bake_for_apply_merges_sequences_and_notes(
 def test_bake_module_reuses_cached_frames(
     isolated, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    entry = isolated / "x.tsx"
+    entry.write_text("export default 1;")
     monkeypatch.setattr(
-        piece_bake, "resolve_entry", lambda module_id: Path("/tmp/x.tsx"))
+        piece_bake, "resolve_entry", lambda module_id: entry)
     out_dir = piece_bake.bake_cache_dir() / piece_bake._bake_key(
-        "liquid-boxes", 640, 360, 30, 0.1, {}, None)
+        "liquid-boxes", 640, 360, 30, 0.1, {}, None, entry)
     out_dir.mkdir(parents=True)
     frames = max(1, round(0.1 * 30))
     for index in range(frames):
@@ -127,6 +129,16 @@ def test_bake_module_reuses_cached_frames(
     assert outcome["cached"] is True
     assert outcome["frames"] == frames
     assert len(outcome["files"]) == frames
+
+
+def test_bake_key_changes_with_module_source(isolated) -> None:
+    first = isolated / "a.tsx"
+    first.write_text("export default 1;")
+    second = isolated / "b.tsx"
+    second.write_text("export default 2;")
+    key_for = lambda entry: piece_bake._bake_key(
+        "liquid-boxes", 640, 360, 30, 0.1, {}, None, entry)
+    assert key_for(first) != key_for(second)
 
 
 def test_rig_apply_auto_bakes_on_linux(

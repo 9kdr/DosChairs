@@ -189,12 +189,19 @@ def _curves_to_keyframes(curves: Any) -> dict[str, list[list[Any]]] | None:
 def _bake_key(
     module_id: str, width: int, height: int, fps: float, duration_sec: float,
     props: Mapping[str, Any], keyframes: Mapping[str, Any] | None,
+    entry: Path,
 ) -> str:
-    digest = hashlib.sha256(json.dumps({
-        "module": module_id, "width": width, "height": height,
-        "fps": fps, "duration": duration_sec,
-        "props": dict(props), "keyframes": keyframes,
-    }, sort_keys=True, default=str).encode()).hexdigest()[:16]
+    try:
+        source = entry.read_bytes()
+    except OSError:
+        source = b""
+    digest = hashlib.sha256(
+        hashlib.sha256(source).digest() + json.dumps({
+            "module": module_id, "width": width, "height": height,
+            "fps": fps, "duration": duration_sec,
+            "props": dict(props), "keyframes": keyframes,
+        }, sort_keys=True, default=str).encode(),
+    ).hexdigest()[:16]
     slug = "".join(c if c.isalnum() else "-" for c in module_id)[:40].strip("-")
     return f"{slug or 'piece'}-{width}x{height}@{fps:g}-{digest}"
 
@@ -232,6 +239,7 @@ def bake_module(
     out_dir = bake_cache_dir() / _bake_key(
         module_id, width, height, fps, duration_sec,
         dict(props or {}), dict(keyframes) if keyframes else None,
+        entry,
     )
     cached = _expected_files(out_dir, frames) if out_dir.is_dir() else None
     if cached is not None:
