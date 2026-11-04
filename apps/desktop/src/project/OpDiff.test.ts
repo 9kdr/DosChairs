@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ChangesetItem, EditOp } from "@chair/timeline-ir";
-import { diffSummary } from "./OpDiff";
+import { diffSummary, fallbackNotice } from "./OpDiff";
 
 function item(op: EditOp, patch?: Record<string, unknown>, targetId?: string): ChangesetItem {
   return { id: `item-${op}`, op, rationale: "test", patch, targetId, status: "pending" };
@@ -62,6 +62,23 @@ describe("diffSummary", () => {
       diffSummary(item("remove_transition", undefined, "clip-b")),
     ).toBe("Removes the transition from clip-b.");
     expect(diffSummary(item("remove_track", undefined, "v2"))).toBe("Removes track v2.");
+  });
+
+  it("reads the inline fallback line only when the adapter fell back", () => {
+    expect(
+      fallbackNotice(
+        item("add_effect", { presetName: "Kinetic Type" }, "clip-b"),
+      ),
+    ).toBeNull();
+    expect(
+      fallbackNotice({
+        ...item("add_effect", { presetName: "Kinetic Type" }, "clip-b"),
+        fallback: {
+          capability: "fusionComps",
+          reason: "Resolve can't place this directly — pre-rendered clip instead",
+        },
+      }),
+    ).toBe("Resolve can't place this directly — pre-rendered clip instead");
   });
 
   it("falls back to plain words when the patch or target is missing", () => {

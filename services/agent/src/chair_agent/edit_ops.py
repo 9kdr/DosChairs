@@ -40,6 +40,16 @@ MarkerKind = Literal["beat", "hook", "fix", "broll", "user", "range"]
 SCHEMA_VERSION = "0.1.0"
 
 
+class ChangesetFallback(BaseModel):
+    """The adapter could not place this item directly: capability id plus
+    the plain-words substitute the reviewer accepts instead."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    capability: str = Field(min_length=1)
+    reason: str = Field(min_length=1)
+
+
 class ChangesetItem(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, populate_by_name=True)
 
@@ -49,6 +59,7 @@ class ChangesetItem(BaseModel):
     beat_id: str | None = Field(default=None, alias="beatId")
     rationale: str = Field(min_length=1)
     patch: dict[str, Any] | None = None
+    fallback: ChangesetFallback | None = None
     status: Literal["pending", "accepted", "rejected"] = "pending"
 
 

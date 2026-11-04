@@ -311,6 +311,16 @@ function panelsForOp(item: ChangesetItem): { before: ReactNode; after: ReactNode
 }
 
 /**
+ * The inline fallback line for an item the adapter could not place
+ * directly, or null when it placed the item as proposed. The reason
+ * is the agent's plain-words substitute; the board renders it before
+ * accept so no fallback stays silent.
+ */
+export function fallbackNotice(item: ChangesetItem): string | null {
+  return item.fallback?.reason ?? null;
+}
+
+/**
  * What one proposed edit would change: one sentence plus a small
  * before/after graphic. Lime marks what is new; the sentence carries
  * the meaning, so the graphic stays out of the accessible tree.

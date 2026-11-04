@@ -30,7 +30,11 @@ export function opLabel(op: string): string {
  * Review one item: flip its status and leave everything else alone.
  * Unknown ids are a no-op. The timeline is never touched.
  */
-export function reviewItem(changeset: Changeset, id: string, decision: Decision): Changeset {
+export function reviewItem(
+  changeset: Changeset,
+  id: string,
+  decision: ChangesetItem["status"],
+): Changeset {
   let found = false;
   const items = changeset.items.map((item): ChangesetItem => {
     if (item.id !== id) return item;
@@ -127,6 +131,17 @@ export type Refusal = {
 };
 
 /**
+ * One decided item the board can take back: its id plus the status it
+ * had before the decision. Undo restores the status and drops the
+ * history entry when the decision had accepted the item.
+ */
+export type DecisionRecord = {
+  id: string;
+  prev: ChangesetItem["status"];
+  next: ChangesetItem["status"];
+};
+
+/**
  * Where one project open stands: loading the review, ready with a
  * proposal, empty with no proposal yet, or failed with `error` set.
  */
@@ -145,6 +160,9 @@ export type ProjectStore = {
   refusal: Refusal | null;
   acceptItem: (id: string) => void;
   rejectItem: (id: string) => void;
+  /** Take back the last accept or reject; returns the restored item id. */
+  undoDecision: () => string | null;
+  canUndoDecision: boolean;
   acceptAll: () => void;
   acceptAllUndo: () => void;
   undoToHere: (itemId: string) => void;
@@ -166,6 +184,7 @@ export function useProject(projectId: string, projectName: string): ProjectStore
   const [error, setError] = useState<string | null>(null);
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [refusal, setRefusal] = useState<Refusal | null>(null);
+  const [decisions, setDecisions] = useState<DecisionRecord[]>([]);
   const [nonce, setNonce] = useState(0);
 
   useEffect(() => {
@@ -179,6 +198,7 @@ export function useProject(projectId: string, projectName: string): ProjectStore
     setJob(null);
     setHistory([]);
     setRefusal(null);
+    setDecisions([]);
     void (async () => {
       try {
         const review = await fetchProjectReview(projectId, { signal: controller.signal });
@@ -290,6 +310,7 @@ export function useProject(projectId: string, projectName: string): ProjectStore
       else setRollback(next);
       appendEntries([checked.entry]);
       setRefusal(null);
+      setDecisions((current) => [...current, { id, prev: target.status, next: "accepted" }]);
       return;
     }
   };
@@ -323,14 +344,44 @@ export function useProject(projectId: string, projectName: string): ProjectStore
   };
 
   const rejectItem = (id: string) => {
-    if (changeset?.items.some((entry) => entry.id === id)) {
-      setChangeset(reviewItem(changeset, id, "rejected"));
-    } else if (rollback?.items.some((entry) => entry.id === id)) {
-      setRollback(reviewItem(rollback, id, "rejected"));
-    } else {
+    const target =
+      changeset?.items.find((entry) => entry.id === id) ??
+      rollback?.items.find((entry) => entry.id === id);
+    if (!target || target.status === "rejected") {
+      if (!target) return;
+      setRefusal((current) => (current?.itemId === id ? null : current));
       return;
     }
+    if (changeset?.items.some((entry) => entry.id === id)) {
+      setChangeset(reviewItem(changeset, id, "rejected"));
+    } else if (rollback) {
+      setRollback(reviewItem(rollback, id, "rejected"));
+    }
+    setDecisions((current) => [...current, { id, prev: target.status, next: "rejected" }]);
     setRefusal((current) => (current?.itemId === id ? null : current));
+  };
+
+  /**
+   * Take back the last accept or reject. The item returns to the
+   * status it had before, and an undone accept leaves History too.
+   * Returns the restored item id so the board can focus it.
+   */
+  const undoDecision = (): string | null => {
+    const record = decisions[decisions.length - 1];
+    if (!record) return null;
+    if (changeset?.items.some((entry) => entry.id === record.id)) {
+      setChangeset(reviewItem(changeset, record.id, record.prev));
+    } else if (rollback?.items.some((entry) => entry.id === record.id)) {
+      setRollback(reviewItem(rollback, record.id, record.prev));
+    } else {
+      setDecisions((current) => current.slice(0, -1));
+      return null;
+    }
+    if (record.next === "accepted") {
+      setHistory((current) => current.filter((entry) => entry.itemId !== record.id));
+    }
+    setDecisions((current) => current.slice(0, -1));
+    return record.id;
   };
 
   /** Propose rewinding one entry plus its tail. The proposal needs accept. */
@@ -357,6 +408,8 @@ export function useProject(projectId: string, projectName: string): ProjectStore
     refusal,
     acceptItem,
     rejectItem,
+    undoDecision,
+    canUndoDecision: decisions.length > 0,
     acceptAll,
     acceptAllUndo,
     undoToHere,

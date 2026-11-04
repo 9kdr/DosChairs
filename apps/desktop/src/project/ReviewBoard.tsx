@@ -1,13 +1,27 @@
-import { ChevronDownIcon, ClapperboardIcon, ListChecksIcon, TriangleAlertIcon } from "lucide-react";
-import { useState } from "react";
-import type { RationalTime } from "@chair/timeline-ir";
+import { Dialog } from "@base-ui/react/dialog";
+import {
+  ChevronDownIcon,
+  ClapperboardIcon,
+  KeyboardIcon,
+  ListChecksIcon,
+  TriangleAlertIcon,
+  Undo2Icon,
+} from "lucide-react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import type { ChangesetItem, RationalTime, Timeline } from "@chair/timeline-ir";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
-import { OpDiff } from "./OpDiff";
+import { fallbackNotice, OpDiff } from "./OpDiff";
+import {
+  moveReviewFocus,
+  REVIEW_SHORTCUTS,
+  reviewKeyAction,
+  reviewKeyAllowed,
+  reviewKeyNativeEnter,
+} from "./review-keys";
 import { opLabel, type ProjectStore } from "./store";
-import type { ChangesetItem } from "@chair/timeline-ir";
 
 export { opLabel };
 
@@ -102,6 +116,15 @@ function ReviewEmpty({ onRetry }: { onRetry: () => void }) {
   );
 }
 
+/** One key cap in the hint row and the shortcut overlay. */
+function Kbd({ children }: { children: ReactNode }) {
+  return (
+    <kbd className="rounded-md bg-white/[0.06] px-1.5 py-0.5 font-mono text-[10px] font-medium text-neutral-300 ring-1 ring-inset ring-white/10">
+      {children}
+    </kbd>
+  );
+}
+
 /**
  * Project review: the proposed edits against this cut and the timeline
  * mirror beside them. Accept or reject flips an item's status only; the
@@ -126,6 +149,121 @@ export function ReviewBoard({ store }: { store: ProjectStore }) {
   if (timeline === null) {
     return <ReviewEmpty onRetry={() => store.retry()} />;
   }
+  return <ReviewReady store={store} timeline={timeline} />;
+}
+
+/**
+ * The loaded board: keyboard-first review over the proposal list. j/k
+ * and the arrows move between items with a visible focus ring, a/r
+ * decide the focused item (deciding advances, like Word's "accept and
+ * move to next"), u takes back the last decision, Enter expands the
+ * details, and ? lists every shortcut. Typing anywhere leaves the keys
+ * alone. The undo-proposal list below stays click-only: the review is
+ * the main proposal.
+ */
+function ReviewReady({ store, timeline }: { store: ProjectStore; timeline: Timeline }) {
+  const items = store.changeset?.items ?? [];
+  const [focusedIndex, setFocusedIndex] = useState(() => {
+    const firstPending = items.findIndex((item) => item.status === "pending");
+    return firstPending >= 0 ? firstPending : 0;
+  });
+  const [helpOpen, setHelpOpen] = useState(false);
+  const [expandedIds, setExpandedIds] = useState<ReadonlySet<string>>(new Set());
+  const rowRefs = useRef(new Map<string, HTMLLIElement>());
+
+  const changesetId = store.changeset?.id ?? null;
+  useEffect(() => {
+    const fresh = store.changeset?.items ?? [];
+    const firstPending = fresh.findIndex((item) => item.status === "pending");
+    setFocusedIndex(firstPending >= 0 ? firstPending : 0);
+  }, [changesetId, store.changeset?.items]);
+
+  const focusItem = (index: number) => {
+    if (items.length === 0) return;
+    const clamped = moveReviewFocus(items.length, index, 0);
+    setFocusedIndex(clamped);
+    const id = items[clamped]?.id;
+    if (!id) return;
+    const node = rowRefs.current.get(id);
+    node?.focus({ preventScroll: true });
+    node?.scrollIntoView({ block: "nearest" });
+  };
+
+  const toggleOpen = (id: string) => {
+    setExpandedIds((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const setRowRef = (id: string) => (node: HTMLLIElement | null) => {
+    if (node) rowRefs.current.set(id, node);
+    else rowRefs.current.delete(id);
+  };
+
+  const handleUndo = () => {
+    const restoredId = store.undoDecision();
+    if (!restoredId) return;
+    const index = (store.changeset?.items ?? []).findIndex((item) => item.id === restoredId);
+    focusItem(index >= 0 ? index : focusedIndex);
+  };
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!reviewKeyAllowed(event.target)) return;
+      const action = reviewKeyAction(event);
+      if (!action) return;
+      if (action === "help") {
+        event.preventDefault();
+        setHelpOpen(true);
+        return;
+      }
+      if (items.length === 0) return;
+      // Tabbing to a row button or the row itself sets the base:
+      // the key acts where the person already is.
+      let base = Math.min(focusedIndex, items.length - 1);
+      const active = document.activeElement;
+      if (active instanceof Element) {
+        const row = active.closest("[data-item-id]");
+        const id = row?.getAttribute("data-item-id");
+        if (id) {
+          const found = items.findIndex((item) => item.id === id);
+          if (found >= 0) base = found;
+        }
+      }
+      const focused = items[base];
+      if (!focused) return;
+      switch (action) {
+        case "next":
+        case "prev":
+          event.preventDefault();
+          focusItem(base + (action === "next" ? 1 : -1));
+          break;
+        case "accept":
+        case "reject":
+          if (focused.status !== "pending") return;
+          event.preventDefault();
+          if (action === "accept") store.acceptItem(focused.id);
+          else store.rejectItem(focused.id);
+          focusItem(base + 1);
+          break;
+        case "undo":
+          event.preventDefault();
+          handleUndo();
+          break;
+        case "toggle":
+          if (reviewKeyNativeEnter(event.target)) return;
+          event.preventDefault();
+          toggleOpen(focused.id);
+          break;
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  });
+
   const { changeset, pendingCount } = store;
   const clipCount = timeline.tracks.reduce((sum, track) => sum + track.clips.length, 0);
   const rollbackPending = store.rollback
@@ -178,6 +316,10 @@ export function ReviewBoard({ store }: { store: ProjectStore }) {
               <ChangesetItemRow
                 key={item.id}
                 item={item}
+                focused={false}
+                focusable={false}
+                open={expandedIds.has(item.id)}
+                onToggleOpen={() => toggleOpen(item.id)}
                 onAccept={() => store.acceptItem(item.id)}
                 onReject={() => store.rejectItem(item.id)}
               />
@@ -191,11 +333,24 @@ export function ReviewBoard({ store }: { store: ProjectStore }) {
           aria-label="Proposed edits"
           className={cn(CARD, "flex min-h-0 flex-col gap-1 p-4 lg:col-span-7")}
         >
-          <div className="flex shrink-0 items-center gap-2 px-1 pb-1">
+          <div className="flex shrink-0 flex-wrap items-center gap-2 px-1 pb-1">
             <h3 className="text-sm font-semibold tracking-wide text-neutral-100">Proposed edits</h3>
             {pendingCount > 0 ? (
               <Button type="button" size="sm" onClick={() => store.acceptAll()}>
                 Accept all ({pendingCount})
+              </Button>
+            ) : null}
+            {store.canUndoDecision ? (
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                className="text-neutral-400 hover:text-neutral-100"
+                title="Take back the last decision (u)"
+                onClick={handleUndo}
+              >
+                <Undo2Icon className="size-3.5" aria-hidden="true" />
+                Undo
               </Button>
             ) : null}
             {changeset !== null ? (
@@ -215,17 +370,57 @@ export function ReviewBoard({ store }: { store: ProjectStore }) {
               </Button>
             </div>
           ) : (
-            <ul className="flex min-h-0 flex-col">
-              {changeset.items.map((item) => (
+            <ul aria-label="Proposal items" className="flex min-h-0 flex-col">
+              {changeset.items.map((item, index) => (
                 <ChangesetItemRow
                   key={item.id}
                   item={item}
+                  focused={index === focusedIndex}
+                  focusable
+                  rowRef={setRowRef(item.id)}
+                  onFocusRow={() => setFocusedIndex(index)}
+                  open={expandedIds.has(item.id)}
+                  onToggleOpen={() => toggleOpen(item.id)}
                   onAccept={() => store.acceptItem(item.id)}
                   onReject={() => store.rejectItem(item.id)}
                 />
               ))}
             </ul>
           )}
+          {changeset !== null && changeset.items.length > 0 ? (
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-white/[0.06] px-1 pt-2.5 pb-1 text-[11px] leading-5 text-neutral-500">
+              <KeyboardIcon className="size-3.5 text-neutral-600" aria-hidden="true" />
+              <span className="flex items-center gap-1">
+                <Kbd>j</Kbd>
+                <Kbd>k</Kbd>
+                <span>move</span>
+              </span>
+              <span className="flex items-center gap-1">
+                <Kbd>a</Kbd>
+                <span>accept</span>
+              </span>
+              <span className="flex items-center gap-1">
+                <Kbd>r</Kbd>
+                <span>reject</span>
+              </span>
+              <span className="flex items-center gap-1">
+                <Kbd>u</Kbd>
+                <span>undo</span>
+              </span>
+              <span className="flex items-center gap-1">
+                <Kbd>Enter</Kbd>
+                <span>details</span>
+              </span>
+              <button
+                type="button"
+                onClick={() => setHelpOpen(true)}
+                className="ml-auto flex items-center gap-1.5 rounded-md px-1 py-0.5 text-neutral-400 outline-none hover:text-neutral-100 focus-visible:ring-2 focus-visible:ring-white/40"
+              >
+                <Kbd>?</Kbd>
+                <span>shortcuts</span>
+              </button>
+            </div>
+          ) : null}
         </section>
 
         <section
@@ -290,24 +485,86 @@ export function ReviewBoard({ store }: { store: ProjectStore }) {
           </p>
         </section>
       </div>
+
+      <Dialog.Root open={helpOpen} onOpenChange={setHelpOpen}>
+        <Dialog.Portal>
+          <Dialog.Backdrop className="fixed inset-0 z-50 bg-black/70 transition-opacity duration-150 data-[ending-style]:opacity-0 data-[starting-style]:opacity-0" />
+          <Dialog.Popup
+            aria-label="Keyboard shortcuts"
+            className={/* taste-skill-ignore: shadow-2xl, a modal dialog is a real overlay, which the rule allows. */ "fixed top-1/2 left-1/2 z-50 max-h-[85vh] w-[calc(100%-2rem)] max-w-md -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-2xl bg-[#161616] p-6 shadow-2xl ring-1 ring-white/10 transition-[scale,opacity] duration-150 data-[ending-style]:scale-[0.98] data-[ending-style]:opacity-0 data-[starting-style]:scale-[0.98] data-[starting-style]:opacity-0"}
+          >
+            <Dialog.Title className="text-base font-semibold text-neutral-100">
+              Keyboard shortcuts
+            </Dialog.Title>
+            <Dialog.Description className="mt-1 text-sm text-neutral-400">
+              Review without the mouse. Shortcuts rest while typing.
+            </Dialog.Description>
+            <ul aria-label="Review shortcuts" className="mt-4 flex flex-col">
+              {REVIEW_SHORTCUTS.map((shortcut) => (
+                <li
+                  key={shortcut.label}
+                  className="flex items-center gap-3 border-t border-white/[0.06] px-1 py-2 first:border-t-0 first:pt-0 last:pb-0"
+                >
+                  <span className="flex w-28 shrink-0 flex-wrap items-center gap-1">
+                    {shortcut.keys.map((key) => (
+                      <Kbd key={key}>{key}</Kbd>
+                    ))}
+                  </span>
+                  <span className="text-sm text-neutral-300">{shortcut.label}</span>
+                </li>
+              ))}
+            </ul>
+            <p className="mt-4 text-xs leading-5 text-neutral-500">
+              Accept is always explicit: one key decides one proposal. There is no key for accept
+              all.
+            </p>
+            <div className="mt-5 flex justify-end">
+              <Button type="button" size="sm" onClick={() => setHelpOpen(false)}>
+                Done
+              </Button>
+            </div>
+          </Dialog.Popup>
+        </Dialog.Portal>
+      </Dialog.Root>
     </div>
   );
 }
 
-/** One proposed edit: its summary, its visual diff, and its decision. */
+/** One proposed edit: its summary, its fallback line, its visual diff, and its decision. */
 function ChangesetItemRow({
   item,
+  focused,
+  focusable,
+  rowRef,
+  onFocusRow,
+  open,
+  onToggleOpen,
   onAccept,
   onReject,
 }: {
   item: ChangesetItem;
+  focused: boolean;
+  focusable: boolean;
+  rowRef?: (node: HTMLLIElement | null) => void;
+  onFocusRow?: () => void;
+  open: boolean;
+  onToggleOpen: () => void;
   onAccept: () => void;
   onReject: () => void;
 }) {
-  const [diffOpen, setDiffOpen] = useState(false);
+  const notice = fallbackNotice(item);
 
   return (
-    <li className="border-t border-white/[0.06] px-1 py-3 first:border-t-0 first:pt-1 last:pb-1">
+    <li
+      ref={rowRef}
+      data-item-id={item.id}
+      tabIndex={focusable ? 0 : -1}
+      onFocus={focusable ? onFocusRow : undefined}
+      className={cn(
+        "rounded-xl border-t border-white/[0.06] px-1 py-3 outline-none transition-colors first:border-t-0 first:pt-1 last:pb-1",
+        focused && "bg-white/[0.05] ring-1 ring-lime-300/60 ring-inset",
+      )}
+    >
       <div className="flex items-center gap-3">
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-medium text-neutral-100">
@@ -341,21 +598,30 @@ function ChangesetItemRow({
           </div>
         )}
       </div>
+      {notice ? (
+        <p className="mt-2 flex items-start gap-1.5 rounded-lg bg-amber-300/[0.07] px-2.5 py-1.5 text-xs leading-5 text-amber-200/90 ring-1 ring-amber-300/20 ring-inset">
+          <TriangleAlertIcon className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
+          <span>
+            <span className="font-medium">Fallback — </span>
+            {notice}
+          </span>
+        </p>
+      ) : null}
       <Button
         type="button"
         size="sm"
         variant="ghost"
-        aria-expanded={diffOpen}
-        onClick={() => setDiffOpen((open) => !open)}
+        aria-expanded={open}
+        onClick={onToggleOpen}
         className="mt-1 h-7 px-1 text-xs text-neutral-400 hover:text-neutral-100"
       >
         <ChevronDownIcon
-          className={cn("size-3.5 transition-transform", diffOpen && "rotate-180")}
+          className={cn("size-3.5 transition-transform", open && "rotate-180")}
           aria-hidden="true"
         />
         Diff
       </Button>
-      {diffOpen ? (
+      {open ? (
         <div className="mt-1 rounded-xl bg-black/30 p-3 ring-1 ring-white/[0.06]">
           <OpDiff item={item} />
           {item.status === "pending" ? (
