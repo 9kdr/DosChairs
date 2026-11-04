@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import type { DragEvent, KeyboardEvent, MouseEvent, PointerEvent } from "react";
-import { Loader2, Square, Undo2 } from "lucide-react";
+import { Loader2, Redo2, RotateCcw, Square, Undo2 } from "lucide-react";
 import { DitherShader } from "@/lib/dither";
 import type { DitherColor } from "@/lib/dither";
 import { Button } from "@/components/ui/button";
@@ -11,7 +11,7 @@ import { historyForTask, type HistoryEntry } from "../project/store";
 import { activityForTask } from "./TaskActivity";
 import { createServicesClient } from "@/lib/services/client";
 import type { AgentJobStatus } from "@/lib/services/types";
-import { stopLiveTask } from "./taskThread";
+import { landedFor, stopLiveTask } from "./taskThread";
 
 export type TaskLane = "edit" | "effects" | "colour";
 
@@ -54,11 +54,31 @@ const NON_STOPPABLE_STATUSES = new Set([
   "moderated",
 ]);
 
+/** True when the row failed: a failed job, or a "Failed: …" status line. */
+export function isFailedTask(task: RunningTask): boolean {
+  if (task.jobStatus === "failed") return true;
+  return task.status.trim().toLowerCase().startsWith("failed:");
+}
+
 /** True when Stop can cancel the row: live rows only while queued, jobless rows while non-terminal. */
 export function canStopTask(task: RunningTask): boolean {
+  if (isFailedTask(task)) return false;
   // The agent only cancels queued jobs; a working job's Stop would just 409.
   if (task.jobStatus !== undefined) return task.jobStatus === "queued";
   return Boolean(task.status) && !NON_STOPPABLE_STATUSES.has(task.status.trim().toLowerCase());
+}
+
+/**
+ * The row's status line: the raw agent address reads as "Agent offline",
+ * with the full line in the tooltip. Anything else shows verbatim.
+ */
+export function displayStatusFor(task: RunningTask): { short: string; detail: string | null } {
+  if (/agent is unreachable at \S+/i.test(task.status)) {
+    return { short: task.status.replace(/agent is unreachable at \S+/i, "Agent offline"), detail: task.status };
+  }
+  const landed = landedFor(task.id);
+  if (landed?.detail) return { short: task.status, detail: landed.detail };
+  return { short: task.status, detail: null };
 }
 
 export interface RunningTasksProps {
@@ -71,6 +91,12 @@ export interface RunningTasksProps {
   onOpen?: (task: RunningTask) => void;
   onUndo?: (task: RunningTask) => void;
   onStop?: (task: RunningTask) => void;
+  /** Retry a failed row: resubmit the turn, or re-fire a failed write. */
+  onRetry?: (task: RunningTask) => void;
+  /** Undo a landed Resolve write: the original is current again. */
+  onUndoResolve?: (task: RunningTask) => void;
+  /** Redo an undone write: the stored apply goes again as a new copy. */
+  onRedoResolve?: (task: RunningTask) => void;
 }
 
 const LANE_LABEL: Record<TaskLane, string> = {
@@ -136,6 +162,9 @@ function TaskRow({
   onOpen,
   onUndo,
   onStop,
+  onRetry,
+  onUndoResolve,
+  onRedoResolve,
 }: {
   task: RunningTask;
   seed: number;
@@ -144,6 +173,9 @@ function TaskRow({
   onOpen: () => void;
   onUndo?: () => void;
   onStop?: () => void;
+  onRetry?: () => void;
+  onUndoResolve?: () => void;
+  onRedoResolve?: () => void;
 }) {
   const isDraggingRef = useRef(false);
   const dragTimeoutRef = useRef<number | null>(null);
@@ -282,6 +314,11 @@ function TaskRow({
   const activity = activityForTask(task);
   const liveStep = activity.steps.find((step) => step.state === "active");
   const undoable = historyForTask(history, task.id).length > 0;
+  const failed = isFailedTask(task);
+  const landed = landedFor(task.id);
+  const status = displayStatusFor({ ...task, status: liveStep?.label ?? task.status });
+  const rowActionClass =
+    "bg-card text-muted-foreground opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100 hover:text-neutral-100 focus-visible:opacity-100 @max-[760px]:opacity-100";
 
   return (
     <div
@@ -332,12 +369,63 @@ function TaskRow({
             <p className="truncate text-title font-medium text-neutral-100">
               {task.name}
             </p>
-            <p className="truncate text-meta text-muted-foreground">
-              {LANE_LABEL[task.lane]} · {liveStep?.label ?? task.status}
+            <p className="truncate text-meta text-muted-foreground" title={status.detail ?? undefined}>
+              {LANE_LABEL[task.lane]} · {status.short}
             </p>
           </div>
           <div className="flex shrink-0 items-center gap-1.5">
-            {canStopTask(task) ? (
+            {failed && onRetry ? (
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                aria-label={`Retry ${task.name}`}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onRetry();
+                }}
+                onKeyDown={(event) => event.stopPropagation()}
+                className={rowActionClass}
+              >
+                <RotateCcw />
+                Retry
+              </Button>
+            ) : null}
+            {!failed && landed?.state === "landed" && landed.undo && onUndoResolve ? (
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                aria-label={`Undo Resolve write for ${task.name}`}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onUndoResolve();
+                }}
+                onKeyDown={(event) => event.stopPropagation()}
+                className={rowActionClass}
+              >
+                <Undo2 />
+                Undo
+              </Button>
+            ) : null}
+            {!failed && landed?.state === "undone" && landed.redo && onRedoResolve ? (
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                aria-label={`Redo Resolve write for ${task.name}`}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onRedoResolve();
+                }}
+                onKeyDown={(event) => event.stopPropagation()}
+                className={rowActionClass}
+              >
+                <Redo2 />
+                Redo
+              </Button>
+            ) : null}
+            {!failed && !landed && canStopTask(task) ? (
               <Button
                 type="button"
                 size="sm"
@@ -348,13 +436,13 @@ function TaskRow({
                   onStop?.();
                 }}
                 onKeyDown={(event) => event.stopPropagation()}
-                className="bg-card text-muted-foreground opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100 hover:text-neutral-100 focus-visible:opacity-100 @max-[760px]:opacity-100"
+                className={rowActionClass}
               >
                 <Square />
                 Stop task
               </Button>
             ) : null}
-            {onUndo && undoable ? (
+            {onUndo && undoable && !landed ? (
               <Button
                 type="button"
                 size="sm"
@@ -365,13 +453,15 @@ function TaskRow({
                   onUndo();
                 }}
                 onKeyDown={(event) => event.stopPropagation()}
-                className="bg-card text-muted-foreground opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100 hover:text-neutral-100 focus-visible:opacity-100 @max-[760px]:opacity-100"
+                className={rowActionClass}
               >
                 <Undo2 />
                 Undo
               </Button>
             ) : null}
-            <Loader2 className="size-3.5 shrink-0 animate-spin text-neutral-400" />
+            {!failed && !landed ? (
+              <Loader2 className="size-3.5 shrink-0 animate-spin text-neutral-400" />
+            ) : null}
           </div>
         </div>
         <div
@@ -404,6 +494,9 @@ export function RunningTasks({
   onOpen,
   onUndo,
   onStop,
+  onRetry,
+  onUndoResolve,
+  onRedoResolve,
 }: RunningTasksProps) {
   if (tasks.length === 0) {
     return (
@@ -432,6 +525,9 @@ export function RunningTasks({
             onStop?.(task);
             void stopLiveTask(createServicesClient(), task).catch(() => {});
           }}
+          onRetry={onRetry ? () => onRetry(task) : undefined}
+          onUndoResolve={onUndoResolve ? () => onUndoResolve(task) : undefined}
+          onRedoResolve={onRedoResolve ? () => onRedoResolve(task) : undefined}
         />
       ))}
     </div>

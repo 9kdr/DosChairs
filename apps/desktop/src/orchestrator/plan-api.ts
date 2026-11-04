@@ -142,7 +142,15 @@ async function request(projectId: string, path: string, init: RequestInit, optio
   } catch {
     payload = null;
   }
-  if (!response.ok) throw new ServiceError("agent", `agent failed (${response.status})`, { status: response.status });
+  if (!response.ok) {
+    const error = isRecord(payload) && isRecord(payload.error) ? payload.error : null;
+    const message =
+      error && typeof error.message === "string" ? error.message : `agent failed (${response.status})`;
+    throw new ServiceError("agent", message, {
+      status: response.status,
+      code: error && typeof error.code === "string" ? error.code : undefined,
+    });
+  }
   const plan = planOf(payload, projectId);
   if (!plan) throw new ServiceError("agent", "plan payload was malformed");
   return plan;

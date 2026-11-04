@@ -141,6 +141,35 @@ export function bakeRig(spec: EffectSpec, rig: Rig | null): RigBake {
   };
 }
 
+/** Layer id to prop key lists: the shape POST /effects/rig/apply reads as `baked`. */
+export type BakedPayload = Record<string, Record<string, Keyframe[]>>;
+
+/**
+ * The baked curves for the apply call: the target layer's live curves,
+ * verbatim. Undefined when the layer has no keys, so the call sends the
+ * spec alone and Resolve reads its own curves.
+ */
+export function bakedPayload(spec: EffectSpec, targetId: string | null): BakedPayload | undefined {
+  const layer = targetId ? spec.layers.find((entry) => entry.id === targetId) : undefined;
+  if (!layer?.curves) return undefined;
+  const props: Record<string, Keyframe[]> = {};
+  for (const [prop, curve] of Object.entries(layer.curves)) {
+    if (curve.keyframes.length > 0) props[prop] = curve.keyframes;
+  }
+  return Object.keys(props).length > 0 ? { [layer.id]: props } : undefined;
+}
+
+/** Where an applied piece landed in Resolve, so a re-apply finds the same clip. */
+export type PieceLanding = {
+  project: string;
+  timeline: string;
+  trackIndex: number;
+  clipIndex: number;
+  trackType: "video" | "audio";
+  compName: string | null;
+  prevCompName: string | null;
+};
+
 export type ExportInfo = { target: string; label: string; reason: string; fallback: boolean };
 
 const TARGET_LABELS: Record<string, string> = {
@@ -177,13 +206,16 @@ export function stamp(seconds: number): string {
  * The proposed edit for "Apply to Resolve": an add_effect item that
  * points at the spec by id. The patch carries the tweaks (controls and
  * rig) so history shows them, and the export fallback rides along so the
- * same plain-words line shows there.
+ * same plain-words line shows there. Recorded only after Resolve
+ * answers: `resolve` carries the comp it landed as and the previous
+ * comp name, which is the undo back.
  */
 export function effectItem(input: {
   spec: EffectSpec;
   controls: ControlValues;
   targetId: string;
   bakedKeys: number;
+  resolve?: { compName: string | null; prevCompName: string | null };
   now?: number;
 }): ChangesetItem {
   const { spec, controls, targetId, bakedKeys } = input;
@@ -206,6 +238,7 @@ export function effectItem(input: {
       specRef: spec.id,
       params,
       ...(spec.rig ? { rig: spec.rig } : {}),
+      ...(input.resolve ? { resolve: { ...input.resolve } } : {}),
     },
     ...(spec.export?.fallback ? { fallback: { ...spec.export.fallback } } : {}),
     status: "pending",

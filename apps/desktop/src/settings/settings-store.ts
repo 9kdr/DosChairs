@@ -29,7 +29,11 @@ export type AppSettings = {
   disabledModels: Record<ProviderId, string[]>;
   /** The orchestrator pick from the composer input bar. Null keeps Chair. */
   orchestrator: string | null;
-  /** How agent edits land: applied on arrival (auto) or held for review (ask). */
+  /**
+   * Legacy apply mode. Agent edits now always apply on arrival onto a
+   * copy; the settings UI no longer writes this, but old docs still
+   * parse so nothing saved is lost.
+   */
   applyMode: "auto" | "ask";
   editors: Record<EditorId, EditorConnection | null>;
 };
@@ -296,13 +300,6 @@ export function createSettingsStore(backend: SettingsBackend) {
         ...current,
         orchestrator: name && name.length > 0 ? name : null,
       };
-      await backend.write(next);
-      notify(next);
-      return next;
-    },
-    async saveApplyMode(mode: "auto" | "ask"): Promise<AppSettings> {
-      const current = await this.load();
-      const next: AppSettings = { ...current, applyMode: mode };
       await backend.write(next);
       notify(next);
       return next;

@@ -16,6 +16,7 @@ import { Tabs, TabsList, TabsTab } from "@/components/ui/tabs";
 import { writeChairRefs } from "@/lib/chair-ref";
 import { cn } from "@/lib/utils";
 import type { ChangesetItem } from "@chair/timeline-ir";
+import type { PieceLanding } from "./effect-model";
 import { EffectMaker, type ClipChoice } from "./EffectMaker";
 import {
   fetchPieces,
@@ -34,6 +35,8 @@ export type PiecesShelfProps = {
   onUndoPiece?: (itemId: string) => void;
   onOpenHistory?: () => void;
   refusal?: string | null;
+  landings?: Record<string, PieceLanding>;
+  onRecordLanding?: (specId: string, landing: PieceLanding) => void;
 };
 
 type KindFilter = "all" | PieceKind;
@@ -66,6 +69,8 @@ export function PiecesShelf({
   onUndoPiece,
   onOpenHistory,
   refusal = null,
+  landings,
+  onRecordLanding,
 }: PiecesShelfProps) {
   /** The last good list; a failed reload never clears it. */
   const [pieces, setPieces] = useState<PieceInfo[] | null>(null);
@@ -136,6 +141,8 @@ export function PiecesShelf({
           onUndo={onUndoPiece ?? (() => undefined)}
           onOpenHistory={onOpenHistory ?? (() => undefined)}
           refusal={refusal}
+          landings={landings}
+          onRecordLanding={onRecordLanding}
         />
       </div>
     );

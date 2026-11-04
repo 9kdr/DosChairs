@@ -3,7 +3,7 @@ import { ArrowLeft, Undo2 } from "lucide-react";
 import { ChatPrompt, type ChatDraft } from "@/components/chat-prompt";
 import { SmoothScrollTarget } from "@/components/smooth-scroll";
 import { Button } from "@/components/ui/button";
-import type { RunningTask } from "./RunningTasks";
+import { displayStatusFor, type RunningTask } from "./RunningTasks";
 import { TaskActivityPanel } from "./TaskActivity";
 import { selectionForNote, useTaskThread, type TaskNote, type Turn } from "./taskThread";
 import {
@@ -82,6 +82,7 @@ export function TaskChat({
   const brief = task.plan?.brief.trim() ? task.plan.brief.trim() : null;
   const opening: Turn[] =
     brief === null ? [] : [{ id: `${task.id}-brief`, role: "user", text: brief }];
+  const status = displayStatusFor(task);
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ block: "end" });
@@ -101,8 +102,11 @@ export function TaskChat({
           Back
         </Button>
         <h2 className="min-w-0 truncate text-title font-medium">{task.name}</h2>
-        <span className="ml-auto shrink-0 truncate text-xs text-muted-foreground">
-          {LANE[task.lane]} · {task.status}
+        <span
+          className="ml-auto shrink-0 truncate text-xs text-muted-foreground"
+          title={status.detail ?? undefined}
+        >
+          {LANE[task.lane]} · {status.short}
         </span>
       </header>
 

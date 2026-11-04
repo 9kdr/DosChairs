@@ -24,7 +24,6 @@ export type UseSettings = {
     enabled: boolean,
   ) => Promise<void>;
   saveOrchestrator: (name: string | null) => Promise<void>;
-  saveApplyMode: (mode: "auto" | "ask") => Promise<void>;
   saveEditorConnection: (
     id: EditorId,
     connection: EditorConnection | null,
@@ -101,13 +100,6 @@ export function useSettings(store?: SettingsStore): UseSettings {
     [resolved],
   );
 
-  const saveApplyMode = useCallback(
-    async (mode: "auto" | "ask") => {
-      setSettings(await resolved.saveApplyMode(mode));
-    },
-    [resolved],
-  );
-
   const saveEditorConnection = useCallback(
     async (id: EditorId, connection: EditorConnection | null) => {
       setSettings(await resolved.saveEditorConnection(id, connection));
@@ -125,7 +117,6 @@ export function useSettings(store?: SettingsStore): UseSettings {
       saveCustomModels,
       saveModelEnabled,
       saveOrchestrator,
-      saveApplyMode,
       saveEditorConnection,
     }),
     [
@@ -137,7 +128,6 @@ export function useSettings(store?: SettingsStore): UseSettings {
       saveCustomModels,
       saveModelEnabled,
       saveOrchestrator,
-      saveApplyMode,
       saveEditorConnection,
     ],
   );

@@ -39,15 +39,7 @@ export function PanelDrawer({
       />
       <div className="absolute inset-y-0 right-0 flex w-80 max-w-[85%] flex-col overflow-hidden rounded-l-card bg-card p-4 pt-12 text-neutral-100">
         <div className="flex shrink-0 justify-end pb-1">
-          <Button
-            type="button"
-            size="icon-sm"
-            variant="ghost"
-            aria-label="Close panel"
-            onClick={onClose}
-            autoFocus
-            className="rounded-lg text-neutral-400 hover:bg-white/[0.06] hover:text-neutral-100"
-          >
+          <Button type="button" size="icon-xs" variant="ghost" aria-label="Close panel" onClick={onClose}>
             <X />
           </Button>
         </div>

@@ -4,7 +4,7 @@
  * compare a preview frame against the brief. Failures carry the agent's
  * plain message so the activity list can say what happened.
  */
-import type { EffectSpec } from "@chair/effects";
+import type { EffectSpec, Keyframe } from "@chair/effects";
 import { ServiceError, type FetchFn } from "@/lib/services/client";
 import { agentBaseUrl } from "@/lib/services/config";
 import type { PieceReference } from "./pieces-api";
@@ -104,6 +104,159 @@ export async function verifyEffect(
       ? { revisedSpec: payload.revisedSpec as unknown as EffectSpec }
       : {}),
   };
+}
+
+/**
+ * The generic "apply piece" call. The route name is historical: every
+ * piece — web effect, cursor rig, title — lands through
+ * POST /effects/rig/apply as a NEW comp version, never touching the
+ * previous one. prev_comp_name in the answer is the undo back.
+ */
+export type PieceApplyInput = {
+  spec?: EffectSpec;
+  effectId?: string;
+  /** Layer id to prop key lists: the real baked curves from the app's bake. */
+  baked?: Record<string, Record<string, Keyframe[]>>;
+  sequences?: Record<string, { files: string[] }>;
+  trackIndex: number;
+  clipIndex: number;
+  trackType?: "video" | "audio";
+  project?: string;
+  timeline?: string;
+};
+
+export type PieceApplied = {
+  effectId: string;
+  project: string;
+  timeline: string;
+  compName: string | null;
+  prevCompName: string | null;
+  keyframes: number;
+  paths: Record<string, string>;
+};
+
+export type PieceFallback = {
+  effectId: string;
+  project: string;
+  timeline: string;
+  fallback: { capability: string; reason: string };
+};
+
+export type PieceApplyResult = PieceApplied | PieceFallback;
+
+export function isPieceFallback(result: PieceApplyResult): result is PieceFallback {
+  return "fallback" in result;
+}
+
+function optString(value: unknown): string | null {
+  return typeof value === "string" && value ? value : null;
+}
+
+export async function applyPiece(input: PieceApplyInput, options: Options = {}): Promise<PieceApplyResult> {
+  const payload = await post(
+    "/effects/rig/apply",
+    {
+      ...(input.spec ? { spec: input.spec } : {}),
+      ...(input.effectId ? { effectId: input.effectId } : {}),
+      ...(input.baked ? { baked: input.baked } : {}),
+      ...(input.sequences ? { sequences: input.sequences } : {}),
+      trackIndex: input.trackIndex,
+      clipIndex: input.clipIndex,
+      ...(input.trackType ? { trackType: input.trackType } : {}),
+      ...(input.project ? { project: input.project } : {}),
+      ...(input.timeline ? { timeline: input.timeline } : {}),
+    },
+    options,
+  );
+  if (!isRecord(payload) || typeof payload.effect_id !== "string") {
+    throw malformed("apply needs an effect_id");
+  }
+  const shared = {
+    effectId: payload.effect_id,
+    project: typeof payload.project === "string" ? payload.project : "",
+    timeline: typeof payload.timeline === "string" ? payload.timeline : "",
+  };
+  if (isRecord(payload.fallback)) {
+    const reason = optString(payload.fallback.reason) ?? "Resolve could not take this piece as a macro.";
+    return {
+      ...shared,
+      fallback: {
+        capability:
+          typeof payload.fallback.capability === "string" ? payload.fallback.capability : "fusionMacro",
+        reason,
+      },
+    };
+  }
+  const paths: Record<string, string> = {};
+  if (isRecord(payload.paths)) {
+    for (const [layer, node] of Object.entries(payload.paths)) {
+      if (typeof node === "string") paths[layer] = node;
+    }
+  }
+  return {
+    ...shared,
+    compName: optString(payload.comp_name),
+    prevCompName: optString(payload.prev_comp_name ?? (isRecord(payload.undo) ? payload.undo.prev_comp_name : null)),
+    keyframes: typeof payload.keyframes === "number" ? payload.keyframes : 0,
+    paths,
+  };
+}
+
+export type PieceRevertInput = {
+  project?: string;
+  timeline?: string;
+  trackIndex?: number;
+  clipIndex?: number;
+  trackType?: "video" | "audio";
+  /** The comp to switch back to: the apply answer's prev_comp_name. */
+  toComp: string;
+};
+
+export type PieceReverted = { compName: string | null; project: string; timeline: string };
+
+export async function revertPiece(input: PieceRevertInput, options: Options = {}): Promise<PieceReverted> {
+  const payload = await post(
+    "/effects/rig/revert",
+    {
+      ...(input.project ? { project: input.project } : {}),
+      ...(input.timeline ? { timeline: input.timeline } : {}),
+      ...(input.trackIndex !== undefined ? { trackIndex: input.trackIndex } : {}),
+      ...(input.clipIndex !== undefined ? { clipIndex: input.clipIndex } : {}),
+      ...(input.trackType ? { trackType: input.trackType } : {}),
+      toComp: input.toComp,
+    },
+    options,
+  );
+  if (!isRecord(payload)) throw malformed("revert needs an object");
+  return {
+    compName: optString(payload.comp_name),
+    project: typeof payload.project === "string" ? payload.project : (input.project ?? ""),
+    timeline: typeof payload.timeline === "string" ? payload.timeline : (input.timeline ?? ""),
+  };
+}
+
+/** True when the agent has no such route yet: the UI says so instead of failing. */
+export function isMissingRoute(error: unknown): boolean {
+  return error instanceof ServiceError && error.status === 404;
+}
+
+/** What the piece screen shows for an undo failure: plain words, 404-aware. */
+export function pieceUndoErrorMessage(error: unknown): string {
+  if (isMissingRoute(error)) return "Undo isn't available on this agent yet.";
+  return error instanceof Error ? error.message : "The undo failed.";
+}
+
+/**
+ * True when the apply failed because the clip is gone: the cut changed
+ * under the piece. The screen offers the current clip instead.
+ */
+export function isClipGoneError(error: unknown): boolean {
+  return (
+    error instanceof ServiceError &&
+    error.service === "agent" &&
+    typeof error.message === "string" &&
+    /is not on (video|audio) track \d+/.test(error.message)
+  );
 }
 
 /** The sample effect shipped with the repo: the screen works with no agent or key. */

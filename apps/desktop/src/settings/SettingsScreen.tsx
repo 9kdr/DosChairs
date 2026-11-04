@@ -36,7 +36,6 @@ export function SettingsScreen(_props: SettingsScreenProps) {
     saveProviderEnabled,
     saveCustomModels,
     saveModelEnabled,
-    saveApplyMode,
     saveEditorConnection,
   } = useSettings();
   const { agent, agentHealth, refresh } = useServiceHealth();
@@ -114,7 +113,7 @@ export function SettingsScreen(_props: SettingsScreenProps) {
             refresh={refreshAll}
           />
         ) : (
-          <PreferencesSection applyMode={settings.applyMode} saveApplyMode={saveApplyMode} />
+          <PreferencesSection />
         )}
       </div>
     </div>

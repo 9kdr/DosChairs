@@ -23,12 +23,17 @@ import { PlanDoc } from "./orchestrator/PlanDoc";
 import { RunningTasks, type RunningTask } from "./orchestrator/RunningTasks";
 import { TaskChat, UNDO_PROMPT } from "./orchestrator/TaskChat";
 import { setupTask } from "./orchestrator/taskSetup";
-import { useLiveTasks } from "./orchestrator/taskThread";
+import {
+  redoLandedWrite,
+  retryLandedWrite,
+  retryLiveTask,
+  undoLandedWrite,
+  useLiveTasks,
+} from "./orchestrator/taskThread";
 import { PanelDrawer } from "./PanelDrawer";
 import { HistoryCard } from "./project/HistoryCard";
 import { historyForTask, useProject } from "./project/store";
 import { SettingsScreen } from "./settings/SettingsScreen";
-import { useSettings } from "./settings/useSettings";
 
 type ProjectShellProps = {
   projectId: string;
@@ -128,8 +133,7 @@ function SidePanel({
 export function ProjectShell({ projectId, projectName, editorId, onHome }: ProjectShellProps) {
   const [section, setSection] = useState<SectionId>("chat");
   const [sideTab, setSideTab] = useState<SideTab>("plan");
-  const { settings } = useSettings();
-  const project = useProject(projectId, projectName, { applyMode: settings.applyMode });
+  const project = useProject(projectId, projectName);
   const [command, setCommand] = useState<{ id: number; text: string } | null>(null);
   const [createdTasks, setCreatedTasks] = useState<RunningTask[]>([]);
   const [taskChat, setTaskChat] = useState<RunningTask | null>(null);
@@ -140,7 +144,9 @@ export function ProjectShell({ projectId, projectName, editorId, onHome }: Proje
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [suggestion, setSuggestion] = useState<{ id: number; text: string } | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
-  const liveTasks = useLiveTasks(createdTasks);
+  // Bumped after card Undo/Redo/Retry so the rows repaint at once, not next poll.
+  const [liveNonce, setLiveNonce] = useState(0);
+  const liveTasks = useLiveTasks(createdTasks, liveNonce);
   const seen = useRef(0);
   // The panel opens on Plan with no tasks and on History once one exists,
   // until the person picks a tab themselves.
@@ -190,7 +196,16 @@ export function ProjectShell({ projectId, projectName, editorId, onHome }: Proje
   const effectClips =
     project.timeline?.tracks
       .filter((track) => track.kind === "video")
-      .flatMap((track) => track.clips.map((clip) => ({ id: clip.id, name: clip.name, track: track.name }))) ?? [];
+      .flatMap((track, trackIdx) =>
+        track.clips.map((clip, clipIdx) => ({
+          id: clip.id,
+          name: clip.name,
+          track: track.name,
+          trackIndex: trackIdx + 1,
+          clipIndex: clipIdx,
+          trackType: "video" as const,
+        })),
+      ) ?? [];
 
   /** Answer an undo prompt by rewinding the task's full tail at once. */
   const requestTaskUndo = (task: RunningTask): string => {
@@ -207,6 +222,39 @@ export function ProjectShell({ projectId, projectName, editorId, onHome }: Proje
   const openTask = (task: RunningTask) => {
     setTaskNote(null);
     setTaskChat(task);
+  };
+
+  /** Retry a failed card: resubmit the turn, or re-fire a failed write. */
+  const retryTask = (task: RunningTask) => {
+    retryLiveTask(task.id);
+    retryLandedWrite(task.id);
+    setLiveNonce((nonce) => nonce + 1);
+  };
+
+  /**
+   * Undo a landed write: the original is current again in Resolve, and
+   * the task's local tail rewinds so the mirror follows — the rewind
+   * records the history entry for the undo. Refusals fail closed.
+   */
+  const undoResolveWrite = (task: RunningTask) => {
+    void (async () => {
+      if (!(await undoLandedWrite(task.id))) {
+        setLiveNonce((nonce) => nonce + 1);
+        return;
+      }
+      const entries = historyForTask(project.history, task.jobId ?? task.id);
+      const tip = entries[entries.length - 1];
+      if (tip) project.undoToHere(tip.itemId);
+      setLiveNonce((nonce) => nonce + 1);
+    })();
+  };
+
+  /** Redo an undone write: the stored apply goes again as a new copy. */
+  const redoResolveWrite = (task: RunningTask) => {
+    void (async () => {
+      await redoLandedWrite(task.id);
+      setLiveNonce((nonce) => nonce + 1);
+    })();
   };
 
   // The Piece Maker takes the full width: the side panel steps aside while
@@ -344,6 +392,9 @@ export function ProjectShell({ projectId, projectName, editorId, onHome }: Proje
                       setTaskChat(task);
                       setTaskNote({ id: Date.now(), text: UNDO_PROMPT });
                     }}
+                    onRetry={retryTask}
+                    onUndoResolve={undoResolveWrite}
+                    onRedoResolve={redoResolveWrite}
                   />
                 </div>
               </div>
@@ -385,6 +436,8 @@ export function ProjectShell({ projectId, projectName, editorId, onHome }: Proje
               onUndoEffect={(itemId) => project.undoToHere(itemId)}
               onOpenHistory={() => setSideTab("history")}
               refusal={project.refusal?.reason ?? null}
+              landings={project.landings}
+              onRecordLanding={project.recordLanding}
             />
           )}
         </main>
