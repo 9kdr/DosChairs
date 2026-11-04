@@ -8,6 +8,7 @@ class Capabilities(BaseModel):
     fusion_comps: bool
     fusion_macros: bool = True
     template_scan: bool = True
+    ograf_titles: bool = True
     adjustment_layers: bool
     markers: bool
     subtitles: bool
@@ -30,6 +31,8 @@ MANIFEST = Manifest(
     capabilities=Capabilities(
         keyframes=True,
         fusion_comps=True,
+        fusion_macros=True,
+        ograf_titles=True,
         adjustment_layers=True,
         markers=True,
         subtitles=True,
@@ -45,5 +48,6 @@ MANIFEST = Manifest(
         "speedChanges": "retime the clip in Studio by hand",
         "fusionMacros": "render the effect to a clip and place it by hand",
         "templateScan": "no Fusion folder found: name the macro in the brief by hand",
+        "ografTitles": "install with install_ograf, then drag from Effects > Titles > OGraf",
     },
 )

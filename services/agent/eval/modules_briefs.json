@@ -1,0 +1,56 @@
+{
+  "briefs": [
+    {
+      "brief": "A rounded badge with a short label that chases a keyframed target point (Target X, Target Y) on a spring with visible overshoot, tilting into its velocity. Props: target point, stiffness, damping, label text, badge color, text color, badge size.",
+      "id": "spring-badge",
+      "kind": "rig"
+    },
+    {
+      "brief": "A classic arrow cursor with a fading comet trail: the last second of its path sampled from history(), drawn as shrinking dots. It squashes along its heading when it brakes hard. Props: target point, trail length, stiffness, damping, cursor size, cursor color.",
+      "id": "cursor-comet",
+      "kind": "rig"
+    },
+    {
+      "brief": "Slow aurora bands drifting across the frame in one WebGL2 shader pass: layered sine-warped gradients in two keyframable colors over a dark sky, with a hint of Bayer grain so gradients never band. Props: flow speed, band scale, warp, hue shift, two colors.",
+      "id": "aurora-bands",
+      "kind": "generator"
+    },
+    {
+      "brief": "A VHS tracking effect as a generated pattern in one WebGL2 pass: horizontal scanlines, a rolling tracking band with wobble, chromatic offset, and noise whose amount is keyframable. Props: noise amount, band position, band height, aberration, scanline strength, tint.",
+      "id": "vhs-tracking",
+      "kind": "generator"
+    },
+    {
+      "brief": "A three.js scene: three glowing torus rings orbiting a bright core at different tilts and speeds, on transparency. Everything is a pure function of t (rotation = speed * t). Mirror the frame inputs on the canvas as data-frame JSON. Props: orbit speed, ring tilt, core color, ring color, glow.",
+      "id": "orbit-rings",
+      "kind": "generator"
+    },
+    {
+      "brief": "A three.js scene: a tumbling icosahedron lit by two colored lights, on transparency, spinning at a keyframable rate around a tilted axis. Pure function of t. Mirror the frame inputs on the canvas as data-frame JSON. Props: spin speed, tilt, body color, wireframe on/off.",
+      "id": "dice-tumble",
+      "kind": "generator"
+    },
+    {
+      "brief": "A small robot avatar (open-bot-avatar, time-pure renderAvatarSvg) that looks at a keyframed gaze point and cycles idle/thinking/happy with time. Big and centered for a lower corner. Props: gaze X, gaze Y, body color, eye color, avatar size, mood speed.",
+      "id": "bot-greeter",
+      "kind": "overlay"
+    },
+    {
+      "brief": "Kinetic type: each letter of a short word hangs from its own point on a verlet rope and swings when a keyframed anchor point moves. Props: anchor X, anchor Y, word, rope length, gravity, letter size, text color.",
+      "id": "kinetic-swing",
+      "kind": "overlay"
+    },
+    {
+      "brief": "A classic lower-third title card: a name and a role slide in from the left with an overshooting ease, over a thin accent bar. Props: name, role, accent color, text color, bar height, entrance speed.",
+      "id": "lower-third",
+      "kind": "overlay"
+    },
+    {
+      "brief": "A circular countdown: a ring drains over the duration while a big number counts the seconds left, then flashes Done. Props: total seconds, ring color, number color, ring thickness, label.",
+      "id": "countdown-ring",
+      "kind": "overlay"
+    }
+  ],
+  "canvas": { "durationSec": 8, "fps": 30, "height": 1080, "width": 1920 },
+  "note": "No transition briefs: a transition needs two footage inputs and an OGraf title receives none, so every brief is a generator, overlay, or rig. Pass per brief: bundles, deterministic, at least one Inspector prop."
+}

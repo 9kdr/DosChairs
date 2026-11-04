@@ -4,17 +4,32 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./node": "./src/ograf.ts",
+    "./kit": "./src/kit/index.ts"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json --noEmit",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run --config ../../vitest.config.ts"
+    "test": "vitest run --config ../../vitest.config.ts",
+    "test:modules": "vitest run --config ../../vitest.config.ts src/modules",
+    "modules:cli": "esbuild src/modules/cli.ts --bundle --platform=node --format=esm --outfile=build/modules-cli.mjs --external:esbuild --banner:js=\"import{createRequire as __cr}from'node:module';const require=__cr(import.meta.url);\" --log-level=warning"
   },
   "devDependencies": {
+    "@types/react": "^19.0.2",
+    "@types/react-dom": "^19.0.2",
+    "@types/three": "^0.187.0",
     "ajv": "^8.17.1",
     "typescript": "^7.0.2",
-    "vitest": "^5.0.5"
+    "vitest": "^5.0.5",
+    "esbuild": "^0.25.12"
+  },
+  "dependencies": {
+    "@chair/ograf": "workspace:^",
+    "open-bot-avatar": "0.1.2",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "three": "^0.180.0"
   }
 }
