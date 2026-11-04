@@ -289,17 +289,28 @@ def _parse_spec_completion(text: str) -> dict[str, Any]:
 
 
 def build_repair_messages(
-    bad_spec: Mapping[str, Any], errors: Sequence[str],
+    bad_spec: Mapping[str, Any] | str, errors: Sequence[str],
 ) -> list[Message]:
     reasons = "\n".join(f"- {error}" for error in errors) or "- (unknown reason)"
-    return [
-        Message(role="developer", content=(
+    if isinstance(bad_spec, str):
+        developer = (
+            "You draft DaVinci Resolve effect specs. Your last draft was not "
+            "valid JSON. Reply with ONE fixed JSON object and nothing else, "
+            "changing as little as possible while fixing every error:\n"
+            f"{reasons}"
+        )
+        user_content = bad_spec
+    else:
+        developer = (
             "You draft DaVinci Resolve effect specs. Your last draft failed "
             "schema validation. Reply with ONE fixed JSON object and nothing "
             "else, changing as little as possible while fixing every error:\n"
             f"{reasons}"
-        )),
-        Message(role="user", content=json.dumps(dict(bad_spec))),
+        )
+        user_content = json.dumps(dict(bad_spec))
+    return [
+        Message(role="developer", content=developer),
+        Message(role="user", content=user_content),
     ]
 
 
@@ -404,12 +415,16 @@ def generate_effect(
         notes += " A reference image guided the look."
     try:
         completion = active.execute(messages)
-        draft = _parse_spec_completion(completion.text)
+        draft: dict[str, Any] | None = None
         try:
+            draft = _parse_spec_completion(completion.text)
             spec = validate_effect_spec(draft)
         except InvalidEffect as first_error:
+            bad: Mapping[str, Any] | str = (
+                draft if draft is not None else completion.text
+            )
             repair = active.execute(
-                build_repair_messages(draft, [str(first_error)])
+                build_repair_messages(bad, [str(first_error)])
             )
             draft = _parse_spec_completion(repair.text)
             try:
@@ -419,7 +434,10 @@ def generate_effect(
                     "model output failed validation twice; last error: "
                     f"{second_error}"
                 ) from second_error
-            notes += " First draft failed validation; repaired on retry."
+            if isinstance(bad, str):
+                notes += " First draft was malformed JSON; repaired on retry."
+            else:
+                notes += " First draft failed validation; repaired on retry."
         effect_id = f"fx-{uuid.uuid4().hex[:12]}"
         spec = dict(spec)
         spec["id"] = effect_id
