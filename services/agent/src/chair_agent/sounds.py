@@ -108,14 +108,8 @@ _INDEX_CACHE: dict[str, object] = {"entries": [], "counts": {}}
 
 
 #: SFX kinds the sidecar can synthesize from scratch (stdlib DSP, no assets).
+#: Tags reuse the cue tag map so the two never drift apart.
 SYNTH_KINDS = ("riser", "tape-stop", "whoosh", "impact")
-
-_SYNTH_TAGS: dict[str, frozenset[str]] = {
-    "riser": frozenset({"riser", "uplifter"}),
-    "tape-stop": frozenset({"tape", "stop"}),
-    "whoosh": frozenset({"whoosh", "swoosh"}),
-    "impact": frozenset({"impact", "hit", "braam", "stinger", "thump", "snap"}),
-}
 
 
 def sidecar_url(env: Mapping[str, str] | None = None) -> str:
@@ -128,7 +122,7 @@ def sidecar_url(env: Mapping[str, str] | None = None) -> str:
 
 def sfx_for_kind(entries: Sequence[SoundEntry], kind: str) -> SoundEntry | None:
     """First library entry tagged for the kind. None when the shelf is bare."""
-    wanted = _SYNTH_TAGS.get(kind, frozenset({kind}))
+    wanted = _KIND_TAGS.get(kind, frozenset({kind}))
     for entry in entries:
         if wanted & set(entry.tags):
             return entry
@@ -189,7 +183,7 @@ def fetch_synth_entry(kind: str, base_url: str) -> SoundEntry:
         source="synth",
         license="generated in the sidecar",
         duration=float(duration) if isinstance(duration, (int, float)) else None,
-        tags=sorted(_SYNTH_TAGS[kind]),
+        tags=sorted(_KIND_TAGS[kind]),
     )
 
 
