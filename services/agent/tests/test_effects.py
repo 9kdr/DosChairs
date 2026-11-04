@@ -305,3 +305,109 @@ def test_http_generate_get_verify_and_health(isolated) -> None:
         server.shutdown()
         thread.join(timeout=2)
         server.server_close()
+
+
+DEMO_PROMPT = (
+    "Make the cursor swing in with momentum, overshoot, settle, "
+    "then bounce on the click"
+)
+
+
+def _bad_spec() -> dict:
+    """The exact spec the model returned for the demo prompt (pre-guard)."""
+    path = Path(__file__).with_name("rig_cursor_unscoped_spec.json")
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def test_generate_prompt_states_transparent_scope(isolated) -> None:
+    messages = effects.build_generate_messages(
+        DEMO_PROMPT, width=1920, height=1080, fps=30, duration_sec=6.0,
+    )
+    developer = messages[0].content
+    assert isinstance(developer, str)
+    assert "TRANSPARENT" in developer
+    assert "No text unless" in developer
+
+
+def test_scope_guard_drops_backdrop_and_unasked_text(isolated) -> None:
+    spec = _bad_spec()
+    rig_before = json.loads(json.dumps(spec["rig"]))
+    dropped = effects.apply_prompt_scope(spec, DEMO_PROMPT)
+    assert [layer["id"] for layer in spec["layers"]] == [
+        "button", "cursor", "ripple", "flash",
+    ]
+    assert any("bg" in note and "backdrop" in note for note in dropped)
+    assert any("button-label" in note and "Click Me" in note for note in dropped)
+    assert any("button-text" in note for note in dropped)  # orphaned control
+    assert spec["rig"] == rig_before
+    assert {c["id"] for c in spec["controls"]} == {"accent-color", "cursor-color"}
+    effects.validate_effect_spec(spec)
+
+
+def test_scope_guard_keeps_what_the_prompt_asks_for(isolated) -> None:
+    spec = _bad_spec()
+    prompt = (
+        "Swing the cursor in over a dark background, with a title "
+        "that says Click Me, then bounce on the click"
+    )
+    assert effects.apply_prompt_scope(spec, prompt) == []
+    assert len(spec["layers"]) == 6
+    assert len(spec["controls"]) == 3
+
+
+def test_scope_guard_rig_subject_glyph_and_verbatim_survive(isolated) -> None:
+    base = {
+        "schemaVersion": "0.1.0", "id": "draft-1", "name": "t",
+        "durationSec": 3.0, "fps": 30, "width": 1920, "height": 1080,
+    }
+    moving_label = {
+        "id": "label", "type": "text",
+        "params": {"string": "Hello World"},
+        "curves": {"x": {"keyframes": [{"time": 0, "value": 0}]}},
+    }
+    rig = {"inputPath": [{"time": 0, "x": 0, "y": 0}]}
+    rigged = dict(base, layers=[dict(moving_label)], rig=dict(rig))
+    assert effects.apply_prompt_scope(rigged, "swing the thing") == []
+    assert [layer["id"] for layer in rigged["layers"]] == ["label"]
+
+    unrigged = dict(base, layers=[dict(moving_label)])
+    assert effects.apply_prompt_scope(unrigged, "swing the thing") == []
+    assert unrigged["layers"] == [moving_label]  # last layer: guard stands down
+
+    glyph = {
+        "id": "cursor", "type": "text", "params": {"string": "\u27a4"},
+    }
+    letter = {
+        "id": "stray", "type": "text", "params": {"string": "A"},
+    }
+    blob = {
+        "id": "blob", "type": "shape",
+        "params": {"kind": "ellipse", "scaleX": 60, "scaleY": 60},
+    }
+    mixed = dict(base, layers=[dict(glyph), dict(letter), dict(blob)])
+    effects.apply_prompt_scope(mixed, "swing the thing")
+    assert [layer["id"] for layer in mixed["layers"]] == ["cursor", "blob"]
+
+    asked = dict(base, layers=[dict(moving_label)])
+    effects.apply_prompt_scope(asked, "show Hello World big")
+    assert [layer["id"] for layer in asked["layers"]] == ["label"]
+
+
+def test_generate_end_to_end_scope_notes_and_rig(isolated) -> None:
+    rig = {
+        "inputPath": [{"time": 0, "x": 40, "y": 920}],
+        "stiffness": 110, "damping": 9, "mass": 1,
+        "swing": True, "tilt": True, "squash": True, "overshoot": True,
+    }
+    fake = FakeClient(execute=[json.dumps(_bad_spec())])
+    record = effects.generate_effect(
+        DEMO_PROMPT, width=1920, height=1080, fps=30, duration_sec=6.0,
+        rig=rig, client=fake,
+    )
+    assert [layer["id"] for layer in record.spec["layers"]] == [
+        "button", "cursor", "ripple", "flash",
+    ]
+    assert record.spec["rig"] == rig
+    assert "Scope guard removed bg" in record.notes
+    assert "button-label" in record.notes
+    assert record.spec["export"] == {"target": "fusion-macro"}
