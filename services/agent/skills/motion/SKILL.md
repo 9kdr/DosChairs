@@ -9,7 +9,7 @@ model: muse-spark-1.3-contributor
 
 Momentum in, overshoot a little, settle. Staggered entrances, one idea per beat.
 
-Scope: only the asked-for element, transparent by default. No text unless asked, no extras. Fills need a `backdrop` boolean defaulting off.
+Scope: only the asked-for element, transparent by default. No text unless asked, no extras. Honor the kit's `transparentBg` switch (it paints the backing fill); never hand-write a fill prop.
 
 ## Contract
 

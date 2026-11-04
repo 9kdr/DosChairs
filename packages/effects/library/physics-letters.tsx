@@ -33,7 +33,6 @@ export const props = {
   accent: { type: "color", default: "#ff6a00", title: "Accent" },
   ink: { type: "color", default: "#101018", title: "Ink" },
   paper: { type: "color", default: "#f1ebdd", title: "Paper" },
-  backdrop: { type: "boolean", default: false, title: "Backdrop Fill" },
 } satisfies Record<string, PropSpec>;
 
 type Props = EffectProps<{
@@ -45,7 +44,6 @@ type Props = EffectProps<{
   accent: string;
   ink: string;
   paper: string;
-  backdrop: boolean;
 }>;
 
 interface Placed {
@@ -101,14 +99,13 @@ export default function PhysicsLetters(p: Props): React.ReactElement {
   const accent = c("accent", "#ff6a00");
   const ink = c("ink", "#101018");
   const paper = c("paper", "#f1ebdd");
-  const backdrop = history("backdrop", t) === true;
 
   return (
     <div
       style={{
         position: "absolute",
         inset: 0,
-        background: backdrop ? paper : "transparent",
+        background: "transparent",
         overflow: "hidden",
       }}
       data-word={word}

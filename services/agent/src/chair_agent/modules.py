@@ -309,8 +309,11 @@ Hard rules (a check renders your frames, seeks away and back, and rejects the fi
 5. Imports: ONLY the approved list below, as written. No relative imports, no other packages.
 6. Scope: render ONLY the element the brief asked for, on a TRANSPARENT background by
    default. Paint a background only if the brief asks for one, or when kind is
-   'background' (a generator that IS the backdrop). Gate any other fill behind a
-   `backdrop` boolean prop that defaults to false. No text unless the brief asks for
+   'background' (a generator that IS the backdrop). Do not add your own fill prop:
+   the kit adds `transparentBg` (default true) and `backgroundColor` to every
+   non-background piece and paints the backing fill itself. Paint no fill of
+   your own; if the element needs a plate, show it only when
+   `history("transparentBg", t) === false`. No text unless the brief asks for
    text (Resolve has Text+ for titles). No frames, labels, vignettes, or extra shapes:
    the piece must composite cleanly over footage. Root: position:absolute; inset:0,
    sized to width x height. Colors arrive as lowercase '#rrggbb'. The check rejects a
@@ -352,7 +355,8 @@ SPARK_BRIEF_NOTE = (
     "library adapter below — pick one and adapt it. Keep its shape, its "
     "typed props, and the house taste; invent only what the brief needs. "
     "Render only the element asked for on a transparent background (no text "
-    "unless asked); gate any fill behind a backdrop prop defaulting off. "
+    "unless asked); honor the kit's transparentBg switch (it paints the "
+    "backing fill) and paint no fill of your own. "
     "No full-frame washes, glows, or tints unless the brief asks for one: "
     "keep paint inside the element, and keep the rest of the frame transparent."
 )

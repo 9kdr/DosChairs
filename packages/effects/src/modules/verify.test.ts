@@ -10,10 +10,11 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { checkModule } from "./bundle.js";
-import { findChromium } from "./verify.js";
+import { checkModule, probeImportsPlugin } from "./bundle.js";
+import { findChromium, verifyInBrowser } from "./verify.js";
 
 const SCOPE = { wantsBackground: false, wantsText: false };
+const SCOPE_BG = { wantsBackground: true, wantsText: false };
 
 function fixture(id: string, frag: string): string {
   const dir = mkdtempSync(join(tmpdir(), "chair-verify-test-"));
@@ -128,5 +129,19 @@ describe("browser verification", () => {
     expect(report.checks["browserVerified"]).toBe(true);
     expect(report.checks["paintCoverage"]).toBe(0);
     expect(report.errors.join(" ")).toContain("piece painted nothing");
+  }, 120_000);
+
+  it.runIf(findChromium() !== null)("switch off paints the asked-for background and passes", async () => {
+    const seen = await verifyInBrowser(CLEAN, {
+      plugin: probeImportsPlugin(CLEAN),
+      scope: SCOPE_BG,
+      values: { transparentBg: false },
+    });
+    expect(seen.skipped).toBe(false);
+    // #0e0e10, the standard fill, covering the frame.
+    expect((seen.covers ?? []).join(" ")).toContain("14, 14, 16");
+    const report = await checkModule(CLEAN, { scope: SCOPE_BG, values: { transparentBg: false } });
+    expect(report.errors).toEqual([]);
+    expect(report.ok).toBe(true);
   }, 120_000);
 });

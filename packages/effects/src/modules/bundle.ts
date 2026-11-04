@@ -147,6 +147,8 @@ function emptyReport(errors: string[]): ModuleReport {
 export interface CheckOptions {
   /** When set, full-frame fills and visible text fail unless asked for. */
   scope?: ScopeFlags | null | undefined;
+  /** Prop values for the browser frame (defaults when unset). */
+  values?: Record<string, unknown> | undefined;
 }
 
 /**
@@ -182,7 +184,11 @@ export async function checkModule(entry: string, opts: CheckOptions = {}): Promi
     // fallback) or canvas paint (a semi-transparent wash), so re-check the
     // same rules against a real browser frame when one is available.
     try {
-      const seen = await verifyInBrowser(entry, { plugin: probeImportsPlugin(entry), scope });
+      const seen = await verifyInBrowser(entry, {
+        plugin: probeImportsPlugin(entry),
+        scope,
+        values: opts.values,
+      });
       if (seen.skipped) {
         warnings.push(
           `browser verification skipped: ${seen.reason} (shader-compile and pixel-coverage rules not enforced)`,
@@ -228,6 +234,26 @@ export async function bundleModule(
   const report = await checkModule(entry, { scope: opts.scope ?? undefined });
   if (!report.ok || !report.meta) return { report, bundle: null };
   const meta = report.meta;
+  // Non-background pieces bundle behind the standard switch: a generated
+  // wrapper entry paints the backing fill when transparentBg is off. The
+  // allow-list still gates the original entry, so the wrapper's own imports
+  // (absolute paths into trusted code) bypass it.
+  let bundleEntry = entry;
+  let wrapperDir: string | null = null;
+  if (meta.kind !== "background") {
+    wrapperDir = await mkdtemp(join(tmpdir(), "chair-wrap-"));
+    bundleEntry = join(wrapperDir, "wrapped.tsx");
+    await writeFile(
+      bundleEntry,
+      `import React from "react";\n` +
+        `import Effect from ${JSON.stringify(entry)};\n` +
+        `import { StandardBg } from ${JSON.stringify(join(effectsPackageDir(), "src", "kit", "standardBg.tsx"))};\n` +
+        `export default function ChairStandardWrap(p: any): React.ReactElement {\n` +
+        `  return React.createElement(StandardBg, { t: p.t, history: p.history, children: React.createElement(Effect, p) });\n` +
+        `}\n`,
+      "utf8",
+    );
+  }
   try {
     const bundle = await wrapReactComponent({
       id: meta.id,
@@ -237,7 +263,7 @@ export async function bundleModule(
       fps: meta.fps,
       width: meta.width,
       height: meta.height,
-      entry,
+      entry: bundleEntry,
       props: report.props,
       plugins: [approvedImportsPlugin(entry)],
       nodePaths: [join(effectsPackageDir(), "node_modules")],
@@ -247,6 +273,8 @@ export async function bundleModule(
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     return { report: { ...report, ok: false, errors: [...report.errors, `bundling failed: ${message}`] }, bundle: null };
+  } finally {
+    if (wrapperDir) await rm(wrapperDir, { recursive: true, force: true });
   }
 }
 

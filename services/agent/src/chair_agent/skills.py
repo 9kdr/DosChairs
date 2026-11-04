@@ -31,8 +31,8 @@ WONDER_NOTE = (
     "seekable through the SeekAdapter, deterministic in any order, props "
     "keyframable, and licence-safe (no copied or paid-company code). "
     "Render only the element asked for on a transparent background, no "
-    "text unless asked, no decorative extras; gate any fill behind a "
-    "backdrop prop defaulting off."
+    "text unless asked, no decorative extras; honor the kit's transparentBg "
+    "switch (it paints the backing fill) and paint no fill of your own."
 )
 
 

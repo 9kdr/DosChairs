@@ -20,11 +20,10 @@
         "metaballs",
         "sdf",
         "ogl",
-        "paper",
         "motion",
         "generator"
       ],
-      "summary": "Two boxes orbit, touch, and merge through a smooth-min SDF rendered by OGL, with a Paper grain-gradient on top; per-box phase from Motion stagger.",
+      "summary": "Two boxes orbit, meet, and merge through a smooth-min SDF in one OGL canvas, with a clean accent halo and subtle grain inside the cores; per-box phase from Motion stagger.",
       "props": [
         {
           "id": "spread",
@@ -55,12 +54,12 @@
           "type": "color"
         },
         {
-          "id": "paper",
-          "type": "color"
+          "id": "transparentBg",
+          "type": "boolean"
         },
         {
-          "id": "backdrop",
-          "type": "boolean"
+          "id": "backgroundColor",
+          "type": "color"
         }
       ],
       "source": "ogl",
@@ -72,10 +71,6 @@
         {
           "name": "motion",
           "license": "MIT"
-        },
-        {
-          "name": "@paper-design/shaders",
-          "license": "Apache-2.0"
         }
       ],
       "license": "Unlicense",
@@ -125,8 +120,12 @@
           "type": "color"
         },
         {
-          "id": "backdrop",
+          "id": "transparentBg",
           "type": "boolean"
+        },
+        {
+          "id": "backgroundColor",
+          "type": "color"
         }
       ],
       "source": "paper",
@@ -181,6 +180,14 @@
         },
         {
           "id": "ink",
+          "type": "color"
+        },
+        {
+          "id": "transparentBg",
+          "type": "boolean"
+        },
+        {
+          "id": "backgroundColor",
           "type": "color"
         }
       ],
@@ -244,8 +251,12 @@
           "type": "color"
         },
         {
-          "id": "backdrop",
+          "id": "transparentBg",
           "type": "boolean"
+        },
+        {
+          "id": "backgroundColor",
+          "type": "color"
         }
       ],
       "source": "matter",
@@ -294,7 +305,11 @@
           "type": "color"
         },
         {
-          "id": "paper",
+          "id": "transparentBg",
+          "type": "boolean"
+        },
+        {
+          "id": "backgroundColor",
           "type": "color"
         }
       ],
@@ -445,6 +460,14 @@
         {
           "id": "rate",
           "type": "number"
+        },
+        {
+          "id": "transparentBg",
+          "type": "boolean"
+        },
+        {
+          "id": "backgroundColor",
+          "type": "color"
         }
       ],
       "source": "shaderscom",
