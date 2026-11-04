@@ -79,12 +79,10 @@ describe("providerConnection", () => {
 
 describe("keySourceLabel", () => {
   it("names where the present key lives", () => {
-    expect(keySourceLabel({ appKey: true, envKey: false })).toBe("in the app");
-    expect(keySourceLabel({ appKey: false, envKey: true })).toBe(
-      "in the environment",
-    );
+    expect(keySourceLabel({ appKey: true, envKey: false })).toBe("app");
+    expect(keySourceLabel({ appKey: false, envKey: true })).toBe("environment");
     expect(keySourceLabel({ appKey: true, envKey: true })).toBe(
-      "in the app + the environment",
+      "app + environment",
     );
     expect(keySourceLabel({ appKey: false, envKey: false })).toBe("");
   });

@@ -1,7 +1,6 @@
 import { BlocksIcon, ChevronLeftIcon, PlusIcon } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { DitherArt } from "@/components/dither-art";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Empty,
@@ -14,7 +13,6 @@ import {
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsList, TabsTab } from "@/components/ui/tabs";
 import { writeChairRefs } from "@/lib/chair-ref";
-import { ditherMaskStyle, matrixForSeed } from "@/lib/dither";
 import { cn } from "@/lib/utils";
 import type { ChangesetItem } from "@chair/timeline-ir";
 import type { PieceLanding } from "./effect-model";
@@ -134,9 +132,7 @@ export function PiecesShelf({
           <h2 className="min-w-0 truncate text-sm font-medium text-neutral-100">
             {editing.name}
           </h2>
-          <Badge variant="outline" size="sm" className="shrink-0">
-            Effect
-          </Badge>
+          <span className="shrink-0 text-xs text-muted-foreground">Effect</span>
         </div>
         <EffectMaker
           clips={clips}
@@ -176,13 +172,19 @@ export function PiecesShelf({
           onValueChange={(value) => setKindFilter(value as KindFilter)}
           className="min-w-0"
         >
-          <TabsList size="sm" className="max-w-full overflow-x-auto">
-            {KIND_FILTERS.map((item) => (
-              <TabsTab key={item.id} value={item.id} className="shrink-0">
-                {item.label}
-              </TabsTab>
-            ))}
-          </TabsList>
+          <div className="border-b border-white/[0.06]">
+            <TabsList
+              variant="underline"
+              size="sm"
+              className="max-w-full overflow-x-auto"
+            >
+              {KIND_FILTERS.map((item) => (
+                <TabsTab key={item.id} value={item.id} className="shrink-0">
+                  {item.label}
+                </TabsTab>
+              ))}
+            </TabsList>
+          </div>
         </Tabs>
       </div>
 
@@ -194,6 +196,7 @@ export function PiecesShelf({
           placeholder="Search pieces"
           aria-label="Search pieces"
           onChange={(event) => setQuery(event.target.value)}
+          className="border-transparent bg-white/[0.04] dark:bg-white/[0.04]"
         />
       </div>
 
@@ -311,15 +314,10 @@ function PieceRow({
             piece.source === "user" ? "bg-amber-300" : "bg-neutral-500",
           )}
         />
-        <span
-          aria-hidden="true"
-          className="size-8 shrink-0 rounded-md bg-white/[0.10]"
-          style={ditherMaskStyle(0.35, { matrix: matrixForSeed(piece.id) })}
-        />
         <span className="min-w-0 flex-1 truncate text-sm text-neutral-200">{piece.name}</span>
-        <Badge variant="outline" size="sm" className="shrink-0">
+        <span className="shrink-0 text-xs text-muted-foreground">
           {PIECE_KIND_LABEL[piece.kind]}
-        </Badge>
+        </span>
         <Button
           type="button"
           size="xs"

@@ -12,7 +12,6 @@ import {
   MenuSeparator,
   MenuTrigger,
 } from "@/components/ui/menu";
-import { ditherMaskStyle, matrixForSeed } from "@/lib/dither";
 import { cn } from "@/lib/utils";
 import { EditorLogo } from "./EditorLogo";
 import { editorShort, formatEditedAt, type Project } from "./data";
@@ -69,26 +68,9 @@ export function ProjectCard({
             <EditorLogo
               id={editorId}
               title={editorShort(editorId)}
-              className="h-10 w-10 opacity-70 drop-shadow-[0_2px_8px_rgb(0_0_0/0.5)]"
+              className="h-10 w-10 opacity-70"
             />
           </div>
-          <div
-            aria-hidden="true"
-            className="absolute inset-0 bg-[radial-gradient(120%_80%_at_50%_0%,rgb(255_255_255/0.06),transparent_55%)]"
-          />
-          <div
-            aria-hidden="true"
-            className="absolute inset-0 opacity-50"
-            style={{
-              backgroundImage:
-                "linear-gradient(to bottom, transparent 55%, rgb(0 0 0 / 0.55))",
-            }}
-          />
-          <div
-            aria-hidden="true"
-            className="absolute inset-0 bg-white/[0.10]"
-            style={ditherMaskStyle(0.35, { matrix: matrixForSeed(project.name) })}
-          />
 
           {/* Quiet overflow control */}
           <div className="absolute top-2 right-2 z-20 pointer-events-none group-hover:pointer-events-auto group-focus-within:pointer-events-auto group-data-[emphasized]:pointer-events-auto">

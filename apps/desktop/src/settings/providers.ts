@@ -147,9 +147,9 @@ export function keySourceLabel(input: {
   appKey: boolean;
   envKey: boolean;
 }): string {
-  if (input.appKey && input.envKey) return "in the app + the environment";
-  if (input.appKey) return "in the app";
-  if (input.envKey) return "in the environment";
+  if (input.appKey && input.envKey) return "app + environment";
+  if (input.appKey) return "app";
+  if (input.envKey) return "environment";
   return "";
 }
 

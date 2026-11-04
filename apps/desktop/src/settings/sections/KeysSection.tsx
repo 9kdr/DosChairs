@@ -82,10 +82,6 @@ export function KeysSection({
 
   return (
     <div className="flex flex-col gap-8">
-      <p className="text-sm text-neutral-400">
-        Keys the agent can spend, and which models each one reaches.
-      </p>
-
       <section aria-label="Providers">
         <div className="rounded-card bg-card text-neutral-100">
           <div className="flex items-center justify-between gap-3 border-b border-white/[0.06] px-5 py-3">
@@ -263,7 +259,7 @@ function ProviderDetail({
   return (
     <div aria-label={`${provider.label} details`}>
       <p className="text-xs text-muted-foreground">
-        {source ? `Key ${source} · ` : null}
+        {source ? `From ${source} · ` : null}
         <code className="font-mono">{provider.envVar}</code>
       </p>
 
@@ -339,12 +335,8 @@ function KeyBlock({
   return (
     <div className="mt-4">
       <p className="text-sm font-medium text-neutral-100">API key</p>
-      {saved == null ? (
-        <p className="mt-1 text-xs text-muted-foreground">
-          {envKey
-            ? "Nothing saved here · the agent sees a key in its environment"
-            : "No key — paste one below"}
-        </p>
+      {saved == null && !envKey ? (
+        <p className="mt-1 text-xs text-muted-foreground">No key — paste one below</p>
       ) : null}
       <div className="mt-2 flex items-center gap-2">
         <Input
@@ -375,6 +367,7 @@ function KeyBlock({
         </Button>
         <Button
           type="button"
+          variant="secondary"
           size="sm"
           disabled={trimKeyDraft(draft) == null || busy}
           onClick={() => void save()}
@@ -464,14 +457,14 @@ function ModelsBlock({
           No models on file yet. Add one below.
         </p>
       ) : (
-        <ul className="mt-2 flex flex-col gap-1">
+        <ul className="mt-2 flex flex-col divide-y divide-white/[0.06]">
           {known.map((name) => {
             const off = disabledModels.includes(name);
             return (
               <li
                 key={name}
                 className={cn(
-                  "flex items-center gap-2 rounded-xl bg-white/[0.03] px-3 py-1.5",
+                  "flex items-center gap-2 py-1.5",
                   off && "opacity-60",
                 )}
               >
@@ -492,7 +485,7 @@ function ModelsBlock({
               <li
                 key={name}
                 className={cn(
-                  "flex items-center gap-2 rounded-xl bg-white/[0.03] px-3 py-1.5",
+                  "flex items-center gap-2 py-1.5",
                   off && "opacity-60",
                 )}
               >
@@ -544,6 +537,7 @@ function ModelsBlock({
             />
             <Button
               type="button"
+              variant="secondary"
               size="sm"
               disabled={draft.trim() === "" || busy}
               onClick={() => void add()}
