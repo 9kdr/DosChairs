@@ -434,9 +434,9 @@ export function ProjectShell({ projectId, projectName, editorId, onHome }: Proje
           ) : page === "board" ? (
             <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden">
               <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
-                <div className="mx-auto flex min-h-full w-full flex-col gap-3 pt-2 pb-4">
+                <div className="mx-auto flex min-h-full w-full flex-col gap-3 pt-2 pb-4 @min-[1000px]:h-full">
                   {tasksList}
-                  <div className="grid grid-cols-1 gap-3 @min-[1000px]:max-h-[560px] @min-[1000px]:min-h-[340px] @min-[1000px]:flex-1 @min-[1000px]:grid-cols-12 @min-[1000px]:grid-rows-1">
+                  <div className="grid grid-cols-1 gap-3 @min-[1000px]:max-h-[560px] @min-[1000px]:min-h-[340px] @min-[1000px]:flex-1 @min-[1000px]:grid-cols-12 @min-[1000px]:grid-rows-[minmax(0,1fr)]">
                     <section
                       aria-label="Plan"
                       className="flex min-h-0 flex-col rounded-card bg-card p-4 text-neutral-100 @max-[760px]:hidden @min-[1000px]:col-span-7"

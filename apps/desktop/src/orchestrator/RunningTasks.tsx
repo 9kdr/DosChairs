@@ -465,24 +465,27 @@ function TaskTile({
           // A calm scan band: a soft lane-tinted wash drifts across the tile
           // behind the text, with a thin shimmer along the bottom edge.
           // Reduced motion (or a frozen board) keeps both still.
-          <>
+          <div aria-hidden="true" className="pointer-events-none absolute inset-0 overflow-hidden rounded-[inherit]">
+            {/* Static wash over the right ~40%, fading left: alive at a glance. */}
+            <div
+              className="absolute inset-y-0 right-0 w-2/5 opacity-[0.16]"
+              style={{ background: `linear-gradient(270deg, ${LANE_DOT[task.lane]}, transparent)` }} // taste-skill-ignore: soft lane-tinted wash at the tile's right edge, fades left, never under the title.
+            />
             <motion.div
-              aria-hidden="true"
-              className="pointer-events-none absolute inset-y-0 left-0 w-2/5 opacity-[0.07]"
+              className="absolute inset-y-0 left-0 w-2/5 opacity-[0.07]"
               style={{ background: `linear-gradient(90deg, transparent, ${LANE_DOT[task.lane]}, transparent)` }} // taste-skill-ignore: soft lane-tinted scan band behind the text, not a fill.
               initial={{ x: "150%" }}
               animate={still ? { x: "150%" } : { x: ["-100%", "260%"] }}
               transition={{ duration: 4.5, ease: "easeInOut", repeat: Infinity, repeatDelay: 0.8 }}
             />
             <motion.div
-              aria-hidden="true"
-              className="pointer-events-none absolute bottom-0 left-0 h-px w-1/3 opacity-60"
+              className="absolute bottom-0 left-0 h-px w-1/3 opacity-70"
               style={{ background: `linear-gradient(90deg, transparent, ${LANE_DOT[task.lane]}, transparent)` }} // taste-skill-ignore: thin progress shimmer in the lane colour.
               initial={{ x: "100%" }}
               animate={still ? { x: "100%" } : { x: ["-100%", "300%"] }}
               transition={{ duration: 2.6, ease: "linear", repeat: Infinity }}
             />
-          </>
+          </div>
         ) : null}
         <div className="relative flex flex-col gap-2 px-4 py-3">
           <div className="flex items-center justify-between gap-3">
@@ -705,14 +708,13 @@ export function RunningTasks({
       aria-expanded={!recentCollapsed}
       aria-controls="recent-tasks"
       onClick={toggleRecent}
-      className={cn(
-        "flex items-center gap-1.5 rounded-md px-1 py-0.5 text-meta font-medium text-muted-foreground outline-none transition-colors hover:text-neutral-100 focus-visible:ring-2 focus-visible:ring-ring",
-        className,
-      )}
+      // Plain template, not cn(): tailwind-merge would drop text-meta next to
+      // text-muted-foreground and the label would grow past "Working N".
+      className={`flex items-center gap-1.5 rounded-md px-1 py-0.5 text-meta font-medium text-muted-foreground outline-none transition-colors hover:text-neutral-100 focus-visible:ring-2 focus-visible:ring-ring ${className ?? ""}`}
     >
       <ChevronDown
         aria-hidden="true"
-        className={cn("size-3.5 transition-transform", recentCollapsed && "-rotate-90")}
+        className={`size-3.5 text-muted-foreground transition-transform ${recentCollapsed ? "-rotate-90" : ""}`}
       />
       Recent
       <span className="tabular-nums text-neutral-600">{recent.length}</span>
