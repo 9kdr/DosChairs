@@ -1,7 +1,8 @@
 /**
- * The plan's Board tab: a card grid of style and campaign references. Drop
- * an image or paste a link to add a card. The collapsed Agent view below the
- * tabs lists the back-plan tasks with a stale badge.
+ * The plan's Board tab: a list of style and campaign references that read as
+ * content (a big image with a title) and edit inline on click. Drop an image
+ * or paste a link to add a card. The collapsed Agent view below the tabs
+ * lists the back-plan tasks with a stale badge.
  */
 import { useRef, useState } from "react";
 import { ImagePlus, Link2, Plus, X } from "lucide-react";
@@ -15,6 +16,7 @@ import {
   MenuRadioItem,
   MenuTrigger,
 } from "@/components/ui/menu";
+import { cn } from "@/lib/utils";
 import type { BackTask, BoardItem, BoardKind } from "./plan-api";
 
 const KINDS: BoardKind[] = ["style", "campaign", "reference", "link"];
@@ -38,6 +40,64 @@ function newItem(title: string, patch: Partial<BoardItem>): BoardItem {
     tags: [],
     ...patch,
   };
+}
+
+/** Text that reads as content and swaps for an input on click. */
+function InlineEdit({
+  value,
+  displayValue,
+  placeholder,
+  ariaLabel,
+  className,
+  placeholderClassName,
+  onSave,
+}: {
+  value: string;
+  displayValue?: string;
+  placeholder: string;
+  ariaLabel: string;
+  className?: string;
+  placeholderClassName?: string;
+  onSave: (value: string) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
+  if (!editing) {
+    const shown = displayValue ?? value;
+    return (
+      <button
+        type="button"
+        aria-label={ariaLabel}
+        onClick={() => {
+          setDraft(value);
+          setEditing(true);
+        }}
+        className={cn("min-w-0 cursor-text text-left", className)}
+      >
+        {shown || <span className={placeholderClassName}>{placeholder}</span>}
+      </button>
+    );
+  }
+  const commit = () => {
+    onSave(draft);
+    setEditing(false);
+  };
+  return (
+    <Input
+      size="sm"
+      autoFocus
+      value={draft}
+      placeholder={placeholder}
+      aria-label={ariaLabel}
+      className="h-7 border-transparent bg-transparent px-0"
+      onChange={(event) => setDraft(event.target.value)}
+      onBlur={commit}
+      onKeyDown={(event) => {
+        if (event.key === "Enter") commit();
+        if (event.key === "Escape") setEditing(false);
+      }}
+    />
+  );
 }
 
 export function PlanBoard({ items, digests, digesting, onChange, onDigest, onFiles }: PlanBoardProps) {
@@ -106,12 +166,13 @@ export function PlanBoard({ items, digests, digesting, onChange, onDigest, onFil
           No references yet. Drop an image, paste a link, or add one below.
         </p>
       ) : (
-        <ul className="grid min-h-0 grid-cols-1 gap-4 sm:grid-cols-2">
+        <ul className="flex min-h-0 flex-col gap-5">
           {items.map((item) => {
             const cover = item.images[0];
             const digest = digests[item.id];
+            const name = item.title || "board item";
             return (
-              <li key={item.id} className="flex flex-col gap-2 rounded-3xl bg-white/[0.04] p-4">
+              <li key={item.id} className="flex min-w-0 flex-col gap-1.5">
                 {cover ? (
                   <img
                     src={cover}
@@ -148,50 +209,46 @@ export function PlanBoard({ items, digests, digesting, onChange, onDigest, onFil
                       </MenuRadioGroup>
                     </MenuPopup>
                   </Menu>
-                  {item.tags.map((tag) => (
-                    <Badge key={tag} variant="outline" className="border-white/10 text-neutral-400">
-                      {tag}
-                    </Badge>
-                  ))}
                   <span className="flex-1" aria-hidden="true" />
                   <Button
                     type="button"
                     size="icon-sm"
                     variant="ghost"
-                    aria-label={`Remove ${item.title || "board item"}`}
+                    aria-label={`Remove ${name}`}
                     className="shrink-0 rounded-full"
                     onClick={() => onChange(items.filter((entry) => entry.id !== item.id))}
                   >
                     <X />
                   </Button>
                 </div>
-                <Input
-                  size="sm"
+                <InlineEdit
                   value={item.title}
                   placeholder="Title"
-                  aria-label="Board item title"
-                  className="h-7 border-transparent bg-transparent px-0 text-[15px] font-medium"
-                  onChange={(event) => setItem(item.id, { title: event.target.value })}
+                  ariaLabel="Board item title"
+                  className="text-[15px] font-medium leading-6 text-neutral-100"
+                  placeholderClassName="text-neutral-500"
+                  onSave={(value) => setItem(item.id, { title: value })}
                 />
-                <Input
-                  size="sm"
+                <InlineEdit
                   value={item.tags.join(", ")}
+                  displayValue={item.tags.join(" · ")}
                   placeholder="Tags, comma separated"
-                  aria-label={`Tags for ${item.title || "board item"}`}
-                  className="h-7 border-transparent bg-transparent text-[13px]"
-                  onChange={(event) =>
+                  ariaLabel={`Tags for ${name}`}
+                  className="text-[13px] leading-5 text-neutral-400"
+                  placeholderClassName="text-neutral-600"
+                  onSave={(value) =>
                     setItem(item.id, {
-                      tags: event.target.value.split(",").map((tag) => tag.trim()).filter(Boolean),
+                      tags: value.split(",").map((tag) => tag.trim()).filter(Boolean),
                     })
                   }
                 />
-                <Input
-                  size="sm"
+                <InlineEdit
                   value={item.notes}
                   placeholder="Notes"
-                  aria-label={`Notes for ${item.title || "board item"}`}
-                  className="h-7 border-transparent bg-transparent text-[13px]"
-                  onChange={(event) => setItem(item.id, { notes: event.target.value })}
+                  ariaLabel={`Notes for ${name}`}
+                  className="text-[13px] leading-5 text-neutral-400"
+                  placeholderClassName="text-neutral-600"
+                  onSave={(value) => setItem(item.id, { notes: value })}
                 />
                 <div className="flex items-center justify-between gap-2">
                   <p className="min-w-0 flex-1 truncate text-[13px] text-neutral-500">

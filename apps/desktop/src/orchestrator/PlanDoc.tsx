@@ -13,7 +13,6 @@ import {
   Undo2,
   Unlink,
   Link2,
-  X,
 } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { motion, useReducedMotion } from "motion/react";
@@ -1281,47 +1280,42 @@ export function PlanDoc({ open, mode, onOpen, onClose, notice, className, projec
     setEditingLabel(tab.label);
   };
 
-  if (!open) {
+  // One header for both states: Edit and Discuss are ghost icon buttons
+  // with tooltips. Clicking the active mode collapses back to the excerpt.
+  // The drawer owns the only close button, so the plan keeps none.
+  const toggleMode = (target: PlanMode) => {
+    if (open && mode === target) onClose();
+    else onOpen(target);
+  };
+  const modeButton = (target: PlanMode, label: string, Icon: typeof PenLine) => {
+    const active = open && mode === target;
     return (
-      <article
-        aria-label="Plan"
-        className={cn(
-          "flex shrink-0 flex-col gap-3 rounded-[28px] bg-[#1a1a1a] p-4 text-neutral-100 shadow-raised ring-1 ring-white/8",
-          className,
-        )}
-      >
-        <div className="flex items-center gap-2">
-          <h2 className="text-sm font-semibold tracking-wide">Plan</h2>
-        </div>
-        <p className="line-clamp-2 text-sm leading-5 text-neutral-400">{excerpt}</p>
-        {notice ? <p className="text-xs text-neutral-300">{notice}</p> : null}
-        <div className="flex gap-2">
-          <Button type="button" size="sm" variant="outline" onClick={() => onOpen("edit")}>
-            <PenLine />
-            Edit plan
-          </Button>
-          <Button type="button" size="sm" variant="ghost" onClick={() => onOpen("talk")}>
-            <MessageSquare />
-            Discuss
-          </Button>
-        </div>
-      </article>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <Button
+              type="button"
+              size="icon-sm"
+              variant="ghost"
+              aria-label={label}
+              aria-pressed={active}
+              onClick={() => toggleMode(target)}
+              className={cn(active && "bg-white/10")}
+            >
+              <Icon />
+            </Button>
+          }
+        />
+        <TooltipPopup sideOffset={8}>{label}</TooltipPopup>
+      </Tooltip>
     );
-  }
-
-  return (
-    <motion.article
-      aria-label="Plan"
-      className={cn(
-        "flex min-h-0 flex-1 flex-col gap-3 overflow-hidden rounded-[28px] bg-[#1a1a1a] p-4 text-neutral-100 shadow-raised ring-1 ring-white/8",
-        className,
-      )}
-      initial={reduce ? false : { opacity: 0 }}
-      animate={{ opacity: 1 }}
-      transition={{ duration: 0.15, ease: "easeOut" }}
-    >
-      <div className="flex items-center gap-2">
-        <h2 className="text-sm font-semibold tracking-wide">Plan</h2>
+  };
+  const planHeader = (
+    <div className="flex shrink-0 items-center gap-1">
+      <h2 className="text-[15px] font-medium text-neutral-100">Plan</h2>
+      <div className="ml-auto flex items-center gap-0.5">
+        {modeButton("edit", "Edit plan", PenLine)}
+        {modeButton("talk", "Discuss", MessageSquare)}
         <Tooltip>
           <TooltipTrigger
             render={
@@ -1329,7 +1323,6 @@ export function PlanDoc({ open, mode, onOpen, onClose, notice, className, projec
                 type="button"
                 size="icon-sm"
                 variant="ghost"
-                className="ml-auto"
                 ref={docsButtonRef}
                 aria-label={docsToken ? "Google Docs connected" : "Connect Google Docs"}
                 aria-pressed={docsOpen}
@@ -1347,18 +1340,11 @@ export function PlanDoc({ open, mode, onOpen, onClose, notice, className, projec
             {docsToken ? "Google Docs connected" : "Connect Google Docs"}
           </TooltipPopup>
         </Tooltip>
-        <Button
-          type="button"
-          size="icon-sm"
-          variant="ghost"
-          aria-label="Close the plan"
-          onClick={onClose}
-        >
-          <X />
-        </Button>
       </div>
+    </div>
+  );
 
-      {docsOpen ? (
+  const docsPopout = docsOpen ? (
         <>
           <button
             type="button"
@@ -1431,18 +1417,32 @@ export function PlanDoc({ open, mode, onOpen, onClose, notice, className, projec
             {docsError ? <p className="text-xs text-red-400">{docsError}</p> : null}
           </div>
         </>
-      ) : null}
+      ) : null;
 
-      <Tabs value={mode} onValueChange={(value) => onOpen(value as PlanMode)}>
-        <TabsList size="sm" className="grid w-full grid-cols-2 rounded-full bg-white/5 p-1 [&>[data-slot=tab-indicator]]:hidden">
-          <TabsTab value="edit" className="rounded-full data-active:bg-white/10">
-            Edit plan
-          </TabsTab>
-          <TabsTab value="talk" className="rounded-full data-active:bg-white/10">
-            Discuss
-          </TabsTab>
-        </TabsList>
-      </Tabs>
+  if (!open) {
+    return (
+      <article
+        aria-label="Plan"
+        className={cn("flex shrink-0 flex-col gap-3", className)}
+      >
+        {planHeader}
+        {docsPopout}
+        <p className="line-clamp-2 text-sm leading-5 text-neutral-400">{excerpt}</p>
+        {notice ? <p className="text-xs text-neutral-300">{notice}</p> : null}
+      </article>
+    );
+  }
+
+  return (
+    <motion.article
+      aria-label="Plan"
+      className={cn("flex min-h-0 flex-1 flex-col gap-3 overflow-hidden", className)}
+      initial={reduce ? false : { opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ duration: 0.15, ease: "easeOut" }}
+    >
+      {planHeader}
+      {docsPopout}
 
       {mode === "edit" ? (
         <>
@@ -1683,7 +1683,7 @@ export function PlanDoc({ open, mode, onOpen, onClose, notice, className, projec
             {skeleton ? (
               <motion.div
                 aria-hidden="true"
-                className="absolute inset-0 flex flex-col gap-3 overflow-hidden bg-[#1a1a1a]"
+                className="absolute inset-0 flex flex-col gap-3 overflow-hidden bg-card"
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 transition={{ duration: 0.15, ease: "easeOut" }}
