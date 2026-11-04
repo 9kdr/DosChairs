@@ -149,7 +149,9 @@ export function ReviewBoard({ store }: { store: ProjectStore }) {
   if (timeline === null) {
     return <ReviewEmpty onRetry={() => store.retry()} />;
   }
-  return <ReviewReady store={store} timeline={timeline} />;
+  // A new proposal starts the board over: focus, expansion, and the
+  // overlay all reset with its id, never mid-review.
+  return <ReviewReady key={store.changeset?.id ?? "none"} store={store} timeline={timeline} />;
 }
 
 /**
@@ -170,13 +172,6 @@ function ReviewReady({ store, timeline }: { store: ProjectStore; timeline: Timel
   const [helpOpen, setHelpOpen] = useState(false);
   const [expandedIds, setExpandedIds] = useState<ReadonlySet<string>>(new Set());
   const rowRefs = useRef(new Map<string, HTMLLIElement>());
-
-  const changesetId = store.changeset?.id ?? null;
-  useEffect(() => {
-    const fresh = store.changeset?.items ?? [];
-    const firstPending = fresh.findIndex((item) => item.status === "pending");
-    setFocusedIndex(firstPending >= 0 ? firstPending : 0);
-  }, [changesetId, store.changeset?.items]);
 
   const focusItem = (index: number) => {
     if (items.length === 0) return;
