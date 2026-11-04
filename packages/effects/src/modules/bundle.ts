@@ -110,7 +110,7 @@ async function runProbe(entry: string): Promise<ProbeOutcome> {
     const stdout = await new Promise<string>((resolve, reject) => {
       const child = spawn(
         process.execPath,
-        ["--experimental-permission", `--allow-fs-read=${dir}`, out],
+        ["--permission", `--allow-fs-read=${dir}`, out],
         { env: { PATH: process.env["PATH"] ?? "" }, stdio: ["ignore", "pipe", "pipe"] },
       );
       let text = "";
@@ -173,7 +173,7 @@ export async function checkModule(entry: string): Promise<ModuleReport> {
 }
 
 /** Check, then wrap into an OGraf title. A failed check yields a report and no bundle. */
-export async function bundleModule(entry: string): Promise<ModuleBuild> {
+export async function bundleModule(entry: string, opts: { data?: unknown } = {}): Promise<ModuleBuild> {
   const report = await checkModule(entry);
   if (!report.ok || !report.meta) return { report, bundle: null };
   const meta = report.meta;
@@ -190,6 +190,7 @@ export async function bundleModule(entry: string): Promise<ModuleBuild> {
       props: report.props,
       plugins: [approvedImportsPlugin(entry)],
       nodePaths: [join(effectsPackageDir(), "node_modules")],
+      data: opts.data,
     });
     return { report, bundle };
   } catch (error) {

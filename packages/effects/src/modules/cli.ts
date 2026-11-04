@@ -10,7 +10,9 @@ import { bundleModule, checkModule, writeBundle } from "./bundle.js";
 async function main(): Promise<void> {
   const [command, entryArg, ...rest] = process.argv.slice(2);
   if ((command !== "check" && command !== "bundle") || !entryArg) {
-    process.stderr.write("usage: modules-cli <check|bundle> <entry.tsx> [--out dir]\n");
+    process.stderr.write(
+      "usage: modules-cli <check|bundle> <entry.tsx> [--out dir] [--data json]\n",
+    );
     process.exit(2);
   }
   const entry = resolve(entryArg);
@@ -20,7 +22,9 @@ async function main(): Promise<void> {
     return;
   }
   const outDir = resolve(flag >= 0 && rest[flag + 1] ? rest[flag + 1]! : ".");
-  const built = await bundleModule(entry);
+  const dataFlag = rest.indexOf("--data");
+  const data = dataFlag >= 0 && rest[dataFlag + 1] ? JSON.parse(rest[dataFlag + 1]!) : undefined;
+  const built = await bundleModule(entry, { data });
   let files: string[] = [];
   let id: string | null = null;
   if (built.bundle) {

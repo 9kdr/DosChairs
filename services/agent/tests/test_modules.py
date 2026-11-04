@@ -29,14 +29,16 @@ export const props = {
 };
 export default function Effect({ t, size, tint, label }: any) {
   const a = easeOutCubic(clamp(t / 0.6));
-  return <div style={{ position: "absolute", inset: 0, opacity: a, color: tint, fontSize: size }}>{label}</div>;
+  const style = { position: "absolute", inset: 0, opacity: a };
+  return <div style={{ ...style, color: tint, fontSize: size }}>{label}</div>;
 }
 """
 
 CLOCK = GOOD.replace("clamp(t / 0.6)", "clamp(Date.now() / 600)")
 STATEFUL = GOOD.replace(
     "export default function Effect({ t, size, tint, label }: any) {",
-    "let calls = 0;\nexport default function Effect({ t, size, tint, label }: any) {\n  calls += 1;",
+    "let calls = 0;\n"
+    "export default function Effect({ t, size, tint, label }: any) {\n  calls += 1;",
 ).replace("{label}</div>", "{label}{calls}</div>")
 
 
@@ -164,6 +166,20 @@ def test_bundle_then_install_never_overwrites(isolated) -> None:
     assert renamed["name"].endswith("v2")
     assert Path(first["files"][1]).read_text() == original
     assert modules.status_snapshot()["installed"] == 3
+
+
+@needs_toolchain
+def test_bundle_with_baked_keyframes_embeds_them(isolated) -> None:
+    record = modules.register_source(GOOD)
+    keyframes = {"size": [[2.0, 200], [0.0, 20]]}
+    built = modules.bundle_module(record.id, keyframes=keyframes)
+    assert built.keyframes == {"size": [[0.0, 20], [2.0, 200]]}
+    js = Path(built.files[1]).read_text()
+    assert "keyframes" in js and "[[0,20],[2,200]]" in js.replace(" ", "")
+    with pytest.raises(InvalidModule, match="bad keyframes"):
+        modules.bundle_module(record.id, keyframes={"size": [["x", 1]]})
+    with pytest.raises(InvalidModule, match="bad keyframes"):
+        modules.bundle_module(record.id, keyframes=["nope"])
 
 
 def test_install_needs_a_bundle(isolated) -> None:

@@ -245,7 +245,9 @@ class Handler(BaseHTTPRequestHandler):
                 )
                 self._send(200, _module_summary(record))
             elif action == "bundle" and module_id is not None:
-                self._send(200, _module_summary(modules.bundle_module(module_id)))
+                self._send(200, _module_summary(modules.bundle_module(
+                    module_id, keyframes=body.get("keyframes"),
+                )))
             elif action == "install" and module_id is not None:
                 dest = body.get("dest")
                 self._send(200, modules.install_module(
@@ -486,6 +488,7 @@ def _module_summary(record: Any) -> dict[str, Any]:
         "warnings": dumped["warnings"],
         "stem": dumped["stem"],
         "files": dumped["files"],
+        "keyframes": dumped["keyframes"],
         "notes": dumped["notes"],
         "repaired": dumped["repaired"],
         "preview": f"/effects/modules/{dumped['id']}/preview",

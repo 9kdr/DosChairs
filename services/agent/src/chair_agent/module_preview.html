@@ -7,9 +7,9 @@
 <div id="bar"><input id="scrub" type="range" min="0" max="__DUR__" step="0.01" value="0"> <span id="tlabel"></span></div>
 <pre id="result" style="display:none"></pre>
 <script type="module">
+import OgrafTitle from '__JS__';
 const q = new URLSearchParams(location.search);
-const mod = await import('__JS__');
-customElements.define('chair-effect', mod.default);
+customElements.define('chair-effect', OgrafTitle);
 const el = document.createElement('chair-effect');
 el.style.cssText = 'position:absolute;inset:0';
 document.getElementById('stage').appendChild(el);

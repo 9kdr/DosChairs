@@ -78,6 +78,7 @@ class ModuleRecord(BaseModel):
     stem: str | None = None
     build_dir: str | None = None
     files: list[str] = []
+    keyframes: dict[str, Any] | None = None
     installs: list[dict[str, Any]] = []
 
 
@@ -219,7 +220,10 @@ def _cli_path() -> Path:
     return out
 
 
-def run_cli(command: str, entry: Path, out_dir: Path | None = None) -> dict[str, Any]:
+def run_cli(
+    command: str, entry: Path, out_dir: Path | None = None,
+    data: str | None = None,
+) -> dict[str, Any]:
     """Run the effects CLI (check or bundle) and return its JSON result."""
     node = shutil.which("node")
     if node is None:
@@ -227,6 +231,8 @@ def run_cli(command: str, entry: Path, out_dir: Path | None = None) -> dict[str,
     argv = [node, str(_cli_path()), command, str(entry)]
     if out_dir is not None:
         argv += ["--out", str(out_dir)]
+    if data is not None:
+        argv += ["--data", data]
     try:
         done = subprocess.run(
             argv, cwd=_effects_dir(), capture_output=True, text=True,
@@ -597,15 +603,47 @@ def generate_module(
 # --- bundle, preview, install ------------------------------------------------
 
 
-def bundle_module(module_id: str, env: Mapping[str, str] | None = None) -> ModuleRecord:
+def normalize_keyframes(raw: Any) -> dict[str, list[list[Any]]] | None:
+    """Baked keyframe table ({prop: [[seconds, value], ...]}), sorted by time.
+
+    The bundle embeds it as data.keyframes: the history() fallback when the
+    host sends no updateAction events (numbers interpolate, rest holds).
+    """
+    if raw is None:
+        return None
+    if not isinstance(raw, Mapping):
+        raise InvalidModule("bad keyframes: want {propId: [[seconds, value], ...]}")
+    table: dict[str, list[list[Any]]] = {}
+    for name, pairs in raw.items():
+        if not isinstance(pairs, list) or not pairs:
+            raise InvalidModule(f"bad keyframes for {name!r}: want [[seconds, value], ...]")
+        rows: list[list[Any]] = []
+        for pair in pairs:
+            if (
+                not isinstance(pair, (list, tuple)) or len(pair) != 2
+                or not isinstance(pair[0], (int, float)) or pair[0] < 0
+            ):
+                raise InvalidModule(
+                    f"bad keyframes for {name!r}: each entry is [seconds >= 0, value]"
+                )
+            rows.append([float(pair[0]), pair[1]])
+        table[str(name)] = sorted(rows, key=lambda row: row[0])
+    return table
+
+
+def bundle_module(
+    module_id: str, keyframes: Any = None, env: Mapping[str, str] | None = None,
+) -> ModuleRecord:
     """Bundle into <state>/modules/<id>/build/<stem>.ograf.json + <stem>.js."""
     record = get_module(module_id)
+    table = normalize_keyframes(keyframes)
     build_dir = _state_dir(env) / module_id / "build"
     if build_dir.exists():
         shutil.rmtree(build_dir)
     started = time.perf_counter()
+    data = json.dumps({"keyframes": table}) if table is not None else None
     try:
-        result = run_cli("bundle", Path(record.source_path), build_dir)
+        result = run_cli("bundle", Path(record.source_path), build_dir, data)
     except InvalidModule as error:
         _bump(bundle_failures=1)
         _note(last_error=str(error))
@@ -620,6 +658,7 @@ def bundle_module(module_id: str, env: Mapping[str, str] | None = None) -> Modul
         raise InvalidModule(message)
     updated = _apply_report(record, report).model_copy(update={
         "stem": result["id"], "build_dir": str(build_dir), "files": list(result["files"]),
+        "keyframes": table,
     })
     _register(updated, env)
     _bump(bundled=1)
@@ -672,7 +711,7 @@ def preview_for(module_id: str) -> str:
         record.stem, title=str(meta.get("name", record.stem)),
         width=int(meta.get("width", 1920)), height=int(meta.get("height", 1080)),
         fps=float(meta.get("fps", 30)), duration_sec=float(meta.get("durationSec", 5)),
-        js_url=f"files/{record.stem}.js",
+        js_url=f"./files/{record.stem}.js",
     )
 
 
