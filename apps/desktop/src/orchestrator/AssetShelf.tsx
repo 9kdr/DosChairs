@@ -1300,6 +1300,8 @@ export function AssetShelf({ className, projectId, frozen = false, transitionLoc
                       </AnimatePresence>
                     </ul>
                 ) : null}
+                  </>
+                )}
                 <AnimatePresence initial={false}>
                   {filteredEmpty ? (
                     <motion.p

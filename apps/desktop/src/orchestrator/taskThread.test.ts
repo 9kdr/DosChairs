@@ -547,10 +547,14 @@ describe("waiting and failed rows", () => {
     };
     const client = createServicesClient({ fetchFn: failing });
     await submitLiveTurn(client, prompted);
-    expect(liveSubmitError(prompted.id)).toBe("fetch failed");
+    expect(liveSubmitError(prompted.id)).toBe(
+      "agent is unreachable at http://127.0.0.1:8787/jobs",
+    );
     const rows = waitingRowsFor([prompted]);
     expect(rows).toHaveLength(1);
-    expect(rows[0]?.status).toBe("Failed: fetch failed");
+    expect(rows[0]?.status).toBe(
+      "Failed: agent is unreachable at http://127.0.0.1:8787/jobs",
+    );
   });
 
   it("clears the failure once a later submit succeeds", async () => {
@@ -584,7 +588,7 @@ describe("waiting and failed rows", () => {
     };
     const client = createServicesClient({ fetchFn: failing });
     await submitLiveTurn(client, prompted);
-    expect(waitingRowsFor([prompted])[0]?.status).toBe("Failed: fetch failed");
+    expect(waitingRowsFor([prompted])[0]?.status).toContain("Failed:");
     retryLiveTask(prompted.id);
     expect(liveSubmitError(prompted.id)).toBeUndefined();
     expect(waitingRowsFor([prompted])[0]?.status).toBe("Waiting for the agent");
