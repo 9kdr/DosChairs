@@ -64,6 +64,35 @@ describe("orchestrator picker", () => {
     expect(options).toEqual(["muse-wonder-1.0 (Meta)"]);
   });
 
+  it("counts a live environment key like a saved key", () => {
+    const options = orchestratorOptions(NO_KEYS, {
+      enabled: ALL_ON,
+      envKeys: { meta: true, openai: false, anthropic: false },
+    });
+    expect(options).toEqual([
+      "muse-wonder-1.0 (Meta)",
+      "muse-spark-1 (Meta)",
+    ]);
+  });
+
+  it("shows no options when no provider has a key anywhere", () => {
+    expect(
+      orchestratorOptions(NO_KEYS, {
+        enabled: ALL_ON,
+        envKeys: { meta: false, openai: false, anthropic: false },
+      }),
+    ).toEqual([]);
+    expect(orchestratorOptions(NO_KEYS, { enabled: ALL_ON })).toEqual([]);
+  });
+
+  it("hides an environment key for a provider that is switched off", () => {
+    const options = orchestratorOptions(NO_KEYS, {
+      enabled: { ...ALL_ON, meta: false },
+      envKeys: { meta: true },
+    });
+    expect(options).toEqual([]);
+  });
+
   it("hides a provider that is switched off", () => {
     const options = orchestratorOptions(
       { ...NO_KEYS, meta: "key" },

@@ -10,6 +10,7 @@ import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { Button } from "@/components/ui/button";
 import { Menu, MenuPopup, MenuRadioGroup, MenuRadioItem, MenuTrigger } from "@/components/ui/menu";
 import { acceptsChairRef, readChairRefs, type ChairRef } from "@/lib/chair-ref";
+import { useServiceHealth } from "@/lib/services/useServices";
 import { cn } from "@/lib/utils";
 import { filterActions, type Action } from "@/orchestrator/actions";
 import { enabledModels, PROVIDERS, type ProviderId } from "@/settings/providers";
@@ -24,7 +25,8 @@ const ZWSP = "\u200B";
 
 /**
  * Orchestrator picker options: enabled models from saved keys of enabled providers.
- * Providers with no key or switched off add nothing.
+ * A key the agent reports live in its environment (`envKeys`, from /health)
+ * counts like a saved key. Providers with no key or switched off add nothing.
  * Invented presets are removed.
  */
 export function orchestratorOptions(
@@ -33,11 +35,14 @@ export function orchestratorOptions(
     enabled?: Record<ProviderId, boolean>;
     customModels?: Record<ProviderId, string[]>;
     disabledModels?: Record<ProviderId, string[]>;
+    /** Key presence per provider from the agent's /health, never the values. */
+    envKeys?: Record<string, boolean>;
   },
 ): string[] {
   return PROVIDERS.filter(
     (provider) =>
-      keys[provider.id] != null && opts?.enabled?.[provider.id] !== false,
+      (keys[provider.id] != null || opts?.envKeys?.[provider.id] === true) &&
+      opts?.enabled?.[provider.id] !== false,
   ).flatMap((provider) =>
     enabledModels({
       provider: provider.id,
@@ -377,21 +382,26 @@ export function ChatPrompt({
 }: ChatPromptProps) {
   const [parts, setParts] = useState<Piece[]>(() => normalize([]));
   const [model, setModel] = useState<string | null>(null);
-  // Orchestrator pick: real models from saved keys of enabled providers.
-  // The choice persists in app settings.
+  // Orchestrator pick: real models from saved keys of enabled providers,
+  // plus keys the agent reports live in its environment. Same health read
+  // the shell header uses; the "Add a model key" chip shows only when no
+  // provider has a key anywhere.
   const { settings, loaded, saveOrchestrator } = useSettings();
+  const { agentHealth } = useServiceHealth();
   const options = useMemo(
     () =>
       orchestratorOptions(settings.keys, {
         enabled: settings.enabled,
         customModels: settings.customModels,
         disabledModels: settings.disabledModels,
+        envKeys: agentHealth?.keys_configured,
       }),
     [
       settings.keys,
       settings.enabled,
       settings.customModels,
       settings.disabledModels,
+      agentHealth?.keys_configured,
     ],
   );
   useEffect(() => {
