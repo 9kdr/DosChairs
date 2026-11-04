@@ -18,7 +18,9 @@ import { SleepyChair } from "@/components/sleepy-chair/sleepy-chair";
 import { InfoHint } from "@/components/info-hint";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
+import { DitherShader } from "@/lib/dither";
 import { loadJson, saveJson } from "@/lib/storage";
+import { setPillDragImage } from "@/lib/drag-pill";
 import { clockTime, historyForTask, opLabel, type HistoryEntry } from "../project/store";
 import { activityForTask } from "./TaskActivity";
 import type { Suggestion } from "./suggestions";
@@ -241,7 +243,6 @@ function TaskTile({
   const reduce = useReducedMotion();
   const isDraggingRef = useRef(false);
   const dragTimeoutRef = useRef<number | null>(null);
-  const dragGhostRef = useRef<HTMLDivElement | null>(null);
   const rootRef = useRef<HTMLDivElement | null>(null);
   const startPosRef = useRef<{ x: number; y: number } | null>(null);
   const upPosRef = useRef<{ x: number; y: number } | null>(null);
@@ -251,8 +252,6 @@ function TaskTile({
       if (dragTimeoutRef.current !== null) {
         window.clearTimeout(dragTimeoutRef.current);
       }
-      dragGhostRef.current?.remove();
-      dragGhostRef.current = null;
     };
   }, []);
 
@@ -269,34 +268,7 @@ function TaskTile({
     );
     // Same pill ghost as the shelf's asset drag: lane dot plus label.
     rootRef.current?.setAttribute("data-dragging", "");
-    dragGhostRef.current?.remove();
-    const ghost = document.createElement("div");
-    const mark = document.createElement("span");
-    mark.style.cssText = `width:8px;height:8px;border-radius:999px;background:${LANE_DOT[task.lane]};flex:none`;
-    const name = document.createElement("span");
-    name.textContent = task.name.length > 28 ? `${task.name.slice(0, 18)}…` : task.name;
-    name.style.cssText = "overflow:hidden;text-overflow:ellipsis;white-space:nowrap";
-    ghost.append(mark, name);
-    ghost.style.cssText = [
-      "position:fixed",
-      "top:-1000px",
-      "left:0",
-      "z-index:80",
-      "display:inline-flex",
-      "align-items:center",
-      "gap:8px",
-      "max-width:220px",
-      "padding:6px 10px",
-      "border-radius:10px",
-      "border:1px solid rgb(255 255 255 / 12%)",
-      "background:#2a2a2a",
-      "color:#f5f5f5",
-      "font:500 13px/1.2 ui-sans-serif,system-ui,sans-serif",
-      "box-shadow:inset 0 1px 0 rgb(255 255 255 / 10%), 0 10px 24px rgb(0 0 0 / 35%)",
-    ].join(";");
-    document.body.appendChild(ghost);
-    dragGhostRef.current = ghost;
-    event.dataTransfer.setDragImage(ghost, 16, 16);
+    setPillDragImage(event.dataTransfer, task.name, LANE_DOT[task.lane]);
   };
 
   const handleDragEnd = () => {
@@ -304,8 +276,6 @@ function TaskTile({
       window.clearTimeout(dragTimeoutRef.current);
     }
     rootRef.current?.removeAttribute("data-dragging");
-    dragGhostRef.current?.remove();
-    dragGhostRef.current = null;
     dragTimeoutRef.current = window.setTimeout(() => {
       isDraggingRef.current = false;
       dragTimeoutRef.current = null;
@@ -396,6 +366,7 @@ function TaskTile({
   const retryable = liveSubmitError(task.id) !== undefined || landed?.state === "failed";
   const showDither = !finished && !failed;
   const still = frozen || Boolean(reduce);
+  const ditherSeed = [...task.id].reduce((sum, ch) => sum + ch.charCodeAt(0), 0) % 97;
   const seen = finished && isTaskSeen(task.projectId, task.id);
   const activity = activityForTask(task);
   // Finished tiles show the flow steps as done; the outcome already sits in
@@ -466,10 +437,25 @@ function TaskTile({
           // behind the text, with a thin shimmer along the bottom edge.
           // Reduced motion (or a frozen board) keeps both still.
           <div aria-hidden="true" className="pointer-events-none absolute inset-0 overflow-hidden rounded-[inherit]">
-            {/* Static wash over the right ~40%, fading left: alive at a glance. */}
+            {/* Soft wash plus the pixel dither, both in the right ~40% and fading left. */}
             <div
-              className="absolute inset-y-0 right-0 w-2/5 opacity-[0.16]"
+              className="absolute inset-y-0 right-0 w-2/5 opacity-[0.1]"
               style={{ background: `linear-gradient(270deg, ${LANE_DOT[task.lane]}, transparent)` }} // taste-skill-ignore: soft lane-tinted wash at the tile's right edge, fades left, never under the title.
+            />
+            <DitherShader
+              field={TASK_FIELD}
+              palette={["transparent", LANE_INK[task.lane]]}
+              uniforms={{ taskSeed: ditherSeed }}
+              speed={0.4}
+              animate={!still}
+              suspended={still}
+              stillTime={1.6}
+              cell={3}
+              className="absolute inset-y-0 right-0 w-2/5 max-w-[360px] opacity-30"
+              style={{
+                maskImage: "linear-gradient(to right, transparent 0%, #000 70%)", // taste-skill-ignore: mask fades the dither's left edge so it never reaches the title.
+                WebkitMaskImage: "linear-gradient(to right, transparent 0%, #000 70%)", // taste-skill-ignore: mask fades the dither's left edge so it never reaches the title.
+              }}
             />
             <motion.div
               className="absolute inset-y-0 left-0 w-2/5 opacity-[0.07]"
