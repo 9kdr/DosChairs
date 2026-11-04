@@ -87,6 +87,7 @@ export {
   ditherMask,
   ditherMaskStyle,
   ditherPath,
+  matrixForSeed,
 } from "@/lib/dither/pattern";
 export type {
   DitherMaskOptions,

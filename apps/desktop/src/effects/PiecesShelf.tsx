@@ -1,13 +1,11 @@
 import { BlocksIcon, ChevronLeftIcon, PlusIcon } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { DitherArt } from "@/components/dither-art";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Empty,
   EmptyArt,
   EmptyContent,
-  EmptyDescription,
   EmptyHeader,
   EmptyTitle,
 } from "@/components/ui/empty";
@@ -47,6 +45,7 @@ const KIND_FILTERS: { id: KindFilter; label: string }[] = [
   { id: "effect", label: "Effects" },
   { id: "motion", label: "Motion" },
   { id: "sound", label: "Sound" },
+  { id: "look", label: "Looks" },
 ];
 
 /** The real reason a pieces load failed, in plain words. */
@@ -57,10 +56,11 @@ function failureText(failure: { kind: PiecesFailureKind; reason: string }): stri
 }
 
 /**
- * The one Pieces shelf: every macro, effect, motion, and sound piece the
- * agent knows, each with its kind. Opening or creating an effect-kind
- * piece shows the Effect Maker editor; other kinds expand in place with
- * their summary and controls. Rows drag out as piece refs for the brief.
+ * The one Pieces shelf: every macro, effect, motion, sound, and look
+ * piece the agent knows, each with its kind. Opening or creating an
+ * effect-kind piece shows the Effect Maker editor; other kinds expand
+ * in place with their summary and controls. Rows drag out as piece
+ * refs for the brief.
  */
 export function PiecesShelf({
   className,
@@ -131,9 +131,7 @@ export function PiecesShelf({
           <h2 className="min-w-0 truncate text-sm font-medium text-neutral-100">
             {editing.name}
           </h2>
-          <Badge variant="outline" size="sm" className="shrink-0">
-            Effect
-          </Badge>
+          <span className="shrink-0 text-xs text-muted-foreground">Effect</span>
         </div>
         <EffectMaker
           clips={clips}
@@ -150,31 +148,43 @@ export function PiecesShelf({
 
   return (
     <div className={cn("flex min-h-0 min-w-0 flex-1 flex-col gap-3", className)}>
-      <div className="flex shrink-0 flex-wrap items-center gap-2">
-        <span className="flex size-7 items-center justify-center rounded-lg bg-white/[0.06]">
-          <BlocksIcon className="size-4 text-neutral-300" aria-hidden="true" />
-        </span>
-        <h2 className="text-sm font-medium text-neutral-100">Pieces</h2>
-        <Tabs value={kindFilter} onValueChange={(value) => setKindFilter(value as KindFilter)}>
-          <TabsList size="sm">
-            {KIND_FILTERS.map((item) => (
-              <TabsTab key={item.id} value={item.id}>
-                {item.label}
-              </TabsTab>
-            ))}
-          </TabsList>
-        </Tabs>
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          className="ml-auto"
-          title="Draft a new effect piece"
-          onClick={() => setEditing({ id: "new", name: "New piece" })}
+      <div className="flex shrink-0 flex-col gap-2">
+        <div className="flex items-center gap-2">
+          <span className="flex size-7 items-center justify-center rounded-lg bg-white/[0.06]">
+            <BlocksIcon className="size-4 text-neutral-300" aria-hidden="true" />
+          </span>
+          <h2 className="text-sm font-medium text-neutral-100">Pieces</h2>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            className="ml-auto"
+            title="Draft a new effect piece"
+            onClick={() => setEditing({ id: "new", name: "New piece" })}
+          >
+            <PlusIcon />
+            New piece
+          </Button>
+        </div>
+        <Tabs
+          value={kindFilter}
+          onValueChange={(value) => setKindFilter(value as KindFilter)}
+          className="min-w-0"
         >
-          <PlusIcon />
-          New piece
-        </Button>
+          <div className="border-b border-white/[0.06]">
+            <TabsList
+              variant="underline"
+              size="sm"
+              className="max-w-full overflow-x-auto"
+            >
+              {KIND_FILTERS.map((item) => (
+                <TabsTab key={item.id} value={item.id} className="shrink-0">
+                  {item.label}
+                </TabsTab>
+              ))}
+            </TabsList>
+          </div>
+        </Tabs>
       </div>
 
       <div className="shrink-0">
@@ -185,6 +195,7 @@ export function PiecesShelf({
           placeholder="Search pieces"
           aria-label="Search pieces"
           onChange={(event) => setQuery(event.target.value)}
+          className="border-transparent bg-white/[0.04] dark:bg-white/[0.04]"
         />
       </div>
 
@@ -223,7 +234,6 @@ export function PiecesShelf({
                   <DitherArt seed={5} />
                 </EmptyArt>
                 <EmptyTitle>No pieces yet</EmptyTitle>
-                <EmptyDescription>Pieces the agent offers land here.</EmptyDescription>
               </EmptyHeader>
               <EmptyContent>
                 <Button type="button" size="sm" variant="outline" onClick={load}>
@@ -271,7 +281,7 @@ function PieceRow({
   return (
     <li
       className={cn(
-        "rounded-2xl bg-white/[0.03]",
+        "group rounded-2xl bg-white/[0.03]",
         expanded && "bg-white/[0.06]",
       )}
     >
@@ -303,23 +313,22 @@ function PieceRow({
           )}
         />
         <span className="min-w-0 flex-1 truncate text-sm text-neutral-200">{piece.name}</span>
-        <Badge variant="outline" size="sm" className="shrink-0">
+        <span className="shrink-0 text-xs text-muted-foreground">
           {PIECE_KIND_LABEL[piece.kind]}
-        </Badge>
-        {piece.kind === "effect" ? (
-          <Button
-            type="button"
-            size="xs"
-            variant="ghost"
-            aria-label={`Open ${piece.name}`}
-            onClick={(event) => {
-              event.stopPropagation();
-              onOpen();
-            }}
-          >
-            Open
-          </Button>
-        ) : null}
+        </span>
+        <Button
+          type="button"
+          size="xs"
+          variant="ghost"
+          aria-label={`Open ${piece.name}`}
+          onClick={(event) => {
+            event.stopPropagation();
+            onOpen();
+          }}
+          className="shrink-0 opacity-0 group-focus-within:opacity-100 group-hover:opacity-100 focus-visible:opacity-100"
+        >
+          Open
+        </Button>
       </div>
       {expanded ? (
         <div className="px-3 pb-3">
@@ -328,7 +337,7 @@ function PieceRow({
           </p>
           <p className="mt-1 text-xs text-muted-foreground">
             {piece.controls.length === 0
-              ? "No published controls."
+              ? "No published controls — drag it into the brief to use it."
               : `${piece.controls.length} control${piece.controls.length === 1 ? "" : "s"}: ${piece.controls
                   .slice(0, 4)
                   .map((control) => control.name)

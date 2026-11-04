@@ -102,6 +102,28 @@ export const EDITORS: EditorMeta[] = [
   },
 ];
 
+/**
+ * One muted line of what the editor's adapter can do: its native
+ * capabilities, then each gap with its fallback (or "no X" without
+ * one), then the manifest version. The desktop shows this line; the
+ * agent reads the manifest itself.
+ */
+export function capabilityLine(editor: EditorMeta): string {
+  const native = editor.capabilities
+    .filter((cap) => cap.native)
+    .map((cap) => cap.label);
+  const gaps = editor.capabilities
+    .filter((cap) => !cap.native)
+    .map((cap) =>
+      cap.fallback ? `${cap.label} via ${cap.fallback}` : `no ${cap.label}`,
+    );
+  return [
+    ...(native.length > 0 ? [native.join(", ")] : []),
+    ...gaps,
+    `v${editor.version}`,
+  ].join(" · ");
+}
+
 export type EditorConnectionState =
   | "connected"
   | "unreachable"

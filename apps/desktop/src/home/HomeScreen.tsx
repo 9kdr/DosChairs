@@ -6,21 +6,23 @@ import { DitherArt } from "@/components/dither-art";
 import { SmoothScrollTarget } from "@/components/smooth-scroll";
 import { Button } from "@/components/ui/button";
 import { Empty, EmptyArt } from "@/components/ui/empty";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { ChairMark } from "./ChairMark";
 import { EditorLogo } from "./EditorLogo";
+import { GridSizeToggle } from "./GridSizeToggle";
 import {
+  DEFAULT_GRID_SIZE,
   GRID_SIZE_LAYOUT,
-  GridSizeSlider,
   columnsForWidth,
   maxGridSizeForWidth,
   readStoredGridSize,
   writeStoredGridSize,
-  type GridApproach,
   type GridSize,
-} from "./GridSizeSlider";
+} from "./grid-size";
 import {
   editorName,
+  editorShort,
   type EditorInfo,
   type EditorStatus,
   type Project,
@@ -86,7 +88,7 @@ export function HomeScreen({ onOpenProject }: HomeScreenProps) {
         aria-hidden="true"
         className="pointer-events-none absolute inset-x-0 bottom-0 z-10 h-24"
         style={{
-          background: `linear-gradient(to top, var(--background) 0%, color-mix(in srgb, var(--background) 85%, transparent) 55%, transparent 100%)`,
+          background: `linear-gradient(to top, var(--background) 0%, color-mix(in srgb, var(--background) 85%, transparent) 55%, transparent 100%)`, // taste-skill-ignore: scrim so scrolled cards never collide with the floating dock.
         }}
       />
 
@@ -100,12 +102,9 @@ export function HomeScreen({ onOpenProject }: HomeScreenProps) {
 
       <HomeDock
         tab={tab}
+        settingsOpen={settingsOpen}
         onTab={(next) => {
           setTab(next);
-          setSettingsOpen(false);
-        }}
-        onAccount={() => {
-          setTab("projects");
           setSettingsOpen(false);
         }}
         onSettings={() => setSettingsOpen(true)}
@@ -120,23 +119,18 @@ function ProjectsPane({
   onOpenProject: (projectId: string) => void;
 }) {
   const reduceMotion = useReducedMotion();
-  const gridRef = useRef<HTMLUListElement>(null);
-  const gridWidth = useElementWidth(gridRef);
+  // Measured on the pane, which mounts with the skeleton: the grid itself
+  // mounts only once projects arrive, after the observer would attach.
+  const paneRef = useRef<HTMLDivElement>(null);
+  const gridWidth = useElementWidth(paneRef);
   const maxSize = maxGridSizeForWidth(gridWidth);
   // Preferred snap (persisted). Display may clamp below this on a narrow shell.
   const [preferredSize, setPreferredSize] = useState<GridSize>(() =>
-    readStoredGridSize(1),
+    readStoredGridSize(DEFAULT_GRID_SIZE),
   );
-  const [approach, setApproach] = useState<GridApproach>({
-    committed: preferredSize,
-    toward: null,
-    heading: 0,
-    intensity: 0,
-    dragging: false,
-  });
-  // Keep `layout` measuring always. Only spring when the *slider* moves —
+  // Keep `layout` measuring always. Only spring when the *toggle* moves —
   // width-driven column changes stay instant so window resize does not flicker.
-  const springFromSlider = useRef(false);
+  const springFromToggle = useRef(false);
   const [layoutEpoch, setLayoutEpoch] = useState(0);
 
   const size = Math.min(preferredSize, maxSize) as GridSize;
@@ -144,31 +138,24 @@ function ProjectsPane({
   const columns = columnsForWidth(gridWidth, size);
 
   const onGridSize = (next: GridSize) => {
-    springFromSlider.current = true;
+    springFromToggle.current = true;
     setPreferredSize(next);
     writeStoredGridSize(next);
     setLayoutEpoch((n) => n + 1);
   };
 
   useEffect(() => {
-    if (!springFromSlider.current) return;
+    if (!springFromToggle.current) return;
     // Hold the spring through the rearrange; clear after it settles so a
     // later window resize does not re-trigger FLIP.
     const timer = window.setTimeout(() => {
-      springFromSlider.current = false;
+      springFromToggle.current = false;
     }, 480);
     return () => window.clearTimeout(timer);
   }, [layoutEpoch]);
 
-  // One-way gather toward the stop ahead — never a counter-push behind.
-  // Applied on an inner wrapper so it does not break layout projection.
-  const embraceScale =
-    approach.toward == null || approach.heading === 0
-      ? 1
-      : 1 - approach.intensity * 0.03;
-
   const layoutTransition =
-    springFromSlider.current && !reduceMotion
+    springFromToggle.current && !reduceMotion
       ? { type: "spring" as const, stiffness: 280, damping: 26, mass: 0.65 }
       : { duration: 0 };
 
@@ -185,6 +172,7 @@ function ProjectsPane({
 
   return (
     <motion.div
+      ref={paneRef}
       className="mx-auto flex w-full max-w-5xl flex-col gap-8"
       initial={reduceMotion ? false : { opacity: 0 }}
       animate={{ opacity: 1 }}
@@ -205,12 +193,7 @@ function ProjectsPane({
               <RefreshCwIcon aria-hidden="true" />
               Rescan
             </Button>
-            <GridSizeSlider
-              value={size}
-              max={maxSize}
-              onChange={onGridSize}
-              onApproach={setApproach}
-            />
+            <GridSizeToggle value={size} max={maxSize} onChange={onGridSize} />
           </div>
         </div>
         {detected.phase === "loading" ? (
@@ -251,7 +234,6 @@ function ProjectsPane({
               </p>
             ) : null}
             <ProjectsGrid
-              gridRef={gridRef}
               projects={detected.projects}
               columns={columns}
               gapClass={layout.gapClass}
@@ -260,7 +242,6 @@ function ProjectsPane({
               layoutEpoch={layoutEpoch}
               layoutTransition={layoutTransition}
               hoverEase={hoverEase}
-              embraceScale={embraceScale}
               reduceMotion={reduceMotion}
               onOpenProject={onOpenProject}
               cardRefs={cardRefs}
@@ -273,7 +254,6 @@ function ProjectsPane({
 }
 
 function ProjectsGrid({
-  gridRef,
   projects,
   columns,
   gapClass,
@@ -282,12 +262,10 @@ function ProjectsGrid({
   layoutEpoch,
   layoutTransition,
   hoverEase,
-  embraceScale,
   reduceMotion,
   onOpenProject,
   cardRefs,
 }: {
-  gridRef: React.RefObject<HTMLUListElement | null>;
   projects: Project[];
   columns: number;
   gapClass: string;
@@ -296,14 +274,12 @@ function ProjectsGrid({
   layoutEpoch: number;
   layoutTransition: { duration: number } | { type: "spring"; stiffness: number; damping: number; mass: number };
   hoverEase: { type: "tween"; duration: number; ease: readonly [number, number, number, number] };
-  embraceScale: number;
   reduceMotion: boolean | null;
   onOpenProject: (projectId: string) => void;
   cardRefs: React.RefObject<Record<string, HTMLDivElement | null>>;
 }) {
   return (
         <ul
-          ref={gridRef}
           className={cn("grid", gapClass)}
           style={{
             gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))`,
@@ -329,7 +305,7 @@ function ProjectsGrid({
                     reduceMotion
                       ? undefined
                       : {
-                          scale: hoverScale * embraceScale,
+                          scale: hoverScale,
                           filter: diminished
                             ? "brightness(0.9) saturate(0.92)"
                             : "brightness(1) saturate(1)",
@@ -453,21 +429,29 @@ function EditorsStrip({ editors }: { editors: EditorInfo[] }) {
       )}
     >
       {editors.map((editor) => (
-        <span
-          key={editor.id}
-          role="img"
-          aria-label={`${editorName(editor.id)}, ${STATUS_LABEL[editor.status]}`}
-          className="relative grid size-7 place-items-center rounded-full text-neutral-200"
-        >
-          <EditorLogo id={editor.id} className="size-3.5" />
-          <span
-            aria-hidden="true"
-            className={cn(
-              "pointer-events-none absolute top-1 right-1 size-1.5 rounded-full ring-2 ring-card",
-              STATUS_DOT[editor.status],
-            )}
-          />
-        </span>
+        <Tooltip key={editor.id}>
+          <TooltipTrigger
+            render={
+              <span
+                role="img"
+                aria-label={`${editorName(editor.id)}, ${STATUS_LABEL[editor.status]}`}
+                className="relative grid size-7 place-items-center rounded-full text-neutral-200"
+              />
+            }
+          >
+            <EditorLogo id={editor.id} className="size-3.5" />
+            <span
+              aria-hidden="true"
+              className={cn(
+                "pointer-events-none absolute top-1 right-1 size-1.5 rounded-full ring-2 ring-card",
+                STATUS_DOT[editor.status],
+              )}
+            />
+          </TooltipTrigger>
+          <TooltipPopup side="bottom">
+            {editorShort(editor.id)} · {STATUS_LABEL[editor.status]}
+          </TooltipPopup>
+        </Tooltip>
       ))}
     </div>
   );

@@ -47,11 +47,10 @@ type KeysSectionProps = {
 };
 
 /**
- * Providers, after T3 Code's provider settings: one box with the
- * providers down the left and the selected provider's key and
- * models on the right. Each row carries its own on/off switch.
- * Saved keys render masked; the full value only ever sits in the
- * field it was typed into.
+ * Providers: one list, and the selected provider opens in place with
+ * its key and models. Each row carries its own status and on/off
+ * switch. Saved keys render masked; the full value only ever sits in
+ * the field it was typed into.
  */
 export function KeysSection({
   settings,
@@ -81,14 +80,8 @@ export function KeysSection({
     setSelected(result.provider);
   };
 
-  const detail = PROVIDERS.find((entry) => entry.id === selected) ?? PROVIDERS[0]!;
-
   return (
     <div className="flex flex-col gap-8">
-      <p className="text-sm text-neutral-400">
-        Keys the agent can spend, and which models each one reaches.
-      </p>
-
       <section aria-label="Providers">
         <div className="rounded-card bg-card text-neutral-100">
           <div className="flex items-center justify-between gap-3 border-b border-white/[0.06] px-5 py-3">
@@ -106,51 +99,51 @@ export function KeysSection({
             </Button>
           </div>
 
-          <div className="flex flex-col md:flex-row">
-            <div
-              aria-label="Provider list"
-              className="w-[240px] shrink-0 divide-y divide-white/[0.06] border-b border-white/[0.06] md:w-[248px] md:border-r md:border-b-0"
-            >
-              {PROVIDERS.map((provider) => {
-                const appKey = settings.keys[provider.id] != null;
-                const envKey = provider.id === "meta" && metaEnvKey;
-                const enabled = settings.enabled[provider.id];
-                const state = providerConnection({ appKey, envKey, agentUp });
-                return (
+          <div
+            aria-label="Provider list"
+            className="flex flex-col divide-y divide-white/[0.06]"
+          >
+            {PROVIDERS.map((provider) => {
+              const appKey = settings.keys[provider.id] != null;
+              const envKey = provider.id === "meta" && metaEnvKey;
+              const enabled = settings.enabled[provider.id];
+              const state = providerConnection({ appKey, envKey, agentUp });
+              const open = provider.id === selected;
+              return (
+                <div key={provider.id}>
                   <ProviderRow
-                    key={provider.id}
                     provider={provider}
                     state={state}
                     enabled={enabled}
-                    active={provider.id === selected}
+                    active={open}
                     onSelect={() => setSelected(provider.id)}
                     onToggle={(next) =>
                       void saveProviderEnabled(provider.id, next)
                     }
                   />
-                );
-              })}
-            </div>
-
-            <div className="min-w-0 flex-1 px-5 py-4">
-              <ProviderDetail
-                key={detail.id}
-                provider={detail}
-                saved={settings.keys[detail.id]}
-                envKey={detail.id === "meta" && metaEnvKey}
-                agentUp={agentUp}
-                customModels={settings.customModels[detail.id]}
-                disabledModels={settings.disabledModels[detail.id]}
-                onSave={(key) => saveKey(detail.id, key)}
-                onClear={() => saveKey(detail.id, null)}
-                onSaveCustomModels={(models) =>
-                  saveCustomModels(detail.id, models)
-                }
-                onToggleModel={(model, enabled) =>
-                  saveModelEnabled(detail.id, model, enabled)
-                }
-              />
-            </div>
+                  {open ? (
+                    <div className="px-5 pt-1 pb-5">
+                      <ProviderDetail
+                        key={provider.id}
+                        provider={provider}
+                        saved={settings.keys[provider.id]}
+                        envKey={envKey}
+                        customModels={settings.customModels[provider.id]}
+                        disabledModels={settings.disabledModels[provider.id]}
+                        onSave={(key) => saveKey(provider.id, key)}
+                        onClear={() => saveKey(provider.id, null)}
+                        onSaveCustomModels={(models) =>
+                          saveCustomModels(provider.id, models)
+                        }
+                        onToggleModel={(model, modelEnabled) =>
+                          saveModelEnabled(provider.id, model, modelEnabled)
+                        }
+                      />
+                    </div>
+                  ) : null}
+                </div>
+              );
+            })}
           </div>
         </div>
       </section>
@@ -177,7 +170,7 @@ type ProviderRowProps = {
   onToggle: (enabled: boolean) => void;
 };
 
-/** One provider in the left column: status, name, and on/off switch. */
+/** One provider row: status, name, and on/off switch. Opens in place. */
 function ProviderRow({
   provider,
   state,
@@ -190,13 +183,14 @@ function ProviderRow({
     <div
       className={cn(
         "flex items-center gap-2.5 px-4 py-3 transition-colors hover:bg-white/[0.04]",
+        active && "bg-white/[0.04]",
         !enabled && "opacity-60",
       )}
     >
       <button
         type="button"
         onClick={onSelect}
-        aria-current={active}
+        aria-expanded={active}
         className="flex min-w-0 flex-1 cursor-pointer items-center gap-2.5 rounded-lg text-left outline-none focus-visible:ring-2 focus-visible:ring-white/40"
       >
         <span
@@ -210,10 +204,7 @@ function ProviderRow({
         <span className="min-w-0 flex-1">
           <span
             title={provider.label}
-            className={cn(
-              "block truncate border-b pb-px text-sm font-medium text-neutral-100",
-              active ? "border-neutral-100" : "border-transparent",
-            )}
+            className="block truncate text-sm font-medium text-neutral-100"
           >
             {provider.label}
           </span>
@@ -239,7 +230,6 @@ type ProviderDetailProps = {
   provider: Provider;
   saved: string | null;
   envKey: boolean;
-  agentUp: boolean | null;
   customModels: string[];
   disabledModels: string[];
   onSave: (key: string) => Promise<void>;
@@ -248,12 +238,15 @@ type ProviderDetailProps = {
   onToggleModel: (model: string, enabled: boolean) => Promise<void>;
 };
 
-/** The open provider: its key, then its models. Nothing else. */
+/**
+ * The open provider, in place under its row: where its key lives,
+ * then the key, then its models. The row above already names the
+ * provider and its status, so this says neither again.
+ */
 function ProviderDetail({
   provider,
   saved,
   envKey,
-  agentUp,
   customModels,
   disabledModels,
   onSave,
@@ -261,37 +254,18 @@ function ProviderDetail({
   onSaveCustomModels,
   onToggleModel,
 }: ProviderDetailProps) {
-  const state = providerConnection({
-    appKey: saved != null,
-    envKey,
-    agentUp,
-  });
   const source = keySourceLabel({ appKey: saved != null, envKey });
 
   return (
     <div aria-label={`${provider.label} details`}>
-      <div className="flex items-baseline justify-between gap-3">
-        <h3 className="flex items-center gap-2 text-sm font-medium text-neutral-100">
-          <ProviderLogo id={provider.id} className="size-5" />
-          {provider.label}
-        </h3>
-        <p className="flex shrink-0 items-center gap-2 text-xs text-neutral-400">
-          <span
-            aria-hidden="true"
-            className={cn("size-1.5 rounded-full", connectionDot(state))}
-          />
-          {CONNECTION_LABEL[state]}
-        </p>
-      </div>
-      <p className="mt-0.5 text-xs text-muted-foreground">
-        {source ? `Key ${source} · ` : null}
+      <p className="text-xs text-muted-foreground">
+        {source ? `From ${source} · ` : null}
         <code className="font-mono">{provider.envVar}</code>
       </p>
 
       <KeyBlock
         provider={provider}
         saved={saved}
-        envKey={envKey}
         onSave={onSave}
         onClear={onClear}
       />
@@ -310,7 +284,6 @@ function ProviderDetail({
 type KeyBlockProps = {
   provider: Provider;
   saved: string | null;
-  envKey: boolean;
   onSave: (key: string) => Promise<void>;
   onClear: () => Promise<void>;
 };
@@ -322,7 +295,6 @@ type KeyBlockProps = {
 function KeyBlock({
   provider,
   saved,
-  envKey,
   onSave,
   onClear,
 }: KeyBlockProps) {
@@ -360,13 +332,6 @@ function KeyBlock({
   return (
     <div className="mt-4">
       <p className="text-sm font-medium text-neutral-100">API key</p>
-      {saved == null ? (
-        <p className="mt-1 text-xs text-muted-foreground">
-          {envKey
-            ? "Nothing saved here · the agent sees a key in its environment"
-            : "No key — paste one below"}
-        </p>
-      ) : null}
       <div className="mt-2 flex items-center gap-2">
         <Input
           type={shown ? "text" : "password"}
@@ -396,6 +361,7 @@ function KeyBlock({
         </Button>
         <Button
           type="button"
+          variant="secondary"
           size="sm"
           disabled={trimKeyDraft(draft) == null || busy}
           onClick={() => void save()}
@@ -480,23 +446,19 @@ function ModelsBlock({
   return (
     <div className="mt-4 border-t border-white/[0.06] pt-4">
       <p className="text-sm font-medium text-neutral-100">Models</p>
-      {known.length === 0 && customModels.length === 0 ? (
-        <p className="mt-2 text-xs text-muted-foreground">
-          No models on file yet. Add one below.
-        </p>
-      ) : (
-        <ul className="mt-2 flex flex-col gap-1">
+      {known.length === 0 && customModels.length === 0 ? null : (
+        <ul className="mt-2 flex flex-col divide-y divide-white/[0.06]">
           {known.map((name) => {
             const off = disabledModels.includes(name);
             return (
               <li
                 key={name}
                 className={cn(
-                  "flex items-center gap-2 rounded-xl bg-white/[0.03] px-3 py-1.5",
+                  "flex items-center gap-2 py-1.5",
                   off && "opacity-60",
                 )}
               >
-                <span className="min-w-0 flex-1 truncate font-mono text-xs text-neutral-300">
+                <span className="min-w-0 flex-1 truncate text-xs text-neutral-300">
                   {name}
                 </span>
                 <Switch
@@ -513,11 +475,11 @@ function ModelsBlock({
               <li
                 key={name}
                 className={cn(
-                  "flex items-center gap-2 rounded-xl bg-white/[0.03] px-3 py-1.5",
+                  "flex items-center gap-2 py-1.5",
                   off && "opacity-60",
                 )}
               >
-                <span className="min-w-0 flex-1 truncate font-mono text-xs text-neutral-300">
+                <span className="min-w-0 flex-1 truncate text-xs text-neutral-300">
                   {name}
                 </span>
                 <Switch
@@ -565,6 +527,7 @@ function ModelsBlock({
             />
             <Button
               type="button"
+              variant="secondary"
               size="sm"
               disabled={draft.trim() === "" || busy}
               onClick={() => void add()}

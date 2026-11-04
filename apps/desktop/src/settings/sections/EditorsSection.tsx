@@ -53,25 +53,20 @@ export function EditorsSection({
   refresh,
 }: EditorsSectionProps) {
   return (
-    <div className="flex flex-col gap-8">
-      <p className="text-sm text-neutral-400">
-        Which editing app Chair hands the cut to.
-      </p>
-      <div className="space-y-2">
-        {EDITORS.map((editor) => (
-          <EditorCard
-            key={editor.id}
-            editor={editor}
-            connection={connections[editor.id]}
-            agentUp={agentUp}
-            detected={detectedStatus(detected, editor.id)}
-            onConnect={(connection) =>
-              saveConnection(editor.id, connection).then(() => refresh())
-            }
-            onDisconnect={() => saveConnection(editor.id, null)}
-          />
-        ))}
-      </div>
+    <div className="space-y-2">
+      {EDITORS.map((editor) => (
+        <EditorCard
+          key={editor.id}
+          editor={editor}
+          connection={connections[editor.id]}
+          agentUp={agentUp}
+          detected={detectedStatus(detected, editor.id)}
+          onConnect={(connection) =>
+            saveConnection(editor.id, connection).then(() => refresh())
+          }
+          onDisconnect={() => saveConnection(editor.id, null)}
+        />
+      ))}
     </div>
   );
 }
@@ -113,12 +108,6 @@ function EditorCard({
     void onDisconnect().finally(() => setBusy(false));
   };
 
-  const native = editor.capabilities.filter((cap) => cap.native);
-  const fallbacks = editor.capabilities.filter((cap) => cap.fallback != null);
-  const unsupported = editor.capabilities.filter(
-    (cap) => !cap.native && cap.fallback == null,
-  );
-
   return (
     <div className="rounded-card bg-card px-5 py-4">
       <div className="flex items-baseline justify-between gap-3">
@@ -131,8 +120,6 @@ function EditorCard({
           {EDITOR_CONNECTION_LABEL[state]}
         </p>
       </div>
-      <p className="mt-0.5 text-xs text-muted-foreground">{editor.blurb}</p>
-
       <div className="mt-3 flex items-center gap-2">
         {editor.endpointLabel != null && !linked ? (
           <Input
@@ -177,41 +164,11 @@ function EditorCard({
         )}
       </div>
 
-      <p className="mt-2 truncate text-xs text-muted-foreground">
-        {state === "connected"
-          ? "Linked · the agent answered."
-          : state === "unreachable"
-            ? unreachableCopy(editor.id, detected)
-            : state === "checking"
-              ? "Checking the agent…"
-              : editor.endpointLabel != null
-                ? "Not linked yet."
-                : "Not linked yet — open your project in Studio, then Connect."}
-      </p>
-
-      <div className="mt-3 space-y-1 border-t border-white/[0.06] pt-3 text-xs text-muted-foreground">
-        <p>
-          <span className="text-neutral-400">Native:</span>{" "}
-          {native.map((cap) => cap.label).join(", ")}
+      {state === "unreachable" ? (
+        <p className="mt-2 truncate text-xs text-muted-foreground">
+          {unreachableCopy(editor.id, detected)}
         </p>
-        {fallbacks.length > 0 ? (
-          <p>
-            <span className="text-neutral-400">Falls back:</span>{" "}
-            {fallbacks
-              .map((cap) => `${cap.label} → ${cap.fallback}`)
-              .join("; ")}
-          </p>
-        ) : null}
-        {unsupported.length > 0 ? (
-          <p>
-            <span className="text-neutral-400">Not supported:</span>{" "}
-            {unsupported.map((cap) => cap.label).join(", ")}
-          </p>
-        ) : null}
-        <p className="text-muted-foreground">
-          From the {editor.name} adapter manifest · v{editor.version}
-        </p>
-      </div>
+      ) : null}
     </div>
   );
 }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { FetchFn } from "@/lib/services/client";
-import { fetchPieces, PiecesError } from "./pieces-api";
+import { fetchPieces, pieceKindOf, PiecesError } from "./pieces-api";
 
 const piece = {
   id: "macro:user:title:lower",
@@ -55,10 +55,49 @@ describe("fetchPieces", () => {
     expect((error as Error).message).toContain("macro folder missing");
   });
 
+  it("dedupes board pieces the agent returns once per source", async () => {
+    const board = (source: string) => ({
+      id: "board:style-x",
+      name: "Warm morning grade",
+      kind: "style",
+      origin: "board",
+      source,
+      summary: "amber highlights, soft shadows",
+      controls: [],
+    });
+    const fetchFn: FetchFn = async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        pieces: [board("otio:proof"), board("resolve:proof"), board("resolve:chair-captest")],
+        total: 3,
+      }),
+    });
+    const found = await fetchPieces("", { fetchFn, agentUrl: "http://agent" });
+    expect(found).toHaveLength(1);
+    expect(found[0]).toMatchObject({ id: "board:style-x", name: "Warm morning grade" });
+  });
+
   it("rejects a payload with no pieces array and a non-ok status", async () => {
     const bad: FetchFn = async () => ({ ok: true, status: 200, json: async () => ({}) });
     await expect(fetchPieces("", { fetchFn: bad })).rejects.toThrow(/malformed/);
     const down: FetchFn = async () => ({ ok: false, status: 503, json: async () => null });
     await expect(fetchPieces("", { fetchFn: down })).rejects.toMatchObject({ status: 503 });
+  });
+});
+
+describe("pieceKindOf", () => {
+  it("reads board styles and campaigns as looks", () => {
+    expect(pieceKindOf("style")).toBe("look");
+    expect(pieceKindOf("campaign")).toBe("look");
+  });
+
+  it("keeps the shelf kinds and falls back to macro", () => {
+    expect(pieceKindOf("macro")).toBe("macro");
+    expect(pieceKindOf("effect")).toBe("effect");
+    expect(pieceKindOf("motion")).toBe("motion");
+    expect(pieceKindOf("sound")).toBe("sound");
+    expect(pieceKindOf("title")).toBe("macro");
+    expect(pieceKindOf(null)).toBe("macro");
   });
 });

@@ -2,6 +2,12 @@ export const GRID_SIZE_MAX = 3;
 
 export type GridSize = 0 | 1 | 2 | 3;
 
+/** The snap a fresh shell opens on: dense, so 520 shows two cards. */
+export const DEFAULT_GRID_SIZE: GridSize = 0;
+
+/** The grid never spreads wider than this, however wide the shell. */
+export const GRID_MAX_COLUMNS = 4;
+
 const GRID_SIZE_STORAGE_KEY = "chair.home.gridSize";
 
 export function isGridSize(value: unknown): value is GridSize {
@@ -46,15 +52,18 @@ export const GRID_DENSE_CARD_MIN_PX = 168;
 const DENSE_GAP_PX = GRID_SIZE_LAYOUT[0].gapPx;
 
 /**
- * How many dense cards fit across `width`.
+ * How many dense cards fit across `width`, capped at GRID_MAX_COLUMNS.
  * Measured with the dense gap so densest does not drift as the snap changes.
  */
 export function densestColumnsForWidth(width: number): number {
   if (width <= 0) return 1;
-  return Math.max(
-    1,
-    Math.floor(
-      (width + DENSE_GAP_PX) / (GRID_DENSE_CARD_MIN_PX + DENSE_GAP_PX),
+  return Math.min(
+    GRID_MAX_COLUMNS,
+    Math.max(
+      1,
+      Math.floor(
+        (width + DENSE_GAP_PX) / (GRID_DENSE_CARD_MIN_PX + DENSE_GAP_PX),
+      ),
     ),
   );
 }

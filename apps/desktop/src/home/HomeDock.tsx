@@ -1,9 +1,4 @@
-import {
-  BlocksIcon,
-  HomeIcon,
-  SettingsIcon,
-  UserRoundIcon,
-} from "lucide-react";
+import { BlocksIcon, HomeIcon, SettingsIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import {
@@ -20,8 +15,9 @@ export type HomeTab = "projects" | "pieces" | "marketplace";
 
 type HomeDockProps = {
   tab: HomeTab;
+  /** True while the Settings pane covers the tab content. */
+  settingsOpen?: boolean;
   onTab: (tab: HomeTab) => void;
-  onAccount: () => void;
   onSettings: () => void;
 };
 
@@ -30,7 +26,7 @@ type DockTipPayload = { label: string };
 /** One shared tip so the bubble morphs between dock icons. */
 const dockTooltip = TooltipCreateHandle<DockTipPayload>();
 
-export function HomeDock({ tab, onTab, onAccount, onSettings }: HomeDockProps) {
+export function HomeDock({ tab, settingsOpen = false, onTab, onSettings }: HomeDockProps) {
   return (
     <TooltipProvider delay={220} closeDelay={120} timeout={500}>
       <nav
@@ -46,14 +42,14 @@ export function HomeDock({ tab, onTab, onAccount, onSettings }: HomeDockProps) {
         >
           <DockButton
             label="Projects"
-            active={tab === "projects"}
+            active={!settingsOpen && tab === "projects"}
             onClick={() => onTab("projects")}
           >
             <HomeIcon />
           </DockButton>
           <DockButton
             label="Pieces"
-            active={tab === "pieces"}
+            active={!settingsOpen && tab === "pieces"}
             onClick={() => onTab("pieces")}
           >
             <BlocksIcon />
@@ -63,10 +59,7 @@ export function HomeDock({ tab, onTab, onAccount, onSettings }: HomeDockProps) {
             className="mx-1 h-5 border-l border-white/[0.08] border-r border-black/50"
           />
 
-          <DockButton label="Account" onClick={onAccount}>
-            <UserRoundIcon />
-          </DockButton>
-          <DockButton label="Settings" onClick={onSettings}>
+          <DockButton label="Settings" active={settingsOpen} onClick={onSettings}>
             <SettingsIcon />
           </DockButton>
         </div>

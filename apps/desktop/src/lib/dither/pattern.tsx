@@ -1,6 +1,6 @@
 import type { CSSProperties } from "react";
 
-import { getThresholdMap } from "@/lib/dither/matrices";
+import { DITHER_MATRICES, getThresholdMap } from "@/lib/dither/matrices";
 import type { DitherMatrix } from "@/lib/dither/matrices";
 import { cssColor } from "@/lib/dither/tokens";
 import type { DitherColor } from "@/lib/dither/tokens";
@@ -39,6 +39,19 @@ export const ditherPath = (level: number, matrix: DitherMatrix = "bayer4") => {
   }
   pathCache.set(key, path);
   return path;
+};
+
+/**
+ * A stable threshold matrix for a seed string: a short hash picks one of
+ * the four, so seeded static thumbs differ from row to row without a new
+ * dither anywhere.
+ */
+export const matrixForSeed = (seed: string): DitherMatrix => {
+  let hash = 0;
+  for (let index = 0; index < seed.length; index += 1) {
+    hash = (hash * 31 + seed.charCodeAt(index)) >>> 0;
+  }
+  return DITHER_MATRICES[hash % DITHER_MATRICES.length] ?? "bayer4";
 };
 
 export interface DitherMaskOptions {

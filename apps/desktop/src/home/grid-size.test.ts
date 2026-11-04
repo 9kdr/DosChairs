@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   columnsForWidth,
+  DEFAULT_GRID_SIZE,
   densestColumnsForWidth,
   GRID_SIZE_MAX,
   maxGridSizeForWidth,
@@ -12,8 +13,21 @@ describe("columnsForWidth", () => {
     const cols = ([0, 1, 2, 3] as GridSize[]).map((size) =>
       columnsForWidth(1024, size),
     );
-    expect(cols).toEqual([5, 4, 3, 2]);
+    expect(cols).toEqual([4, 3, 2, 1]);
     expect(new Set(cols).size).toBe(GRID_SIZE_MAX + 1);
+  });
+
+  it("caps densest packing at four columns however wide the shell", () => {
+    expect(densestColumnsForWidth(1024)).toBe(4);
+    expect(densestColumnsForWidth(1920)).toBe(4);
+    expect(columnsForWidth(1920, 0)).toBe(4);
+  });
+
+  it("defaults to two columns at 520 and four at 1440", () => {
+    // Grid widths after the shell's own padding: 520 - 48, and the
+    // max-w-5xl container.
+    expect(columnsForWidth(472, DEFAULT_GRID_SIZE)).toBe(2);
+    expect(columnsForWidth(1024, DEFAULT_GRID_SIZE)).toBe(4);
   });
 
   it("scales densest columns with a narrower ratio", () => {
