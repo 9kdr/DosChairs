@@ -20,6 +20,7 @@ import { InfoHint } from "@/components/info-hint";
 import { Input } from "@/components/ui/input";
 import {
   Menu,
+  MenuGroup,
   MenuGroupLabel,
   MenuItem,
   MenuPopup,
@@ -313,17 +314,19 @@ export function Shelf({
             )}
           </MenuTrigger>
           <MenuPopup align="end" aria-label="Shelf filter">
-            <MenuGroupLabel>Show</MenuGroupLabel>
-            <MenuRadioGroup
-              value={kind}
-              onValueChange={(value) => setKind(value as ShelfKind)}
-            >
-              {KINDS.map((item) => (
-                <MenuRadioItem key={item.id} value={item.id} closeOnClick>
-                  {item.label}
-                </MenuRadioItem>
-              ))}
-            </MenuRadioGroup>
+            <MenuGroup>
+              <MenuGroupLabel>Show</MenuGroupLabel>
+              <MenuRadioGroup
+                value={kind}
+                onValueChange={(value) => setKind(value as ShelfKind)}
+              >
+                {KINDS.map((item) => (
+                  <MenuRadioItem key={item.id} value={item.id} closeOnClick>
+                    {item.label}
+                  </MenuRadioItem>
+                ))}
+              </MenuRadioGroup>
+            </MenuGroup>
           </MenuPopup>
         </Menu>
       </div>
