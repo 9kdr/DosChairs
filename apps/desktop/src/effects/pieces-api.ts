@@ -53,6 +53,20 @@ export type PieceReference = { id: string; label: string };
 
 type Options = { signal?: AbortSignal; agentUrl?: string; fetchFn?: FetchFn; limit?: number };
 
+/** How a pieces fetch failed: never reached the agent, or it answered no. */
+export type PiecesFailureKind = "offline" | "refused";
+
+/** A pieces fetch that failed, carrying which of the two it was. */
+export class PiecesError extends ServiceError {
+  readonly kind: PiecesFailureKind;
+
+  constructor(message: string, options: { status?: number; kind: PiecesFailureKind }) {
+    super("agent", message, { status: options.status });
+    this.name = "PiecesError";
+    this.kind = options.kind;
+  }
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
@@ -86,6 +100,18 @@ function pieceOf(value: unknown): PieceInfo | null {
   };
 }
 
+/** The agent's own refusal reason when its error payload carries one. */
+function refusedReason(payload: unknown, status: number): string {
+  if (isRecord(payload)) {
+    const error = payload.error;
+    if (typeof error === "string" && error.trim()) return error.trim();
+    if (isRecord(error) && typeof error.message === "string" && error.message.trim()) {
+      return error.message.trim();
+    }
+  }
+  return `agent failed (${status})`;
+}
+
 export async function fetchPieces(query: string, options: Options = {}): Promise<PieceInfo[]> {
   const params = new URLSearchParams({ q: query, limit: String(options.limit ?? 12) });
   const url = `${agentBaseUrl(options.agentUrl)}/pieces/macros?${params}`;
@@ -94,7 +120,7 @@ export async function fetchPieces(query: string, options: Options = {}): Promise
     response = await (options.fetchFn ?? fetch)(url, { signal: options.signal });
   } catch (error) {
     if (error instanceof Error && error.name === "AbortError") throw error;
-    throw new ServiceError("agent", `agent is unreachable at ${url}`);
+    throw new PiecesError(`agent is unreachable at ${url}`, { kind: "offline" });
   }
   let payload: unknown = null;
   try {
@@ -102,9 +128,16 @@ export async function fetchPieces(query: string, options: Options = {}): Promise
   } catch {
     payload = null;
   }
-  if (!response.ok) throw new ServiceError("agent", `agent failed (${response.status})`, { status: response.status });
+  if (!response.ok) {
+    throw new PiecesError(
+      `agent refused the pieces list (${response.status}): ${refusedReason(payload, response.status)}`,
+      { status: response.status, kind: "refused" },
+    );
+  }
   if (!isRecord(payload) || !Array.isArray(payload.pieces)) {
-    throw new ServiceError("agent", "piece list was malformed (needs a pieces array)");
+    throw new PiecesError("piece list was malformed (needs a pieces array)", {
+      kind: "refused",
+    });
   }
   return payload.pieces.flatMap((piece) => pieceOf(piece) ?? []);
 }

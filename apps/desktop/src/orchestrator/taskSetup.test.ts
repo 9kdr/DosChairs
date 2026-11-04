@@ -67,8 +67,27 @@ describe("spawnSubagents", () => {
     const task = setupTask("grade the hook", 7);
     const [agent] = spawnSubagents(task);
     expect(agent?.runnable).toBe(false);
-    expect(gatedAgentText(agent!)).toContain("Colour subagent isn't connected yet");
-    expect(gatedAgentText(agent!)).toContain("grade");
+    expect(gatedAgentText(agent!)).toContain("Colour isn't connected yet");
     expect(gatedAgentText(agent!)).toContain("Nothing changed");
+  });
+
+  it("uses plain words with no tool ids", () => {
+    const effects = setupTask("add a glow to the title", 8);
+    const [piece] = spawnSubagents(effects);
+    const lines = [gatedAgentText(piece!), gatedAgentText(spawnSubagents(setupTask("grade the hook", 7))[0]!)];
+    for (const line of lines) {
+      for (const tool of [
+        "sam3_mask",
+        "sam_audio",
+        "motion_graphics",
+        "measure_audio",
+        "transcribe",
+        "editor_op",
+        "render_preview",
+      ]) {
+        expect(line).not.toContain(tool);
+      }
+    }
+    expect(gatedAgentText(piece!)).toContain("Pieces isn't connected yet");
   });
 });

@@ -12,8 +12,13 @@ function dotClass(state: ServiceState): string {
 
 function shortLabel(name: string, state: ServiceState): string {
   if (state.phase === "up") return `${name} up`;
-  if (state.phase === "down") return `${name} down`;
+  if (state.phase === "down") return `${name} offline`;
   return `${name} checking`;
+}
+
+/** What the pill shows: a plain offline word next to the red dot when down. */
+function pillLabel(name: string, state: ServiceState): string {
+  return state.phase === "down" ? `${name} offline` : name;
 }
 
 function detailLine(name: string, state: ServiceState, extra: string | null): string {
@@ -30,7 +35,7 @@ function detailLine(name: string, state: ServiceState, extra: string | null): st
  * from real health fetches; nothing here is stand-in.
  */
 export function ServiceStatus({ className }: { className?: string }) {
-  const { agent, sidecar, agentHealth, sidecarHealth } = useServiceHealth();
+  const { agent, sidecar, agentHealth, sidecarHealth, refresh } = useServiceHealth();
   const agentLine = detailLine("Agent", agent, agentHealth ? `${agentHealth.tools.length} tools` : null);
   const sidecarLine = detailLine("Sidecar", sidecar, sidecarHealth ? sidecarHealth.device : null);
 
@@ -40,9 +45,11 @@ export function ServiceStatus({ className }: { className?: string }) {
         render={
           <Badge
             variant="outline"
-            aria-label={`Services: ${shortLabel("agent", agent)}, ${shortLabel("sidecar", sidecar)}`}
+            render={<button type="button" onClick={refresh} />}
+            aria-label={`Services: ${shortLabel("Agent", agent)}, ${shortLabel("Sidecar", sidecar)}. Activate to check again.`}
+            title="Check again"
             className={cn(
-              "h-7 gap-2.5 rounded-full border-white/10 bg-white/[0.04] px-2.5 font-normal text-neutral-400",
+              "h-7 cursor-pointer gap-2.5 rounded-full border-white/10 bg-white/[0.04] px-2.5 font-normal text-neutral-400",
               className,
             )}
           />
@@ -50,11 +57,11 @@ export function ServiceStatus({ className }: { className?: string }) {
       >
         <span className="flex items-center gap-1.5">
           <span aria-hidden="true" className={cn("size-1.5 rounded-full", dotClass(agent))} />
-          <span className="text-xs">Agent</span>
+          <span className="text-xs">{pillLabel("Agent", agent)}</span>
         </span>
         <span className="flex items-center gap-1.5">
           <span aria-hidden="true" className={cn("size-1.5 rounded-full", dotClass(sidecar))} />
-          <span className="text-xs">Sidecar</span>
+          <span className="text-xs">{pillLabel("Sidecar", sidecar)}</span>
         </span>
       </TooltipTrigger>
       <TooltipPopup side="bottom" align="end" className="max-w-72">
