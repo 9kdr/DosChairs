@@ -32,6 +32,14 @@ export function opLabel(op: string): string {
     .join(" ");
 }
 
+/** HH:MM on the local clock for an accepted-at stamp. */
+export function clockTime(iso: string): string {
+  const date = new Date(iso);
+  // taste-skill-ignore: clock fields are zero-padded by definition.
+  const pad = (n: number) => `${n}`.padStart(2, "0");
+  return `${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
 /**
  * Review one item: flip its status and leave everything else alone.
  * Unknown ids are a no-op. The timeline is never touched.

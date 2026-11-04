@@ -94,9 +94,10 @@ function RoundIcon({ round }: { round: Round }) {
 }
 
 /**
- * Effect Maker: describe a look, watch Muse Spark draft and check it, tweak
- * it live, then apply it as an undoable add_effect. The preview, controls
- * and rig run in the browser; only generate and verify call the agent.
+ * Piece Maker (the effect-kind piece editor): describe a look, watch Muse Spark
+ * draft and check it, tweak it live, then apply it as an undoable
+ * add_effect. The preview, controls and rig run in the browser; only
+ * generate and verify call the agent.
  */
 export function EffectMaker({
   clips,
@@ -170,7 +171,7 @@ export function EffectMaker({
     addRound({
       kind: "note",
       state: "info",
-      title: "Sample effect loaded",
+      title: "Sample piece loaded",
       notes: why ?? "The bundled bouncing title, so the screen works without Muse Spark.",
     });
   };
@@ -201,7 +202,7 @@ export function EffectMaker({
         },
         { signal },
       );
-      patchRound(draft, { state: "pass", title: "Draft written", notes: made.notes || "Muse Spark wrote the effect." });
+      patchRound(draft, { state: "pass", title: "Draft written", notes: made.notes || "Muse Spark wrote the piece." });
       load(made.spec);
       for (let attempt = 1; attempt <= 2; attempt += 1) {
         const check = addRound({ kind: "check", state: "running", title: `Vision check ${attempt}`, notes: "Comparing a preview frame with the brief." });
@@ -487,14 +488,14 @@ export function EffectMaker({
             </div>
           ) : (
             <p className="text-xs leading-5 text-neutral-500">
-              The export target and the reason for it show here once an effect exists.
+              The export target and the reason for it show here once a piece exists.
             </p>
           )}
           <div aria-live="polite">
             {applied ? (
               <p className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-xl bg-emerald-400/[0.07] px-3 py-2 text-xs text-emerald-200/90 ring-1 ring-emerald-400/20 ring-inset">
                 <CheckCircle2Icon className="size-3.5 shrink-0" aria-hidden="true" />
-                <span className="min-w-0 flex-1">Added to {applied.clip} as a new effect — in History, undoable.</span>
+                <span className="min-w-0 flex-1">Added to {applied.clip} as a new piece — in History, undoable.</span>
                 <Button type="button" size="xs" variant="ghost" onClick={() => { onUndo(applied.itemId); setApplied(null); }}>
                   <Undo2Icon />
                   Undo

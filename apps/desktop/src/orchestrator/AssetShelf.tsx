@@ -31,6 +31,10 @@ import type {
 import { SmoothScrollTarget } from "@/components/smooth-scroll";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { PiecesShelf } from "@/effects/PiecesShelf";
+import type { ClipChoice } from "@/effects/EffectMaker";
+import { pieceKindOf, type PieceKind } from "@/effects/pieces-api";
+import type { ChangesetItem } from "@chair/timeline-ir";
 import {
   Empty,
   EmptyContent,
@@ -68,6 +72,7 @@ type PieceItem = {
   id: string;
   scope: "pieces";
   name: string;
+  kind: PieceKind;
 };
 
 type ShelfItem = AssetItem | PieceItem;
@@ -452,6 +457,12 @@ type AssetShelfProps = {
   frozen?: boolean;
   /** Lock indicator transitions so highlights track 1:1 mid-morph. */
   transitionLock?: boolean;
+  /** Clips an effect-kind piece can land on; the Pieces tab owns the editor. */
+  clips?: ClipChoice[];
+  onApplyPiece?: (item: ChangesetItem) => string | null;
+  onUndoPiece?: (itemId: string) => void;
+  onOpenHistory?: () => void;
+  pieceRefusal?: string | null;
 };
 
 export function AssetShelf({
@@ -459,6 +470,11 @@ export function AssetShelf({
   projectId,
   frozen = false,
   transitionLock = false,
+  clips = [],
+  onApplyPiece,
+  onUndoPiece,
+  onOpenHistory,
+  pieceRefusal = null,
 }: AssetShelfProps) {
   const reduce = useReducedMotion();
   const listing = useProjectAssets(projectId);
@@ -512,7 +528,13 @@ export function AssetShelf({
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const folders = listing.folders;
   const pieces: PieceItem[] = useMemo(
-    () => listing.pieces.map((piece) => ({ ...piece, scope: "pieces" as const })),
+    () =>
+      listing.pieces.map((piece) => ({
+        id: piece.id,
+        name: piece.name,
+        kind: pieceKindOf(piece.kind),
+        scope: "pieces" as const,
+      })),
     [listing.pieces],
   );
   const assets: AssetItem[] = useMemo(
@@ -978,6 +1000,16 @@ export function AssetShelf({
         </TabsList>
       </Tabs>
 
+      {scope === "pieces" ? (
+        <PiecesShelf
+          clips={clips}
+          onApplyPiece={onApplyPiece}
+          onUndoPiece={onUndoPiece}
+          onOpenHistory={onOpenHistory}
+          refusal={pieceRefusal}
+        />
+      ) : (
+      <>
       <div className="relative z-20 flex min-w-0 shrink-0 flex-wrap items-center gap-1.5">
         {scope === "assets" ? (
           <Menu>
@@ -1368,6 +1400,8 @@ export function AssetShelf({
             </motion.div>
           </AnimatePresence>
         </div>
+      </>
+      )}
         </div>
       </div>
     </section>

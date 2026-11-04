@@ -15,7 +15,7 @@ import {
 
 const LANE: Record<RunningTask["lane"], string> = {
   edit: "Edit",
-  effects: "Effects",
+  effects: "Pieces",
   colour: "Colour",
 };
 

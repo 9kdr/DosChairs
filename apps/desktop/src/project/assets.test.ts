@@ -51,7 +51,7 @@ describe("fetchProjectAssets", () => {
       { id: "interview/take1.mov", name: "take1.mov", kind: "video", proxy: "ready" },
       { id: "hero.png", name: "hero.png", kind: "image", proxy: "missing" },
     ]);
-    expect(listing.pieces).toEqual([{ id: "hero-key-art", name: "Hero key art" }]);
+    expect(listing.pieces).toEqual([{ id: "hero-key-art", name: "Hero key art", kind: "macro" }]);
   });
 
   it("requests the encoded project assets path on the agent", async () => {

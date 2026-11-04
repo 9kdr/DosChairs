@@ -13,8 +13,7 @@ import {
   historyKeyNativeEnter,
   moveHistoryFocus,
 } from "./history-keys";
-import { clockTime, opLabel } from "./ReviewBoard";
-import type { HistoryEntry } from "./store";
+import { clockTime, opLabel, type HistoryEntry } from "./store";
 
 /** Who caused the apply: the agent on arrival, or the person by hand. */
 export function HistoryActorBadge({ actor }: { actor: HistoryEntry["actor"] }) {

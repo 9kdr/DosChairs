@@ -125,7 +125,7 @@ export function BriefField({
             ref={area}
             size="sm"
             placeholder="Describe the look, or type @ to bring in one of your macros…"
-            aria-label="Describe the effect"
+            aria-label="Describe the piece"
             onKeyDown={onKeyDown}
             onKeyUp={readCaret}
             onClick={readCaret}
