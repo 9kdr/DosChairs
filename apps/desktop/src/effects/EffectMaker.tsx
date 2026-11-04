@@ -3,18 +3,18 @@ import type { ChangesetItem } from "@chair/timeline-ir";
 import {
   AlertCircleIcon,
   CheckCircle2Icon,
+  ChevronLeftIcon,
   HistoryIcon,
-  ImagePlusIcon,
   PackageIcon,
   SparklesIcon,
   Undo2Icon,
-  WandSparklesIcon,
-  XIcon,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState, type DragEvent, type KeyboardEvent } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { ChatPrompt, type ChatDraft } from "@/components/chat-prompt";
+import { InfoHint } from "@/components/info-hint";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { InfoHint } from "@/components/info-hint";
+import { SegmentedControl, SegmentedControlItem } from "@/components/ui/segmented-control";
 import {
   Select,
   SelectItem,
@@ -23,37 +23,40 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Spinner } from "@/components/ui/spinner";
-import { acceptsChairRef, readChairRefs } from "@/lib/chair-ref";
 import { ServiceError } from "@/lib/services/client";
 import { cn } from "@/lib/utils";
 import {
-  STARTER_PROMPTS,
+  PIECE_TYPES,
   bakedPayload,
   bakeRig,
+  briefWithType,
   defaultControls,
   effectItem,
   exportInfo,
   rigOf,
   rigTargetId,
+  typeOfSpec,
+  updateControl,
   type ControlValue,
   type ControlValues,
   type PieceLanding,
+  type PieceType,
 } from "./effect-model";
-import { BriefField } from "./BriefField";
 import {
   applyPiece,
+  fetchEffect,
   generateEffect,
   isClipGoneError,
   isPieceFallback,
   pieceUndoErrorMessage,
+  readPieceBrief,
   revertPiece,
   sampleEffect,
   verifyEffect,
+  writePieceBrief,
 } from "./effects-api";
-import { fetchPieces } from "./pieces-api";
-import { PieceTray, ReferenceChips, referenceOf, type Reference } from "./ReferenceChips";
 import { PreviewStage, type PreviewHandle } from "./PreviewStage";
-import { CARD, ControlsPanel, PanelTitle, RigPanel } from "./TweakPanels";
+import { CARD, RigPanel, VariablesPanel } from "./TweakPanels";
 
 export type ClipChoice = {
   id: string;
@@ -65,38 +68,23 @@ export type ClipChoice = {
   trackType?: "video" | "audio";
 };
 
-type Round = {
-  id: number;
-  kind: "draft" | "check" | "note";
-  state: "running" | "pass" | "fail" | "error" | "info";
-  title: string;
-  notes: string;
-  /** Long explanation shown in a hover dot after the title, not inline. */
-  hint?: string;
+/**
+ * A piece the maker opens in edit mode. A fully-loaded opener passes
+ * the spec (preview and variables at once); otherwise the maker reads
+ * the stored draft by id and falls back to the brief alone. Type and
+ * brief default from the spec and the remembered brief when absent.
+ * (Integration note for the shelf: pass `piece` and `onBack`; the
+ * shelf's own back row above the maker then goes away.)
+ */
+export type MakerPiece = {
+  id: string;
+  name: string;
+  brief?: string;
+  type?: PieceType;
+  spec?: EffectSpec;
 };
 
 const CANVAS = { width: 1920, height: 1080 };
-const MAX_REFERENCE = 768;
-
-/** Shrink a dropped reference so the request stays small. */
-async function readReference(file: File): Promise<string> {
-  const url = URL.createObjectURL(file);
-  try {
-    const image = new Image();
-    image.src = url;
-    await image.decode();
-    const scale = Math.min(1, MAX_REFERENCE / Math.max(image.width, image.height));
-    const canvas = document.createElement("canvas");
-    canvas.width = Math.max(1, Math.round(image.width * scale));
-    canvas.height = Math.max(1, Math.round(image.height * scale));
-    const context = canvas.getContext("2d");
-    if (!context) throw new Error("no 2d canvas");
-    context.drawImage(image, 0, 0, canvas.width, canvas.height);
-    return canvas.toDataURL("image/jpeg", 0.86);
-  } finally {
-    URL.revokeObjectURL(url);
-  }
-}
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -112,22 +100,15 @@ function agentMissing(error: unknown): boolean {
   );
 }
 
-function RoundIcon({ round }: { round: Round }) {
-  if (round.state === "running") return <Spinner className="size-3.5 text-amber-300" />;
-  if (round.state === "pass") return <CheckCircle2Icon className="size-3.5 text-emerald-400" aria-hidden="true" />;
-  if (round.state === "fail") return <AlertCircleIcon className="size-3.5 text-amber-300" aria-hidden="true" />;
-  if (round.state === "error") return <AlertCircleIcon className="size-3.5 text-red-400" aria-hidden="true" />;
-  return <SparklesIcon className="size-3.5 text-neutral-400" aria-hidden="true" />;
-}
-
 /**
- * Piece Maker (the effect-kind piece editor): describe a look, watch Muse Spark
- * draft and check it, tweak it live, then apply it to Resolve as a new
- * comp version, undoable back to the previous one. The history entry is
- * recorded only after Resolve answers. An applied piece remembers its
- * clip: re-prompts and tweaks re-apply to the same clip on their own.
- * The preview, controls and rig run in the browser; generate, verify
- * and apply call the agent.
+ * Piece Maker: describe a look in the bar, watch Muse Spark draft and
+ * check it, set the variables Resolve will show, then apply it to
+ * Resolve as a new comp version, undoable back to the previous one. The
+ * history entry is recorded only after Resolve answers. An applied
+ * piece remembers its clip: re-prompts and tweaks re-apply to the same
+ * clip on their own. The preview, variables and rig run in the
+ * browser; generate, verify and apply call the agent. New mode starts
+ * empty; edit mode opens with the piece's brief, type and variables.
  */
 export function EffectMaker({
   clips,
@@ -137,6 +118,8 @@ export function EffectMaker({
   refusal,
   landings,
   onRecordLanding,
+  piece = null,
+  onBack,
 }: {
   clips: ClipChoice[];
   onApply: (item: ChangesetItem) => string | null;
@@ -145,18 +128,25 @@ export function EffectMaker({
   refusal: string | null;
   landings?: Record<string, PieceLanding>;
   onRecordLanding?: (specId: string, landing: PieceLanding) => void;
+  piece?: MakerPiece | null;
+  onBack?: () => void;
 }) {
-  const [prompt, setPrompt] = useState("");
-  const [reference, setReference] = useState<{ name: string; url: string } | null>(null);
-  const [dragging, setDragging] = useState(false);
-  const [refs, setRefs] = useState<Reference[]>([]);
-  const [refDrag, setRefDrag] = useState(false);
+  const editId = piece && piece.id !== "new" ? piece.id : null;
+  const [pieceType, setPieceType] = useState<PieceType>(() => {
+    if (piece?.type) return piece.type;
+    if (piece?.spec) return typeOfSpec(piece.spec);
+    return "effect";
+  });
   const [spec, setSpec] = useState<EffectSpec | null>(null);
   const [rig, setRig] = useState<Rig | null>(null);
   const [controls, setControls] = useState<ControlValues>({});
-  const [rounds, setRounds] = useState<Round[]>([]);
+  const [seed, setSeed] = useState<{ id: number; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [elapsed, setElapsed] = useState(0);
+  const [status, setStatus] = useState<string | null>(null);
+  const [note, setNote] = useState<string | null>(null);
+  const [failed, setFailed] = useState<string | null>(null);
+  const [editLoading, setEditLoading] = useState(false);
   const [clipId, setClipId] = useState<string | null>(null);
   const [applied, setApplied] = useState<{
     itemId: string;
@@ -173,11 +163,11 @@ export function EffectMaker({
   const [autoSeq, setAutoSeq] = useState(0);
   const previewRef = useRef<PreviewHandle>(null);
   const abortRef = useRef<AbortController | null>(null);
-  const roundId = useRef(0);
-  const fileInput = useRef<HTMLInputElement>(null);
-  const roundList = useRef<HTMLOListElement>(null);
+  const typeGroupRef = useRef<HTMLDivElement>(null);
   const landingRef = useRef<PieceLanding | null>(null);
   landingRef.current = landing;
+  const busyRef = useRef(false);
+  busyRef.current = busy;
   const applyingRef = useRef(false);
   const autoDirtyRef = useRef(false);
 
@@ -191,16 +181,12 @@ export function EffectMaker({
     return () => clearInterval(timer);
   }, [busy]);
 
-  // Keep the newest round in view: a real draft runs for about 40 seconds.
-  useEffect(() => {
-    roundList.current?.scrollTo({ top: roundList.current.scrollHeight });
-  }, [rounds]);
-
   const bake = useMemo(() => (spec ? bakeRig(spec, rig) : null), [spec, rig]);
   const live = bake?.spec ?? null;
   const info = live ? exportInfo(live) : null;
   const clip = clips.find((entry) => entry.id === (clipId ?? clips[0]?.id)) ?? null;
   const targetId = live ? rigTargetId(live) : null;
+  const name = live?.name ?? piece?.name ?? "New piece";
 
   const load = (next: EffectSpec) => {
     setSpec(next);
@@ -221,136 +207,124 @@ export function EffectMaker({
     }
   };
 
-  const addRound = (round: Omit<Round, "id">): number => {
-    const id = ++roundId.current;
-    setRounds((current) => [...current, { ...round, id }]);
-    return id;
-  };
-  const patchRound = (id: number, patch: Partial<Round>) =>
-    setRounds((current) => current.map((round) => (round.id === id ? { ...round, ...patch } : round)));
+  // Edit mode: a passed spec loads at once; otherwise read the stored
+  // draft by id. A piece with no stored draft (a catalogue macro) keeps
+  // its brief and drafts on send; only a bare id that loads nothing
+  // says so out loud.
+  useEffect(() => {
+    if (!editId || !piece) return;
+    const brief = piece.brief ?? readPieceBrief(piece.id) ?? "";
+    if (brief) setSeed({ id: Date.now(), text: brief });
+    if (piece.spec) {
+      load(piece.spec);
+      setPieceType(piece.type ?? typeOfSpec(piece.spec));
+      return;
+    }
+    setPieceType(piece.type ?? "effect");
+    setEditLoading(true);
+    setFailed(null);
+    const controller = new AbortController();
+    fetchEffect(piece.id, { signal: controller.signal })
+      .then((record) => {
+        load(record.spec);
+        if (!piece.type) setPieceType(typeOfSpec(record.spec));
+        setEditLoading(false);
+      })
+      .catch((error: unknown) => {
+        if (error instanceof Error && error.name === "AbortError") return;
+        setEditLoading(false);
+        if (!brief) setFailed(error instanceof Error ? error.message : "That piece would not load.");
+      });
+    return () => controller.abort();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editId]);
 
   const useSample = (why?: string) => {
     load(sampleEffect());
-    addRound({
-      kind: "note",
-      state: "info",
-      title: "Sample piece loaded",
-      notes: "",
-      hint: why,
-    });
+    setNote(why ?? "Sample piece loaded.");
   };
 
   /** Draft, then up to two vision checks; a failed check swaps in the revised spec. */
-  const generate = async () => {
-    const brief = prompt.trim();
-    if (!brief || busy) return;
+  const generate = async (brief: string, refs: { id: string; label: string }[]) => {
+    const clean = brief.trim();
+    if (!clean || busyRef.current) return;
     const controller = new AbortController();
     abortRef.current = controller;
     const { signal } = controller;
     setBusy(true);
-    const draft = addRound({
-      kind: "draft",
-      state: "running",
-      title: "Muse Spark is drafting",
-      notes: refs.length ? `${brief}\nUsing ${refs.map((ref) => `@${ref.label}`).join(", ")}` : brief,
-    });
+    setFailed(null);
+    setNote(null);
+    setStatus("Muse Spark is drafting");
     try {
       const made = await generateEffect(
         {
-          prompt: brief,
+          prompt: briefWithType(pieceType, clean),
           canvas: CANVAS,
           fps: 30,
           durationSec: 3,
-          referenceImage: reference?.url,
-          references: refs.map(({ id, label }) => ({ id, label })),
+          references: refs,
         },
         { signal },
       );
-      patchRound(draft, { state: "pass", title: "Draft written", notes: made.notes || "" });
+      writePieceBrief(made.id, clean);
       load(made.spec);
+      let verdictNote = made.notes || "Draft written.";
       for (let attempt = 1; attempt <= 2; attempt += 1) {
-        const check = addRound({ kind: "check", state: "running", title: `Vision check ${attempt}`, notes: "" });
+        setStatus(`Vision check ${attempt}`);
         await wait(250);
         try {
           const frame = previewRef.current?.capture(made.spec.durationSec * 0.55);
           if (!frame) throw new Error("the preview could not capture a frame");
-          const verdict = await verifyEffect(
-            made.id,
-            { previewPng: frame, ...(reference ? { referencePng: reference.url } : {}) },
-            { signal },
-          );
-          patchRound(check, {
-            state: verdict.pass ? "pass" : "fail",
-            title: verdict.pass ? `Check ${attempt} passed` : `Check ${attempt}: needs a fix`,
-            notes: verdict.notes || (verdict.pass ? "The preview matches the brief." : "The preview differs from the brief."),
-          });
-          if (verdict.pass || !verdict.revisedSpec) break;
+          const verdict = await verifyEffect(made.id, { previewPng: frame }, { signal });
+          if (verdict.pass || !verdict.revisedSpec) {
+            verdictNote = verdict.notes || (verdict.pass ? "The preview matches the brief." : "The preview differs from the brief.");
+            break;
+          }
           load(verdict.revisedSpec);
           made.spec = verdict.revisedSpec;
+          verdictNote = verdict.notes || "Draft revised after the vision check.";
         } catch (error) {
           if (error instanceof Error && error.name === "AbortError") throw error;
-          patchRound(check, {
-            state: "error",
-            title: `Check ${attempt} skipped`,
-            notes: error instanceof Error ? error.message : "The vision check failed.",
-          });
+          verdictNote = error instanceof Error ? error.message : "The vision check failed.";
           break;
         }
       }
+      setNote(verdictNote);
     } catch (error) {
       if (error instanceof Error && error.name === "AbortError") {
-        patchRound(draft, { state: "info", title: "Stopped", notes: "You stopped the run." });
+        setNote("Stopped.");
       } else {
         const message = error instanceof Error ? error.message : "Generation failed.";
-        patchRound(draft, { state: "error", title: "Draft failed", notes: message });
+        setFailed(message);
         if (agentMissing(error) && !spec) useSample("Muse Spark is not connected or the key was refused, so the sample stands in.");
       }
     } finally {
+      setStatus(null);
       setBusy(false);
       abortRef.current = null;
     }
   };
 
-  const attach = async (file: File | undefined) => {
-    if (!file || !file.type.startsWith("image/")) return;
-    try {
-      setReference({ name: file.name, url: await readReference(file) });
-    } catch {
-      addRound({ kind: "note", state: "error", title: "Reference unreadable", notes: `${file.name} is not an image the window can read.` });
+  /** The bar's send: a send mid-draft puts the words back instead of dropping them. */
+  const send = (draft: ChatDraft) => {
+    if (busyRef.current) {
+      setSeed({ id: Date.now(), text: draft.text });
+      setNote("Still drafting — your words are back in the bar.");
+      return;
     }
+    void generate(
+      draft.text,
+      draft.refs.map(({ id, label }) => ({ id, label })),
+    );
   };
 
-  const onDrop = (event: DragEvent) => {
-    event.preventDefault();
-    setDragging(false);
-    void attach(event.dataTransfer.files[0]);
-  };
-
-  const addRef = (next: Reference) =>
-    setRefs((current) => (current.some((ref) => ref.id === next.id) ? current : [...current, next]));
-
-  /** A piece dragged in from a shelf: look it up so the chip shows its kind. */
-  const onRefDrop = (event: DragEvent) => {
-    const dropped = readChairRefs(event.dataTransfer).filter((ref) => ref.kind === "piece");
-    if (dropped.length === 0) return;
-    event.preventDefault();
-    setRefDrag(false);
-    for (const ref of dropped) {
-      addRef({ id: ref.id, label: ref.label, kind: "piece" });
-      void fetchPieces(ref.label, { limit: 20 })
-        .then((found) => {
-          const match = found.find((piece) => piece.id === ref.id);
-          if (match) setRefs((current) => current.map((entry) => (entry.id === ref.id ? referenceOf(match) : entry)));
-        })
-        .catch(() => undefined);
-    }
-  };
-
-  const onKey = (event: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
-      event.preventDefault();
-      void generate();
-    }
+  const moveType = (direction: 1 | -1) => {
+    const at = PIECE_TYPES.findIndex((entry) => entry.id === pieceType);
+    const next = PIECE_TYPES[(at + direction + PIECE_TYPES.length) % PIECE_TYPES.length]!;
+    setPieceType(next.id);
+    requestAnimationFrame(() => {
+      typeGroupRef.current?.querySelector<HTMLButtonElement>(`[data-type="${next.id}"]`)?.focus();
+    });
   };
 
   /**
@@ -477,132 +451,86 @@ export function EffectMaker({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [controls, rig]);
 
+  const patchControl = (id: string, patch: { label?: string; default?: ControlValue }) => {
+    setSpec((current) => (current ? updateControl(current, id, patch) : current));
+    if (patch.default !== undefined) {
+      const value = patch.default;
+      setControls((current) => ({ ...current, [id]: value }));
+    }
+  };
+
   return (
-    <div className="grid min-h-0 flex-none grid-cols-1 gap-3 overflow-hidden xl:flex-1 xl:grid-cols-[minmax(15rem,18rem)_minmax(0,1fr)_minmax(15rem,18rem)]">
-      {/* Brief and Muse Spark's rounds */}
-      <div className="flex min-h-0 flex-col gap-3 overflow-y-auto">
-        <section aria-label="Brief" className={cn(CARD, "flex shrink-0 flex-col gap-3 p-4")}>
-          <PanelTitle icon={WandSparklesIcon} title="Brief" />
-          <div
-            className={cn("flex flex-col gap-2 rounded-2xl px-1 transition-colors", refDrag && "bg-amber-300/[0.05] ring-1 ring-amber-300/40")}
-            onDragOver={(event) => {
-              if (!acceptsChairRef(event.dataTransfer)) return;
+    <div className="mx-auto flex min-h-0 w-full max-w-4xl flex-1 flex-col gap-3 overflow-y-auto overscroll-contain">
+      {onBack ? (
+        <div className="flex shrink-0 items-center gap-2">
+          <Button type="button" size="sm" variant="ghost" onClick={onBack} aria-label="Back">
+            <ChevronLeftIcon />
+            Back
+          </Button>
+          <h2 className="min-w-0 truncate text-title text-neutral-100">{name}</h2>
+        </div>
+      ) : null}
+
+      <div className="flex shrink-0 items-center gap-3">
+        <span className="text-meta text-neutral-400">Type</span>
+        <div ref={typeGroupRef} className="contents">
+        <SegmentedControl
+          role="radiogroup"
+          aria-label="Piece type"
+          onKeyDown={(event) => {
+            if (event.key === "ArrowRight" || event.key === "ArrowDown") {
               event.preventDefault();
-              event.dataTransfer.dropEffect = "copy";
-              setRefDrag(true);
-            }}
-            onDragLeave={(event) => {
-              if (!(event.relatedTarget instanceof Node && event.currentTarget.contains(event.relatedTarget))) setRefDrag(false);
-            }}
-            onDrop={onRefDrop}
-          >
-            <ReferenceChips refs={refs} onRemove={(id) => setRefs((current) => current.filter((ref) => ref.id !== id))} />
-            <BriefField value={prompt} onChange={setPrompt} onPick={(piece) => addRef(referenceOf(piece))} onKeyDown={onKey} disabled={busy} />
-            <PieceTray onAdd={(piece) => addRef(referenceOf(piece))} disabled={busy} />
-            <div className="flex flex-wrap gap-1.5" role="group" aria-label="Starting points">
-              {STARTER_PROMPTS.map((starter) => (
-                <button
-                  key={starter.label}
-                  type="button"
-                  disabled={busy}
-                  onClick={() => setPrompt(starter.prompt)}
-                  className="rounded-full bg-white/[0.06] px-2.5 py-1 text-xs text-neutral-300 ring-1 ring-white/10 transition-colors hover:bg-white/[0.1] hover:text-neutral-100 focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
-                >
-                  {starter.label}
-                </button>
-              ))}
-            </div>
-            <div
-              onDragOver={(event) => {
-                if (acceptsChairRef(event.dataTransfer)) return;
-                event.preventDefault();
-                setDragging(true);
-              }}
-              onDragLeave={() => setDragging(false)}
-              onDrop={onDrop}
-              className={cn(
-                "flex items-center gap-2.5 rounded-2xl border border-dashed px-3 py-2.5 text-xs transition-colors",
-                dragging ? "border-amber-300/60 bg-amber-300/[0.06]" : "border-white/12 bg-white/[0.02]",
-              )}
-            >
-              {reference ? (
-                <>
-                  <img src={reference.url} alt="" className="size-9 shrink-0 rounded-lg object-cover ring-1 ring-white/10" />
-                  <span className="min-w-0 flex-1 truncate text-neutral-300">{reference.name}</span>
-                  <Button type="button" size="icon-xs" variant="ghost" aria-label="Remove reference image" onClick={() => setReference(null)}>
-                    <XIcon />
-                  </Button>
-                </>
-              ) : (
-                <>
-                  <ImagePlusIcon className="size-4 shrink-0 text-neutral-500" aria-hidden="true" />
-                  <span className="min-w-0 flex-1 text-neutral-500">
-                    Drop a reference image or{" "}
-                    <button type="button" className="text-neutral-300 underline underline-offset-2" onClick={() => fileInput.current?.click()}>
-                      browse
-                    </button>
-                  </span>
-                </>
-              )}
-              <input
-                ref={fileInput}
-                type="file"
-                accept="image/*"
-                className="sr-only"
-                aria-label="Reference image"
-                onChange={(event) => {
-                  void attach(event.target.files?.[0]);
-                  event.target.value = "";
-                }}
-              />
-            </div>
-            <div className="flex gap-2">
-              <Button type="button" size="sm" variant="outline" className="flex-1" disabled={!prompt.trim() || busy} onClick={() => void generate()}>
-                {busy ? <Spinner /> : <WandSparklesIcon />}
-                {busy ? `Drafting… ${elapsed}s` : "Generate"}
-              </Button>
-              {busy ? (
-                <Button type="button" size="sm" variant="outline" onClick={() => abortRef.current?.abort()}>
-                  Stop
-                </Button>
-              ) : (
-                <Button type="button" size="sm" variant="ghost" onClick={() => useSample()}>
-                  Sample
-                </Button>
-              )}
-            </div>
-          </div>
-          <div aria-label="Muse Spark activity" className="flex flex-col gap-2 border-t border-white/[0.06] px-1 pt-3">
-          <PanelTitle icon={SparklesIcon} title="Muse Spark">
-            {busy ? <Badge variant="warning" size="sm">Working</Badge> : null}
-          </PanelTitle>
-          {rounds.length === 0 ? null : (
-            <ol ref={roundList} className="flex min-h-0 flex-col gap-2.5 overflow-y-auto px-1" aria-live="polite">
-              {rounds.map((round) => (
-                <li key={round.id} className="flex gap-2.5">
-                  <span className="mt-0.5 shrink-0"><RoundIcon round={round} /></span>
-                  <span className="min-w-0 text-xs leading-5">
-                    <span className="inline-flex items-center gap-1 font-medium text-neutral-200">
-                      {round.title}
-                      {round.hint ? <InfoHint>{round.hint}</InfoHint> : null}
-                    </span>
-                    <span className="block whitespace-pre-line text-neutral-500">{round.notes}</span>
-                  </span>
-                </li>
-              ))}
-            </ol>
-          )}
-          </div>
-        </section>
+              moveType(1);
+            } else if (event.key === "ArrowLeft" || event.key === "ArrowUp") {
+              event.preventDefault();
+              moveType(-1);
+            }
+          }}
+        >
+          {PIECE_TYPES.map((entry) => {
+            const checked = pieceType === entry.id;
+            return (
+              <SegmentedControlItem
+                key={entry.id}
+                data-type={entry.id}
+                role="radio"
+                aria-checked={checked}
+                data-checked={checked || undefined}
+                tabIndex={checked ? 0 : -1}
+                onClick={() => setPieceType(entry.id)}
+              >
+                {entry.label}
+              </SegmentedControlItem>
+            );
+          })}
+        </SegmentedControl>
+        </div>
       </div>
 
-      {/* Live preview, export target, apply */}
-      <section aria-label="Live preview" className={cn(CARD, "flex min-h-0 flex-col gap-3 p-4")}>
+      <section aria-label="Preview" className={cn(CARD, "flex shrink-0 flex-col gap-3 p-4")}>
+        {live ? (
+          <PreviewStage ref={previewRef} spec={live} controls={controls} className="w-full flex-none" />
+        ) : (
+          <div className="flex aspect-video min-h-56 w-full flex-none flex-col items-center justify-center gap-2 overflow-hidden rounded-2xl border border-dashed border-white/12 px-4 text-center">
+            <span className="flex size-12 items-center justify-center rounded-2xl bg-white/[0.05] ring-1 ring-white/10">
+              {busy || editLoading ? (
+                <Spinner className="size-5 text-amber-300" />
+              ) : (
+                <SparklesIcon className="size-5 text-neutral-300" aria-hidden="true" />
+              )}
+            </span>
+            <p className="text-sm font-medium text-neutral-200">
+              {editLoading ? `Loading ${name}…` : busy ? `Muse Spark is drafting… ${elapsed}s` : "Describe the piece below to draft it"}
+            </p>
+            {!busy && !editLoading ? (
+              <Button type="button" size="sm" variant="ghost" onClick={() => useSample()}>
+                Sample
+              </Button>
+            ) : null}
+          </div>
+        )}
+
         <div className="flex shrink-0 flex-wrap items-center gap-2 px-1">
-          <PackageIcon className="size-4 text-neutral-400" aria-hidden="true" />
-          <h3 className="mr-auto min-w-0 truncate text-sm font-semibold tracking-wide text-neutral-100">
-            {live ? live.name : "Live preview"}
-          </h3>
           {clips.length > 0 && clip ? (
             <Select
               items={clips.map((entry) => ({ label: `${entry.name} · ${entry.track}`, value: entry.id }))}
@@ -623,30 +551,11 @@ export function EffectMaker({
           ) : (
             <span className="text-xs text-neutral-500">No clip to land on yet</span>
           )}
-          <Button type="button" size="sm" disabled={!live || !clip || busy || applyBusy} onClick={apply}>
+          <Button type="button" size="sm" className="ml-auto" disabled={!live || !clip || busy || applyBusy} onClick={apply}>
             {applyBusy ? <Spinner /> : <PackageIcon />}
             {applyBusy ? "Applying…" : "Apply to Resolve"}
           </Button>
         </div>
-        {live ? (
-          <PreviewStage ref={previewRef} spec={live} controls={controls} className="w-full flex-none xl:flex-1" />
-        ) : (
-          <div className="relative flex aspect-video min-h-56 w-full flex-none items-center justify-center overflow-hidden rounded-2xl border border-dashed border-white/12 xl:aspect-auto xl:flex-1">
-            <div className="flex max-w-72 flex-col items-center gap-2 px-4 text-center">
-              <span className="flex size-12 items-center justify-center rounded-2xl bg-white/[0.05] ring-1 ring-white/10">
-                {busy ? <Spinner className="size-5 text-amber-300" /> : <SparklesIcon className="size-5 text-neutral-300" aria-hidden="true" />}
-              </span>
-              <p className="text-sm font-medium text-neutral-200">
-                {busy ? `Muse Spark is drafting… ${elapsed}s` : "Describe a look to start"}
-              </p>
-              {busy ? null : (
-                <p className="text-xs leading-5 text-neutral-500">
-                  Pick a starting point or write your own.
-                </p>
-              )}
-            </div>
-          </div>
-        )}
 
         <div className="flex shrink-0 flex-col gap-2.5 px-1">
           {info ? (
@@ -713,18 +622,55 @@ export function EffectMaker({
         </div>
       </section>
 
-      {/* Controls and rig */}
-      <div className="flex min-h-0 flex-col gap-3 overflow-y-auto">
-        <ControlsPanel
-          spec={spec}
-          values={controls}
-          onChange={(id: string, value: ControlValue) => setControls((current) => ({ ...current, [id]: value }))}
-        />
+      <VariablesPanel spec={spec} onPatch={patchControl} />
+      {rig ? (
         <RigPanel
           rig={rig}
           bake={bake ?? { spec: spec as EffectSpec, keys: 0, frames: 0 }}
           onChange={(patch) => setRig((current) => (current ? { ...current, ...patch } : current))}
           onReset={() => spec && setRig(rigOf(spec))}
+        />
+      ) : null}
+
+      {failed || status || note ? (
+        <div aria-live="polite" className="flex shrink-0 items-start gap-2 px-1 text-xs leading-5">
+          {failed ? (
+            <>
+              <AlertCircleIcon className="size-3.5 shrink-0 translate-y-0.5 text-red-400" aria-hidden="true" />
+              <p className="min-w-0 flex-1 text-red-200/90">{failed}</p>
+            </>
+          ) : status ? (
+            <>
+              <Spinner className="size-3.5 shrink-0 translate-y-0.5 text-amber-300" />
+              <p className="min-w-0 flex-1 text-neutral-300">
+                {status}
+                {busy ? `… ${elapsed}s` : "…"}
+              </p>
+              {busy ? (
+                <Button type="button" size="xs" variant="ghost" onClick={() => abortRef.current?.abort()}>
+                  Stop
+                </Button>
+              ) : null}
+            </>
+          ) : (
+            <>
+              <SparklesIcon className="size-3.5 shrink-0 translate-y-0.5 text-neutral-500" aria-hidden="true" />
+              <p className="min-w-0 flex-1 text-neutral-500">{note}</p>
+            </>
+          )}
+        </div>
+      ) : null}
+
+      <div className="sticky bottom-0 shrink-0">
+        <ChatPrompt
+          open
+          wide
+          hideModelPicker
+          suggestion={seed}
+          placeholder={editId ? `Change ${name}…` : "Describe the piece…"}
+          onOpen={() => {}}
+          onClose={() => {}}
+          onSend={send}
         />
       </div>
     </div>

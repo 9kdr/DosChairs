@@ -36,13 +36,52 @@ export const RIG_TOGGLES = [
 export type RigSliderKey = (typeof RIG_SLIDERS)[number]["key"];
 export type RigToggleKey = (typeof RIG_TOGGLES)[number]["key"];
 
-/** Starter chips: a tap fills the prompt. */
-export const STARTER_PROMPTS = [
-  { label: "Bouncy title", prompt: "A bouncy title with overshoot that settles with a little squash" },
-  { label: "Dither on footage", prompt: "An ordered dither look over footage, chunky 1-bit pixels, adjustable amount" },
-  { label: "Expressive cursor", prompt: "An expressive cursor with swing, tilt and a springy catch-up" },
-  { label: "Glow lower third", prompt: "A lower third that slides in with a soft glow and a staggered subtitle" },
-] as const;
+/**
+ * What a Piece Maker piece is. The set is fixed to what the Resolve
+ * bake/apply path can land: generators and effects become Fusion macros
+ * or Fuses (or a rendered clip), titles become OGraf titles. There is no
+ * Transition: Studio scripting cannot place transitions, so the cut
+ * writer skips them with a do-it-by-hand fallback (see the resolve
+ * adapter manifest) and the maker does not offer one.
+ */
+export type PieceType = "generator" | "effect" | "title";
+
+export const PIECE_TYPES: { id: PieceType; label: string }[] = [
+  { id: "generator", label: "Generator" },
+  { id: "effect", label: "Effect" },
+  { id: "title", label: "Title" },
+];
+
+/** Read an existing spec's type back: text carries a title, a shader carries a generator. */
+export function typeOfSpec(spec: EffectSpec): PieceType {
+  if (spec.layers.some((layer) => layer.type === "text")) return "title";
+  if (spec.layers.some((layer) => layer.type === "shader")) return "generator";
+  return "effect";
+}
+
+/** Frame the brief with the picked type so the drafting model drafts to it. */
+export function briefWithType(type: PieceType, brief: string): string {
+  const label = PIECE_TYPES.find((entry) => entry.id === type)?.label ?? "Effect";
+  return `${label} piece: ${brief}`;
+}
+
+/**
+ * Retarget one published control: a new label, a new default, or both.
+ * The default is what Resolve shows in the effect's inspector, so the
+ * variables panel edits it in place and the preview follows.
+ */
+export function updateControl(
+  spec: EffectSpec,
+  id: string,
+  patch: { label?: string; default?: ControlValue },
+): EffectSpec {
+  return {
+    ...spec,
+    controls: (spec.controls ?? []).map((control) =>
+      control.id === id ? { ...control, ...patch } : control,
+    ),
+  };
+}
 
 /** Every control starts at its published default. */
 export function defaultControls(spec: EffectSpec): ControlValues {

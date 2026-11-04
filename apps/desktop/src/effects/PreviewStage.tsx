@@ -106,7 +106,7 @@ export function PreviewStage({
 
   return (
     <div className={cn("flex min-h-0 flex-col gap-3", className)}>
-      <div className="relative flex aspect-video min-h-56 w-full flex-none items-center justify-center overflow-hidden rounded-2xl xl:aspect-auto xl:flex-1">
+      <div className="relative flex aspect-video min-h-56 w-full flex-none items-center justify-center overflow-hidden rounded-2xl">
         <div
           className="relative h-full max-w-full overflow-hidden rounded-2xl ring-1 ring-white/10"
           style={{ aspectRatio: `${spec.width} / ${spec.height}`, ...CHECKER }}

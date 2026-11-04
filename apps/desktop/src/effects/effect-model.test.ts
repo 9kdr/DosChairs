@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { EffectSpec } from "@chair/effects";
 import { applyChangesetItem, emptyTimeline, invertItem, type Timeline } from "@chair/timeline-ir";
 import { advanceMirror, tryHistoryEntry } from "../project/store";
-import { bakedPayload, bakeRig, defaultControls, effectItem, exportInfo, rigOf, rigTargetId, stamp } from "./effect-model";
+import { PIECE_TYPES, bakedPayload, bakeRig, briefWithType, defaultControls, effectItem, exportInfo, rigOf, rigTargetId, stamp, typeOfSpec, updateControl } from "./effect-model";
 import { sampleEffect } from "./effects-api";
 
 describe("sample effect", () => {
@@ -168,5 +168,44 @@ describe("stamp", () => {
   it("formats m:ss.cc", () => {
     expect(stamp(1.5)).toBe("0:01.50");
     expect(stamp(65.25)).toBe("1:05.25");
+  });
+});
+
+describe("piece types", () => {
+  it("offers only what the Resolve path can land: no transition", () => {
+    expect(PIECE_TYPES.map((entry) => entry.id)).toEqual(["generator", "effect", "title"]);
+  });
+
+  it("reads a spec's type back from its layers", () => {
+    expect(typeOfSpec(sampleEffect())).toBe("title");
+    const shader: EffectSpec = {
+      ...sampleEffect(),
+      layers: [{ id: "fx", type: "shader", params: {} }],
+    };
+    expect(typeOfSpec(shader)).toBe("generator");
+    const plain: EffectSpec = {
+      ...sampleEffect(),
+      layers: [{ id: "grade", type: "shape", params: {} }],
+    };
+    expect(typeOfSpec(plain)).toBe("effect");
+  });
+
+  it("frames the brief with the picked type", () => {
+    expect(briefWithType("title", "a bouncy lower third")).toBe("Title piece: a bouncy lower third");
+    expect(briefWithType("generator", "slow grain")).toBe("Generator piece: slow grain");
+  });
+});
+
+describe("updateControl", () => {
+  it("retargets one control's label and default without touching the rest", () => {
+    const spec = sampleEffect();
+    const next = updateControl(spec, "ball-color", { label: "Ball", default: "#00ff00" });
+    const control = next.controls!.find((entry) => entry.id === "ball-color")!;
+    expect(control).toMatchObject({ label: "Ball", default: "#00ff00" });
+    expect(next.controls!.find((entry) => entry.id === "title-text")).toEqual(
+      spec.controls!.find((entry) => entry.id === "title-text"),
+    );
+    // The original spec is never mutated.
+    expect(spec.controls!.find((entry) => entry.id === "ball-color")!.default).toBe("#ffb000");
   });
 });

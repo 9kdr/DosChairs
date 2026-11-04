@@ -1,4 +1,4 @@
-import { ArrowUp, AudioLines, ChevronDown, Film, ImageIcon, KeyRound, Mic, Paperclip, Puzzle, Slash, Square, Waypoints, X } from "lucide-react";
+import { ArrowUp, AudioLines, Bookmark, ChevronDown, Film, ImageIcon, KeyRound, Mic, Paperclip, Puzzle, Slash, Square, Waypoints, X } from "lucide-react";
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type {
@@ -9,10 +9,13 @@ import type {
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { Button } from "@/components/ui/button";
 import { Menu, MenuGroup, MenuGroupLabel, MenuPopup, MenuRadioGroup, MenuRadioItem, MenuTrigger } from "@/components/ui/menu";
+import { findMention, textBeforeCaret, type Mention } from "@/effects/mentions";
 import { acceptsChairRef, readChairRefs, type ChairRef } from "@/lib/chair-ref";
+import { searchReferences, useReferenceOptions, type ReferenceOption } from "@/lib/references";
 import { useServiceHealth } from "@/lib/services/useServices";
 import { modelLabel, orchestratorLabel } from "@/lib/model-label";
 import { cn } from "@/lib/utils";
+import { readOpenProject } from "@/project/persist";
 import { filterActions, type Action } from "@/orchestrator/actions";
 import { enabledModels, PROVIDERS, type ProviderId } from "@/settings/providers";
 import { useSettings } from "@/settings/useSettings";
@@ -94,6 +97,8 @@ export type ChatDraft = {
   text: string;
   files: readonly string[];
   model: string;
+  /** Chips in the bar, with the ids the prompt text only names. */
+  refs: ChairRef[];
 };
 
 type ChatPromptProps = {
@@ -108,10 +113,12 @@ type ChatPromptProps = {
   suggestion?: { id: number; text: string } | null;
   /** Where "Add a model key" goes: the project screen's Settings. */
   onOpenSettings?: () => void;
+  /** Hide the model picker and don't gate sending on it (the Piece Maker drafts agent-side). */
+  hideModelPicker?: boolean;
 };
 
 type TextPiece = { type: "text"; id: string; value: string };
-type RefPiece = { type: "ref"; id: string; kind: ChairRef["kind"]; label: string };
+type RefPiece = { type: "ref"; id: string; kind: ChairRef["kind"]; refId: string; label: string };
 type Piece = TextPiece | RefPiece;
 
 let pieceSeq = 0;
@@ -136,8 +143,20 @@ function totalSize(parts: readonly Piece[]) {
 function clonePiece(piece: Piece): Piece {
   return piece.type === "text"
     ? { type: "text", id: piece.id, value: piece.value }
-    : { type: "ref", id: piece.id, kind: piece.kind, label: piece.label };
+    : { type: "ref", id: piece.id, kind: piece.kind, refId: piece.refId, label: piece.label };
 }
+
+function refsOf(parts: readonly Piece[]): ChairRef[] {
+  return parts.flatMap((piece) =>
+    piece.type === "ref" ? [{ kind: piece.kind, id: piece.refId, label: piece.label }] : [],
+  );
+}
+
+/** One picker row: a group header, a pickable option, or the Add-a-file row. */
+type RefItem =
+  | { type: "header"; key: string; label: string }
+  | { type: "option"; key: string; index: number; option: ReferenceOption }
+  | { type: "add-file"; index: number };
 
 function normalize(parts: readonly Piece[]): Piece[] {
   const merged: Piece[] = [];
@@ -260,9 +279,10 @@ const VIDEO_EXT = new Set(["mov", "mp4", "mxf", "webm", "mkv", "avi"]);
 const IMAGE_EXT = new Set(["png", "jpg", "jpeg", "webp", "gif", "tif", "tiff"]);
 const AUDIO_EXT = new Set(["wav", "mp3", "aac", "flac", "aiff", "aif", "m4a", "ogg"]);
 
-function chipTone(kind: "asset" | "task" | "piece", label: string): ChipTone {
+function chipTone(kind: ChairRef["kind"], label: string): ChipTone {
   if (kind === "task") return "task";
-  if (kind === "piece") return "piece";
+  if (kind === "piece" || kind === "plan") return "piece";
+  if (kind === "clip") return "video";
   const ext = label.split(".").pop()?.toLowerCase() ?? "";
   if (VIDEO_EXT.has(ext)) return "video";
   if (IMAGE_EXT.has(ext)) return "image";
@@ -277,6 +297,12 @@ function ChipGlyph({ tone }: { tone: ChipTone }) {
   if (tone === "audio") return <AudioLines className={className} aria-hidden="true" />;
   if (tone === "video") return <Film className={className} aria-hidden="true" />;
   return <Puzzle className={className} aria-hidden="true" />;
+}
+
+/** A chip's glyph: plan refs get the bookmark, everything else follows its tone. */
+function RefGlyph({ kind, label }: { kind: ChairRef["kind"]; label: string }) {
+  if (kind === "plan") return <Bookmark className="size-[1em] shrink-0" aria-hidden="true" />;
+  return <ChipGlyph tone={chipTone(kind, label)} />;
 }
 
 function inBarOverlay(target: EventTarget | null) {
@@ -411,6 +437,7 @@ export function ChatPrompt({
   placeholder = "Ask Chair, or / for an action",
   suggestion = null,
   onOpenSettings,
+  hideModelPicker = false,
 }: ChatPromptProps) {
   const [parts, setParts] = useState<Piece[]>(() => normalize([]));
   const [model, setModel] = useState<string | null>(null);
@@ -450,6 +477,13 @@ export function ChatPrompt({
   const [actionsOpen, setActionsOpen] = useState(false);
   const [actionsBox, setActionsBox] = useState<{ left: number; bottom: number } | null>(null);
   const [highlight, setHighlight] = useState(0);
+  // The @ picker's caret: mirrors caretRef in state so the mention under
+  // it opens and closes the picker on every keystroke and caret move.
+  const [mentionCaret, setMentionCaret] = useState(0);
+  const [dismissed, setDismissed] = useState<{ start: number; query: string } | null>(null);
+  const [refHighlight, setRefHighlight] = useState(0);
+  const [refsBox, setRefsBox] = useState<{ left: number; bottom: number } | null>(null);
+  const [projectId] = useState<string | null>(() => readOpenProject());
   const [files, setFiles] = useState<string[]>([]);
   const [dragOver, setDragOver] = useState(false);
   // Voice notes record in-browser and attach by name, like picked files.
@@ -469,8 +503,11 @@ export function ChatPrompt({
   const barRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  /** "ref" while the @ picker's Add-a-file row owns the file dialog. */
+  const fileModeRef = useRef<"attach" | "ref">("attach");
   const actionsRef = useRef<HTMLSpanElement>(null);
   const partsRef = useRef(parts);
+  const mentionRef = useRef<Mention | null>(null);
   const caretRef = useRef<number | null>(null);
   const pendingCaret = useRef<number | null>(null);
   const handledKey = useRef(false);
@@ -482,9 +519,55 @@ export function ChatPrompt({
 
   const draft = serialize(parts);
   const plain = plainText(parts);
-  // Ready to send: something to send, and a model to send with. Drives
-  // both the real gate (`disabled`) and the muted-until-ready look.
-  const sendReady = (draft.trim().length > 0 || files.length > 0) && options.length > 0;
+  // Ready to send: something to send, and a model to send with (unless
+  // the host drafts agent-side and hides the picker). Drives both the
+  // real gate (`disabled`) and the muted-until-ready look.
+  const sendReady =
+    (draft.trim().length > 0 || files.length > 0) && (hideModelPicker || options.length > 0);
+
+  // The @ under the caret: the picker lists footage, assets, pieces and
+  // plan references while it stands. An Esc'd mention stays shut until
+  // the query changes.
+  const beforeCaret = useMemo(() => textBeforeCaret(parts, mentionCaret), [parts, mentionCaret]);
+  const foundMention = useMemo(
+    () => (open ? findMention(beforeCaret, beforeCaret.length) : null),
+    [beforeCaret, open],
+  );
+  const mention =
+    foundMention &&
+    (dismissed === null ||
+      dismissed.start !== foundMention.start ||
+      dismissed.query !== foundMention.query)
+      ? foundMention
+      : null;
+  mentionRef.current = mention;
+  const { groups: refGroups, loading: refsLoading } = useReferenceOptions(
+    projectId,
+    mention !== null,
+  );
+  const refSections = useMemo(
+    () => (mention ? searchReferences(refGroups, mention.query) : []),
+    [refGroups, mention],
+  );
+  const refItems: RefItem[] = useMemo(() => {
+    const items: RefItem[] = [];
+    let index = 0;
+    for (const section of refSections) {
+      items.push({ type: "header", key: section.id, label: section.label });
+      for (const option of section.options) {
+        items.push({ type: "option", key: `${section.id}:${option.ref.id}`, index, option });
+        index += 1;
+      }
+    }
+    items.push({ type: "add-file", index });
+    return items;
+  }, [refSections]);
+  const refRowCount = refItems.reduce((count, item) => (item.type === "header" ? count : count + 1), 0);
+  const refSelected = Math.min(refHighlight, Math.max(refRowCount - 1, 0));
+
+  useEffect(() => {
+    setRefHighlight(0);
+  }, [mention?.start, mention?.query]);
 
   // A picked suggestion fills the composer once, ready to send or edit.
   const filledSuggestion = useRef<number | null>(null);
@@ -494,6 +577,7 @@ export function ChatPrompt({
     const fresh = normalize([textPiece(suggestion.text)]);
     partsRef.current = fresh;
     caretRef.current = totalSize(fresh);
+    setMentionCaret(totalSize(fresh));
     pendingCaret.current = null;
     setParts(fresh);
     onOpen();
@@ -510,6 +594,7 @@ export function ChatPrompt({
     caretRef.current = next.caret;
     pendingCaret.current =
       document.activeElement === editorRef.current ? next.caret : null;
+    setMentionCaret(next.caret);
     setParts(next.parts);
     if (source === "type") {
       setHighlight(0);
@@ -582,6 +667,8 @@ export function ChatPrompt({
     setMenuOpen(false);
     setActionsOpen(false);
     setHighlight(0);
+    setMentionCaret(0);
+    setDismissed(null);
   };
 
   useLayoutEffect(() => {
@@ -658,6 +745,25 @@ export function ChatPrompt({
     };
   }, [actionsOpen, box.width, box.height]);
 
+  useLayoutEffect(() => {
+    if (!mention) return;
+    const place = () => {
+      const bar = barRef.current;
+      if (!bar) return;
+      const rect = bar.getBoundingClientRect();
+      setRefsBox({ left: rect.left, bottom: window.innerHeight - rect.top + 8 });
+    };
+    place();
+    const bar = barRef.current;
+    const observer = new ResizeObserver(place);
+    if (bar) observer.observe(bar);
+    window.addEventListener("resize", place);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", place);
+    };
+  }, [mention, box.width, box.height]);
+
   useEffect(() => {
     const onSelect = () => {
       const editor = editorRef.current;
@@ -666,12 +772,14 @@ export function ChatPrompt({
       if (document.activeElement !== editor) return;
       const node = selection.anchorNode;
       if (!node || !editor.contains(node)) return;
-      caretRef.current = boundaryOffset(
+      const at = boundaryOffset(
         editor,
         selection.getRangeAt(0).startContainer,
         selection.getRangeAt(0).startOffset,
         partsRef.current,
       );
+      caretRef.current = at;
+      setMentionCaret(at);
     };
     document.addEventListener("selectionchange", onSelect);
     return () => document.removeEventListener("selectionchange", onSelect);
@@ -701,6 +809,8 @@ export function ChatPrompt({
       if (!bar) return;
       if (event.target instanceof Node && bar.contains(event.target)) return;
       if (inBarOverlay(event.target)) return;
+      const live = mentionRef.current;
+      if (live) setDismissed({ start: live.start, query: live.query });
       onClose();
     };
     const onKey = (event: KeyboardEvent) => {
@@ -736,7 +846,7 @@ export function ChatPrompt({
   const sendText = (text: string) => {
     const trimmed = text.trim();
     if (!trimmed && files.length === 0) return;
-    onSend({ text: trimmed, files, model: model ?? "" });
+    onSend({ text: trimmed, files, model: model ?? "", refs: refsOf(partsRef.current) });
     clearComposer();
   };
 
@@ -744,6 +854,28 @@ export function ChatPrompt({
 
   const actions = actionsOpen ? filterActions(plain.startsWith("/") ? plain : "") : [];
   const picked = actions[Math.min(highlight, Math.max(actions.length - 1, 0))];
+
+  /** Swap the @query for the picked chip; Add-a-file borrows the file dialog. */
+  const pickMentionRow = (row: RefItem) => {
+    if (row.type === "header") return;
+    if (row.type === "add-file") {
+      fileModeRef.current = "ref";
+      fileRef.current?.click();
+      return;
+    }
+    const live = mentionRef.current;
+    if (!live) return;
+    setDismissed(null);
+    const ref = row.option.ref;
+    commit(
+      edit(partsRef.current, live.start, live.end, [
+        { type: "ref", id: nextPieceId(), kind: ref.kind, refId: ref.id, label: ref.label },
+      ]),
+      "type",
+    );
+    editorRef.current?.focus();
+  };
+
 
   const take = (action: Action) => {
     setActionsOpen(false);
@@ -876,10 +1008,35 @@ export function ChatPrompt({
         current,
         Math.min(caret, end),
         Math.max(caret, end),
-        refs.map((ref) => ({ type: "ref" as const, id: nextPieceId(), kind: ref.kind, label: ref.label })),
+        refs.map((ref) => ({ type: "ref" as const, id: nextPieceId(), kind: ref.kind, refId: ref.id, label: ref.label })),
       ),
       "drop",
     );
+  };
+
+  /** Files chosen through the @ picker land as chips, replacing the @query. */
+  const insertFileRefs = (names: string[]) => {
+    const refs = names.map((name): ChairRef => ({ kind: "asset", id: name, label: name }));
+    if (refs.length === 0) return;
+    const live = partsRef.current;
+    const at = caretRef.current ?? totalSize(live);
+    const before = textBeforeCaret(live, at);
+    const found = findMention(before, before.length);
+    setDismissed(null);
+    if (found) {
+      commit(
+        edit(
+          live,
+          found.start,
+          found.end,
+          refs.map((ref) => ({ type: "ref" as const, id: nextPieceId(), kind: ref.kind, refId: ref.id, label: ref.label })),
+        ),
+        "type",
+      );
+    } else {
+      insertRefs(refs);
+    }
+    editorRef.current?.focus();
   };
 
   const onEditorKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
@@ -898,6 +1055,21 @@ export function ChatPrompt({
       return;
     }
     if (!open) return;
+    if (mention && event.key === "ArrowDown") {
+      event.preventDefault();
+      setRefHighlight((index) => (index + 1) % refRowCount);
+      return;
+    }
+    if (mention && event.key === "ArrowUp") {
+      event.preventDefault();
+      setRefHighlight((index) => (index - 1 + refRowCount) % refRowCount);
+      return;
+    }
+    if (mention && event.key === "Escape") {
+      event.preventDefault();
+      setDismissed({ start: mention.start, query: mention.query });
+      return;
+    }
     if (actionsOpen && actions.length > 0 && event.key === "ArrowDown") {
       event.preventDefault();
       setHighlight((index) => (index + 1) % actions.length);
@@ -915,6 +1087,14 @@ export function ChatPrompt({
     }
     if (event.key === "Enter") {
       event.preventDefault();
+      if (mention) {
+        const row = refItems.find(
+          (item): item is Extract<RefItem, { type: "option" | "add-file" }> =>
+            item.type !== "header" && item.index === refSelected,
+        );
+        if (row) pickMentionRow(row);
+        return;
+      }
       if (actionsOpen && picked) {
         take(picked);
         return;
@@ -1111,7 +1291,7 @@ export function ChatPrompt({
                         CHIP_TONE[chipTone(piece.kind, piece.label)],
                       )}
                     >
-                      <ChipGlyph tone={chipTone(piece.kind, piece.label)} />
+                      <RefGlyph kind={piece.kind} label={piece.label} />
                       <span className="min-w-0 truncate">{shortName(piece.label)}</span>
                     </span>
                   ),
@@ -1129,8 +1309,13 @@ export function ChatPrompt({
                       accept="video/*,image/*,audio/*"
                       onChange={(event) => {
                         const next = Array.from(event.target.files ?? [], (file) => file.name);
-                        if (next.length > 0) setFiles(next);
                         event.target.value = "";
+                        if (fileModeRef.current === "ref") {
+                          fileModeRef.current = "attach";
+                          insertFileRefs(next);
+                          return;
+                        }
+                        if (next.length > 0) setFiles(next);
                       }}
                     />
                     {wide ? null : (
@@ -1177,7 +1362,7 @@ export function ChatPrompt({
                     >
                       {recording ? <Square className="animate-pulse" /> : <Mic />}
                     </Button>
-                    {options.length === 0 ? (
+                    {hideModelPicker ? null : options.length === 0 ? (
                       <Button
                         type="button"
                         size="sm"
@@ -1253,7 +1438,7 @@ export function ChatPrompt({
                   </div>
                   <span
                     title={
-                      options.length === 0
+                      options.length === 0 && !hideModelPicker
                         ? "Add a model key in Settings to send"
                         : undefined
                     }
@@ -1315,6 +1500,79 @@ export function ChatPrompt({
                       </button>
                     </li>
                   ))}
+                </motion.ul>
+              ) : null}
+            </AnimatePresence>,
+            document.body,
+          )
+        : null}
+      {refsBox
+        ? createPortal(
+            <AnimatePresence>
+              {mention ? (
+                <motion.ul
+                  key="refs"
+                  role="listbox"
+                  aria-label="References"
+                  data-chair-menu=""
+                  initial={reduce ? false : { opacity: 0, y: 6, scale: 0.98 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={reduce ? undefined : { opacity: 0, y: 4, scale: 0.98 }}
+                  transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
+                  style={{ position: "fixed", left: refsBox.left, bottom: refsBox.bottom }}
+                  className="z-50 max-h-72 w-72 origin-bottom-left overflow-y-auto rounded-2xl bg-popover p-1 ring-1 ring-white/10"
+                >
+                  {refSections.length === 0 ? (
+                    <li aria-hidden="true" className="px-2.5 py-1.5 text-xs text-neutral-500">
+                      {refsLoading ? "Looking…" : "No matches"}
+                    </li>
+                  ) : null}
+                  {refItems.map((item) =>
+                    item.type === "header" ? (
+                      <li key={item.key} role="presentation" aria-hidden="true" className="px-2.5 pt-1.5 pb-0.5 text-xs text-neutral-500">
+                        {item.label}
+                      </li>
+                    ) : item.type === "option" ? (
+                      <li key={item.key}>
+                        <button
+                          type="button"
+                          role="option"
+                          aria-selected={item.index === refSelected}
+                          className={cn(
+                            "flex w-full items-center gap-2 rounded-xl px-2.5 py-1.5 text-left transition-colors hover:bg-white/10",
+                            item.index === refSelected && "bg-white/8",
+                          )}
+                          onMouseDown={(event) => event.preventDefault()}
+                          onMouseEnter={() => setRefHighlight(item.index)}
+                          onClick={() => pickMentionRow(item)}
+                        >
+                          <RefGlyph kind={item.option.ref.kind} label={item.option.ref.label} />
+                          <span className="min-w-0 flex-1 truncate text-sm text-neutral-100">
+                            {item.option.ref.label}
+                          </span>
+                          <span className="shrink-0 text-xs text-neutral-500">{item.option.detail}</span>
+                        </button>
+                      </li>
+                    ) : (
+                      <li key="add-file" className="mt-1 border-t border-white/[0.06] pt-1">
+                        <button
+                          type="button"
+                          role="option"
+                          aria-selected={item.index === refSelected}
+                          className={cn(
+                            "flex w-full items-center gap-2 rounded-xl px-2.5 py-1.5 text-left transition-colors hover:bg-white/10",
+                            item.index === refSelected && "bg-white/8",
+                          )}
+                          onMouseDown={(event) => event.preventDefault()}
+                          onMouseEnter={() => setRefHighlight(item.index)}
+                          onClick={() => pickMentionRow(item)}
+                        >
+                          <Paperclip className="size-[1em] shrink-0 text-neutral-400" aria-hidden="true" />
+                          <span className="min-w-0 flex-1 truncate text-sm text-neutral-200">Add a file…</span>
+                        </button>
+                      </li>
+                    ),
+                  )}
                 </motion.ul>
               ) : null}
             </AnimatePresence>,

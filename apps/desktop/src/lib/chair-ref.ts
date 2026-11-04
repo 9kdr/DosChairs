@@ -4,11 +4,16 @@
  * the drag and the chat prompt that reads it.
  */
 
-/** DataTransfer type for a dragged chair ref (asset, task, or piece chip). */
+/** DataTransfer type for a dragged chair ref (an asset, task, piece, clip, or plan chip). */
 export const CHAIR_REF = "application/x-chair-ref";
 
 export type ChairRef = {
-  kind: "asset" | "task" | "piece";
+  /**
+   * What the chip points at: a shelf asset, a task, a piece, footage on
+   * the timeline (`clip`), or a plan board item (`plan`). The @ picker
+   * writes all five; shelf drags write the first three.
+   */
+  kind: "asset" | "task" | "piece" | "clip" | "plan";
   id: string;
   label: string;
 };
@@ -28,13 +33,15 @@ export function encodeChairRefs(refs: ChairRef[]): string {
   return JSON.stringify(refs.length === 1 ? refs[0] : refs);
 }
 
+const CHAIR_KINDS: ReadonlySet<string> = new Set(["asset", "task", "piece", "clip", "plan"]);
+
 function parseChairRef(parsed: unknown): ChairRef | null {
   if (!parsed || typeof parsed !== "object") return null;
   const record = parsed as { kind?: unknown; id?: unknown; label?: unknown };
-  if (record.kind !== "asset" && record.kind !== "task" && record.kind !== "piece") return null;
+  if (typeof record.kind !== "string" || !CHAIR_KINDS.has(record.kind)) return null;
   if (typeof record.id !== "string" || record.id.length === 0) return null;
   if (typeof record.label !== "string" || record.label.length === 0) return null;
-  return { kind: record.kind, id: record.id, label: record.label };
+  return { kind: record.kind as ChairRef["kind"], id: record.id, label: record.label };
 }
 
 /** Prompt side: read back what the shelf wrote; malformed entries drop. */

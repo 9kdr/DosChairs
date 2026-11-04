@@ -1,5 +1,6 @@
 import type { Control, EffectSpec, Rig } from "@chair/effects";
 import { RotateCcwIcon, SlidersHorizontalIcon, WavesIcon } from "lucide-react";
+import { InfoHint } from "@/components/info-hint";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -11,7 +12,6 @@ import {
   RIG_TOGGLES,
   controlRange,
   type ControlValue,
-  type ControlValues,
   type RigBake,
 } from "./effect-model";
 
@@ -55,109 +55,118 @@ function scalar(value: number | readonly number[]): number {
   return Array.isArray(value) ? (value[0] ?? 0) : (value as number);
 }
 
-function ControlField({
+function VariableWidget({
   control,
-  value,
-  onChange,
+  onDefault,
 }: {
   control: Control;
-  value: ControlValue;
-  onChange: (value: ControlValue) => void;
+  onDefault: (value: ControlValue) => void;
 }) {
   if (control.type === "number") {
     const range = controlRange(control);
-    const current = typeof value === "number" ? value : Number(control.default) || 0;
+    const current = typeof control.default === "number" ? control.default : 0;
     return (
-      <SliderRow
-        label={control.label}
-        readout={current.toFixed(range.step < 1 ? 2 : 0)}
-        min={range.min}
-        max={range.max}
-        step={range.step}
-        value={current}
-        onValueChange={(next) => onChange(scalar(next))}
-      />
+      <div className="flex min-w-0 flex-1 items-center gap-2">
+        <Slider
+          aria-label={`${control.label} default`}
+          getAriaLabel={() => `${control.label} default`}
+          min={range.min}
+          max={range.max}
+          step={range.step}
+          value={current}
+          onValueChange={(next) => onDefault(scalar(next))}
+        />
+        <span className="w-10 shrink-0 text-right text-xs tabular-nums text-neutral-500">
+          {current.toFixed(range.step < 1 ? 2 : 0)}
+        </span>
+      </div>
     );
   }
   if (control.type === "bool") {
     return (
-      <label className="flex items-center justify-between gap-2 text-xs text-neutral-300">
-        {control.label}
-        <Switch checked={value === true} onCheckedChange={onChange} aria-label={control.label} />
-      </label>
+      <Switch
+        checked={control.default === true}
+        onCheckedChange={onDefault}
+        aria-label={`${control.label} default`}
+        className="ml-auto shrink-0"
+      />
     );
   }
   if (control.type === "color") {
-    const hex = typeof value === "string" ? value : String(control.default);
+    const hex = typeof control.default === "string" ? control.default : "#ffffff";
     return (
-      <div className="flex flex-col gap-1.5">
-        <span className="text-xs text-neutral-300">{control.label}</span>
-        <div className="flex items-center gap-2">
-          <input
-            type="color"
-            value={/^#[0-9a-fA-F]{6}$/.test(hex) ? hex : "#ffffff"}
-            aria-label={`${control.label} picker`}
-            onChange={(event) => onChange(event.target.value)}
-            className="size-7.5 shrink-0 cursor-pointer rounded-lg border border-white/10 bg-transparent p-0.5"
-          />
-          <Input
-            size="sm"
-            value={hex}
-            aria-label={`${control.label} hex`}
-            onChange={(event) => onChange(event.target.value)}
-            className="font-mono text-xs"
-          />
-        </div>
+      <div className="flex min-w-0 flex-1 items-center gap-2">
+        <input
+          type="color"
+          value={/^#[0-9a-fA-F]{6}$/.test(hex) ? hex : "#ffffff"}
+          aria-label={`${control.label} picker`}
+          onChange={(event) => onDefault(event.target.value)}
+          className="size-7.5 shrink-0 cursor-pointer rounded-lg border border-white/10 bg-transparent p-0.5"
+        />
+        <Input
+          size="sm"
+          value={hex}
+          aria-label={`${control.label} default`}
+          onChange={(event) => onDefault(event.target.value)}
+          className="w-24 shrink-0 font-mono text-xs"
+        />
       </div>
     );
   }
   return (
-    <div className="flex flex-col gap-1.5">
-      <span className="text-xs text-neutral-300">{control.label}</span>
-      <Input
-        size="sm"
-        value={String(value)}
-        aria-label={control.label}
-        onChange={(event) => onChange(event.target.value)}
-      />
-    </div>
+    <Input
+      size="sm"
+      value={String(control.default)}
+      aria-label={`${control.label} default`}
+      onChange={(event) => onDefault(event.target.value)}
+      className="min-w-0 flex-1"
+    />
   );
 }
 
-/** Sliders, swatches and switches generated from `spec.controls`. */
-export function ControlsPanel({
+/**
+ * The variables the piece exposes in Resolve: name, control and default
+ * per row, laid out like the inspector that will show them. Editing a
+ * default retargets the published control, so the preview and the macro
+ * agree on what the knob starts at.
+ */
+export function VariablesPanel({
   spec,
-  values,
-  onChange,
+  onPatch,
 }: {
   spec: EffectSpec | null;
-  values: ControlValues;
-  onChange: (id: string, value: ControlValue) => void;
+  onPatch: (id: string, patch: { label?: string; default?: ControlValue }) => void;
 }) {
-  const controls = spec?.controls ?? [];
+  if (!spec) return null;
+  const controls = spec.controls ?? [];
   return (
-    <section aria-label="Controls" className={cn(CARD, "flex shrink-0 flex-col gap-3 p-4")}>
-      <PanelTitle icon={SlidersHorizontalIcon} title="Controls">
-        {controls.length > 0 ? (
-          <span className="text-xs tabular-nums text-neutral-500">{controls.length} published</span>
-        ) : null}
+    <section aria-label="Variables" className={cn(CARD, "flex shrink-0 flex-col gap-3 p-4")}>
+      <PanelTitle icon={SlidersHorizontalIcon} title="Variables">
+        <span className="text-xs tabular-nums text-neutral-500">
+          {controls.length} in Resolve
+        </span>
+        <InfoHint>Resolve shows these as the effect&apos;s inspector controls.</InfoHint>
       </PanelTitle>
-      {controls.length > 0 && spec ? (
-        <div className="flex flex-col gap-3 px-1">
+      {controls.length > 0 ? (
+        <div className="flex flex-col gap-2.5 px-1">
           {controls.map((control) => (
-            <ControlField
-              key={`${spec.id}-${control.id}`}
-              control={control}
-              value={values[control.id] ?? control.default}
-              onChange={(next) => onChange(control.id, next)}
-            />
+            <div key={`${spec.id}-${control.id}`} className="flex items-center gap-2.5">
+              <Input
+                size="sm"
+                value={control.label}
+                aria-label="Variable name"
+                onChange={(event) => onPatch(control.id, { label: event.target.value })}
+                className="w-32 shrink-0 text-xs"
+              />
+              <VariableWidget control={control} onDefault={(next) => onPatch(control.id, { default: next })} />
+            </div>
           ))}
         </div>
-      ) : spec ? (
+      ) : (
         <p className="px-1 text-xs leading-5 text-neutral-500">
-          This piece publishes no controls.
+          This piece exposes no variables.
         </p>
-      ) : null}
+      )}
     </section>
   );
 }
