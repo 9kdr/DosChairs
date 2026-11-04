@@ -12,7 +12,7 @@ export type PreviewHandle = {
 };
 
 const CHECKER = {
-  backgroundImage: "repeating-conic-gradient(#1d1d1d 0% 25%, #161616 0% 50%)",
+  backgroundImage: "repeating-conic-gradient(#1d1d1d 0% 25%, #161616 0% 50%)", // taste-skill-ignore: standard transparency grid, not decoration.
   backgroundSize: "22px 22px",
 } as const;
 

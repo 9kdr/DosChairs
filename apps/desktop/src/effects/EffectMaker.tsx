@@ -119,6 +119,7 @@ export function EffectMaker({
   const abortRef = useRef<AbortController | null>(null);
   const roundId = useRef(0);
   const fileInput = useRef<HTMLInputElement>(null);
+  const roundList = useRef<HTMLOListElement>(null);
 
   useEffect(() => () => abortRef.current?.abort(), []);
 
@@ -129,6 +130,11 @@ export function EffectMaker({
     const timer = setInterval(() => setElapsed(Math.floor((Date.now() - started) / 1000)), 500);
     return () => clearInterval(timer);
   }, [busy]);
+
+  // Keep the newest round in view: a real draft runs for about 40 seconds.
+  useEffect(() => {
+    roundList.current?.scrollTo({ top: roundList.current.scrollHeight });
+  }, [rounds]);
 
   const bake = useMemo(() => (spec ? bakeRig(spec, rig) : null), [spec, rig]);
   const live = bake?.spec ?? null;
@@ -346,7 +352,7 @@ export function EffectMaker({
           </div>
         </section>
 
-        <section aria-label="Muse Spark activity" className={cn(CARD, "flex min-h-40 flex-1 flex-col gap-2 p-4")}>
+        <section aria-label="Muse Spark activity" className={cn(CARD, "flex min-h-32 flex-1 flex-col gap-2 p-4")}>
           <PanelTitle icon={SparklesIcon} title="Muse Spark">
             {busy ? <Badge variant="warning" size="sm">Working</Badge> : null}
           </PanelTitle>
@@ -355,7 +361,7 @@ export function EffectMaker({
               Each draft and vision check lands here with its notes, so you see why the look changed.
             </p>
           ) : (
-            <ol className="flex min-h-0 flex-col gap-2.5 overflow-y-auto px-1" aria-live="polite">
+            <ol ref={roundList} className="flex min-h-0 flex-col gap-2.5 overflow-y-auto px-1" aria-live="polite">
               {rounds.map((round) => (
                 <li key={round.id} className="flex gap-2.5">
                   <span className="mt-0.5 shrink-0"><RoundIcon round={round} /></span>
@@ -371,14 +377,37 @@ export function EffectMaker({
       </div>
 
       {/* Live preview, export target, apply */}
-      <section aria-label="Live preview" className={cn(CARD, "flex min-h-0 flex-col gap-3 p-5")}>
-        <PanelTitle icon={PackageIcon} title={live ? live.name : "Live preview"}>
-          {live ? (
-            <Badge variant="outline" size="sm" className="tabular-nums">
-              {live.width}×{live.height} · {live.fps} fps
-            </Badge>
-          ) : null}
-        </PanelTitle>
+      <section aria-label="Live preview" className={cn(CARD, "flex min-h-0 flex-col gap-3 p-4")}>
+        <div className="flex shrink-0 flex-wrap items-center gap-2 px-1">
+          <PackageIcon className="size-4 text-neutral-400" aria-hidden="true" />
+          <h3 className="mr-auto min-w-0 truncate text-sm font-semibold tracking-wide text-neutral-100">
+            {live ? live.name : "Live preview"}
+          </h3>
+          {clips.length > 0 && clip ? (
+            <Select
+              items={clips.map((entry) => ({ label: `${entry.name} · ${entry.track}`, value: entry.id }))}
+              value={clip.id}
+              onValueChange={(value) => setClipId(value as string)}
+            >
+              <SelectTrigger size="sm" className="w-48 min-w-0" aria-label="Clip to apply onto">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectPopup>
+                {clips.map((entry) => (
+                  <SelectItem key={entry.id} value={entry.id}>
+                    {entry.name} · {entry.track}
+                  </SelectItem>
+                ))}
+              </SelectPopup>
+            </Select>
+          ) : (
+            <span className="text-xs text-neutral-500">No clip to land on yet</span>
+          )}
+          <Button type="button" size="sm" disabled={!live || !clip || busy} onClick={apply}>
+            <PackageIcon />
+            Apply to Resolve
+          </Button>
+        </div>
         {live ? (
           <PreviewStage ref={previewRef} spec={live} controls={controls} className="min-h-0 flex-1" />
         ) : (
@@ -406,43 +435,20 @@ export function EffectMaker({
                 {info.label}
               </Badge>
               <p className="min-w-0 flex-1 text-neutral-400">
-                <span className="text-neutral-300">{info.fallback ? "Fallback — " : "Lands as — "}</span>
+                <span className="text-neutral-300">{info.fallback ? "Fallback: " : "Why this target: "}</span>
                 {info.reason}
               </p>
+              {live ? (
+                <span className="shrink-0 pt-0.5 tabular-nums text-neutral-600">
+                  {live.width}×{live.height} · {live.fps} fps
+                </span>
+              ) : null}
             </div>
           ) : (
             <p className="text-xs leading-5 text-neutral-500">
               The export target and the reason for it show here once an effect exists.
             </p>
           )}
-          <div className="flex flex-wrap items-center gap-2">
-            {clips.length > 0 && clip ? (
-              <Select
-                items={clips.map((entry) => ({ label: `${entry.name} · ${entry.track}`, value: entry.id }))}
-                value={clip.id}
-                onValueChange={(value) => setClipId(value as string)}
-              >
-                <SelectTrigger size="sm" className="min-w-0 flex-1" aria-label="Clip to apply onto">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectPopup>
-                  {clips.map((entry) => (
-                    <SelectItem key={entry.id} value={entry.id}>
-                      {entry.name} · {entry.track}
-                    </SelectItem>
-                  ))}
-                </SelectPopup>
-              </Select>
-            ) : (
-              <p className="min-w-0 flex-1 text-xs text-neutral-500">
-                No clip to land on yet. Open a project with a cut to apply.
-              </p>
-            )}
-            <Button type="button" size="sm" disabled={!live || !clip || busy} onClick={apply}>
-              <PackageIcon />
-              Apply to Resolve
-            </Button>
-          </div>
           <div aria-live="polite">
             {applied ? (
               <p className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-xl bg-emerald-400/[0.07] px-3 py-2 text-xs text-emerald-200/90 ring-1 ring-emerald-400/20 ring-inset">

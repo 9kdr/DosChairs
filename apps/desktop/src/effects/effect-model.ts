@@ -73,9 +73,9 @@ export function rigOf(spec: EffectSpec): Rig | null {
 }
 
 const CHANNELS = [
-  { prop: "x", tolerance: 0.75, pick: (f: { x: number }) => f.x },
-  { prop: "y", tolerance: 0.75, pick: (f: { y: number }) => f.y },
-  { prop: "rotation", tolerance: 0.002, pick: (f: { rotation: number }) => f.rotation },
+  { prop: "x", tolerance: 1.5, pick: (f: { x: number }) => f.x },
+  { prop: "y", tolerance: 1.5, pick: (f: { y: number }) => f.y },
+  { prop: "rotation", tolerance: 0.004, pick: (f: { rotation: number }) => f.rotation },
 ] as const;
 
 function flat(samples: Sample[]): boolean {
@@ -115,8 +115,8 @@ export function bakeRig(spec: EffectSpec, rig: Rig | null): RigBake {
     // Squash and stretch scale a shape's own size; text has no size param to scale.
     ...(target.type === "shape" && baseW > 0 && baseH > 0
       ? [
-          { prop: "scaleX", tolerance: baseW * 0.004, samples: frames.map((f): Sample => ({ t: f.time, v: baseW * f.scaleX })) },
-          { prop: "scaleY", tolerance: baseH * 0.004, samples: frames.map((f): Sample => ({ t: f.time, v: baseH * f.scaleY })) },
+          { prop: "scaleX", tolerance: baseW * 0.01, samples: frames.map((f): Sample => ({ t: f.time, v: baseW * f.scaleX })) },
+          { prop: "scaleY", tolerance: baseH * 0.01, samples: frames.map((f): Sample => ({ t: f.time, v: baseH * f.scaleY })) },
         ]
       : []),
   ];
