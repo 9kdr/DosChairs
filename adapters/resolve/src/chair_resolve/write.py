@@ -276,7 +276,7 @@ def load_effect_spec(entry: dict[str, Any]) -> dict[str, Any]:
     if not path.is_file():
         raise RuntimeError(f"Effect {entry.get('effect_id')!r} specRef is missing: {path}.")
     try:
-        spec = json.loads(path.read_text())
+        spec = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError) as exc:
         raise RuntimeError(
             f"Effect {entry.get('effect_id')!r} specRef is unreadable: {exc}."
@@ -323,7 +323,7 @@ def add_effect(
     target = Path(target)
     target.mkdir(parents=True, exist_ok=True)
     comp_path = target / f"chair_{spec.get('id', 'effect')}.comp"
-    comp_path.write_text(rendered["text"])
+    comp_path.write_text(rendered["text"], encoding="utf-8")
     before = list(getattr(item, "GetFusionCompNameList", lambda: [])() or [])
     prev = _current_comp_name(item, before)
     imported = item.ImportFusionComp(str(comp_path))

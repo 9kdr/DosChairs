@@ -158,7 +158,7 @@ def install_title_template(
     target = Path(dest_dir) if dest_dir is not None else title_template_dir()
     target.mkdir(parents=True, exist_ok=True)
     path = target / f"chair_{spec['id']}.setting"
-    path.write_text(rendered["text"])
+    path.write_text(rendered["text"], encoding="utf-8")
     return {"path": str(path)}
 
 

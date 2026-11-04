@@ -162,6 +162,19 @@ def test_macro_falls_back_for_shader() -> None:
     assert spec_to_macro(spec)["fallback"]["capability"] == "fusionMacro"
 
 
+def test_add_effect_round_trips_non_ascii_text(tmp_path: Path) -> None:
+    """Live bug: an em-dash in model text crashed comp write without utf-8."""
+    spec = _spec()
+    title = next(layer for layer in spec["layers"] if layer["id"] == "title")
+    title["params"]["string"] = " Jos — Chérie "
+    item = _FakeFusionItem()
+    op = add_effect(item, spec, cache_dir=tmp_path)
+    assert len(item.imported) == 1
+    text = Path(item.imported[0]).read_text(encoding="utf-8")
+    assert "Jos — Chérie" in text
+    assert op["comp_name"] == "Comp 2"
+
+
 def test_manifest_declares_fusion_macro_fallback() -> None:
     assert MANIFEST.capabilities.fusion_macros is True
     assert MANIFEST.fallbacks["fusionMacros"] != ""
