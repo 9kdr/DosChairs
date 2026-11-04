@@ -87,9 +87,11 @@ def apply_cut_items(
         elif op == "set_speed":
             skip(item_id, f"Speed {item_id!r}: {manifest.fallbacks.get('speedChanges', 'skipped')}")
         elif op in ("add_transition", "remove_transition"):
-            skip(item_id, f"Transition {item_id!r}: {manifest.fallbacks.get('transitions', 'skipped')}")
+            fallback = manifest.fallbacks.get("transitions", "skipped")
+            skip(item_id, f"Transition {item_id!r}: {fallback}")
         elif op in ("add_effect", "remove_effect"):
-            skip(item_id, f"the cut writer does not place {op} items; pieces apply from the Piece Maker")
+            skip(item_id, f"the cut writer does not place {op} items; "
+                          "pieces apply from the Piece Maker")
         else:
             skip(item_id, f"the cut writer does not place {op} items")
     return result, report
@@ -125,7 +127,10 @@ def undo_copy_write(
         copy_obj = _find_timeline(project, copy_name)
         if copy_obj is not None:
             media_pool = project.GetMediaPool()
-            delete = getattr(media_pool, "DeleteTimelines", None) if media_pool is not None else None
+            delete = (
+                getattr(media_pool, "DeleteTimelines", None)
+                if media_pool is not None else None
+            )
             if not callable(delete):
                 raise RuntimeError(
                     "this Resolve cannot delete timelines by script; delete the copy by hand"
@@ -451,7 +456,8 @@ def _apply_add_track(
         return
     if kind in ("subtitle", "effect"):
         key = "subtitles" if kind == "subtitle" else "adjustmentLayers"
-        skip(item_id, f"{kind.title()} track {track_id!r}: {manifest.fallbacks.get(key, 'skipped')}")
+        fallback = manifest.fallbacks.get(key, "skipped")
+        skip(item_id, f"{kind.title()} track {track_id!r}: {fallback}")
         return
     if kind != "video":
         skip(item_id, f"Track {track_id!r} has unknown kind {kind!r}.")
