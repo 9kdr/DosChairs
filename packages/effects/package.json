@@ -38,6 +38,7 @@
     "open-bot-avatar": "0.1.2",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
+    "shaders": "4.0.6",
     "three": "^0.180.0"
   }
 }

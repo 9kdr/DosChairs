@@ -417,6 +417,8 @@ _REUSE_CORE: dict[str, frozenset[str]] = {
         {"physics", "verlet", "rain", "raining", "tumble", "tumbling"}
     ),
     "morph-icon": frozenset({"morph", "morphing", "icon"}),
+    "aurora-veil": frozenset({"aurora", "auroras"}),
+    "glow-orb": frozenset({"glow", "glows", "glowing", "orb", "orbs"}),
 }
 
 

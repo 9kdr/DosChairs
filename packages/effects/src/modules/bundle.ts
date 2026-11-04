@@ -35,7 +35,7 @@ export interface ModuleReport {
   warnings: string[];
   meta: EffectMeta | null;
   props: OgrafProp[];
-  checks: Record<string, boolean | number>;
+  checks: Record<string, boolean | number | string>;
 }
 
 export interface ModuleBuild {
@@ -168,7 +168,7 @@ export async function checkModule(entry: string, opts: CheckOptions = {}): Promi
   }
   const errors = [...outcome.errors];
   const warnings = [...outcome.warnings];
-  const checks: Record<string, boolean | number> = { ...outcome.checks };
+  const checks: Record<string, boolean | number | string> = { ...outcome.checks };
   const meta = validateMeta(outcome.meta);
   const props = validateProps(outcome.props);
   errors.unshift(...meta.errors, ...props.errors);
@@ -187,6 +187,7 @@ export async function checkModule(entry: string, opts: CheckOptions = {}): Promi
       } else {
         checks["browserVerified"] = true;
         if (typeof seen.paintCoverage === "number") checks["paintCoverage"] = seen.paintCoverage;
+        if (typeof seen.shadersStatus === "string") checks["shadersStatus"] = seen.shadersStatus;
         errors.push(...scopeErrors(seen.covers ?? [], seen.text ?? "", scope, seen.shaderLog ?? null));
         const wash = coverageError(seen.paintCoverage ?? null, scope.wantsBackground);
         if (wash) errors.push(wash);
