@@ -16,14 +16,3 @@ class TaskResult:
     verdict: str = "rejected"
     notes: str = ""
     error: str | None = None
-
-    def to_dict(self) -> dict:
-        return {
-            "task_id": self.task_id,
-            "section": self.section,
-            "artifacts": list(self.artifacts),
-            "items": [item.model_dump(mode="json", by_alias=True) for item in self.items],
-            "verdict": self.verdict,
-            "notes": self.notes,
-            "error": self.error,
-        }

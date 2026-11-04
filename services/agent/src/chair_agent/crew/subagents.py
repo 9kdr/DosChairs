@@ -77,8 +77,13 @@ def run_cut(
             if isinstance(op, Mapping) else ChangesetItem.model_validate(op)
             for op in result.ops
         ]
+        urls = [
+            entry["url"] if isinstance(entry, Mapping) and isinstance(entry.get("url"), str)
+            else str(entry)
+            for entry in result.artifacts
+        ]
         return SubagentOutput(
-            artifacts=[str(url) for url in result.artifacts],
+            artifacts=urls,
             items=_stamp(items, task),
             notes="loop.handle_edit",
         )
