@@ -1,0 +1,103 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/9kdr/DosChairs/schemas/project-plan.schema.json",
+  "title": "ProjectPlan",
+  "description": "User-facing front plan (script, beats, style board) plus the agent-facing back plan. The back plan goes stale when the front changes.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "id", "status", "front", "back"],
+  "properties": {
+    "schemaVersion": { "const": "0.1.0" },
+    "id": { "type": "string" },
+    "status": { "enum": ["draft", "ready"] },
+    "front": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["script_md", "beats", "board"],
+      "properties": {
+        "script_md": { "type": "string" },
+        "beats": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "text"],
+            "properties": {
+              "id": { "type": "string" },
+              "role": { "type": "string" },
+              "text": { "type": "string" },
+              "startSec": { "type": "number", "minimum": 0 },
+              "endSec": { "type": "number", "minimum": 0 }
+            }
+          }
+        },
+        "board": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "kind", "title"],
+            "properties": {
+              "id": { "type": "string" },
+              "kind": { "enum": ["style", "campaign", "reference", "link"] },
+              "title": { "type": "string" },
+              "images": { "type": "array", "items": { "type": "string" } },
+              "url": { "type": "string" },
+              "notes": { "type": "string" },
+              "tags": { "type": "array", "items": { "type": "string" } }
+            }
+          }
+        }
+      }
+    },
+    "frontHash": { "type": "string" },
+    "back": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tasks", "constraints", "digests"],
+      "properties": {
+        "tasks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "title"],
+            "properties": {
+              "id": { "type": "string" },
+              "title": { "type": "string" },
+              "detail": { "type": "string" }
+            }
+          }
+        },
+        "constraints": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["do", "dont"],
+          "properties": {
+            "do": { "type": "array", "items": { "type": "string" } },
+            "dont": { "type": "array", "items": { "type": "string" } }
+          }
+        },
+        "digests": {
+          "type": "object",
+          "additionalProperties": false,
+          "patternProperties": {
+            "^[A-Za-z0-9_-]+$": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["mood"],
+              "properties": {
+                "palette": { "type": "array", "items": { "type": "string" } },
+                "mood": { "type": "string" },
+                "motionWords": { "type": "array", "items": { "type": "string" } },
+                "keywords": { "type": "array", "items": { "type": "string" } }
+              }
+            }
+          }
+        },
+        "frontHash": { "type": "string" },
+        "stale": { "type": "boolean" }
+      }
+    }
+  }
+}
