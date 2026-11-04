@@ -10,7 +10,7 @@
  * the generated .comp loads them with a Loader node.
  */
 import { mkdirSync, writeFileSync } from "node:fs";
-import { deflateSync } from "node:zlib";
+import { crc32, deflateSync } from "node:zlib";
 import { resolveFrame } from "./curves.js";
 import { fbm2 } from "./kit/noise.js";
 import { parseColor } from "./renderer.js";
@@ -21,22 +21,6 @@ export interface BakedFrame {
   height: number;
   /** RGBA, y-down rows, one byte per channel. */
   data: Uint8Array;
-}
-
-const CRC_TABLE = (() => {
-  const table = new Uint32Array(256);
-  for (let n = 0; n < 256; n++) {
-    let c = n;
-    for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
-    table[n] = c >>> 0;
-  }
-  return table;
-})();
-
-function crc32(bytes: Uint8Array): number {
-  let c = 0xffffffff;
-  for (const b of bytes) c = CRC_TABLE[(c ^ b!) & 0xff]! ^ (c >>> 8);
-  return (c ^ 0xffffffff) >>> 0;
 }
 
 function chunk(kind: string, payload: Uint8Array): Uint8Array {
