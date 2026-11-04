@@ -704,9 +704,7 @@ export function textForJob(job: AgentJob): string {
     previews === 0 ? "no previews" : previews === 1 ? "1 preview" : `${previews} previews`;
   const opBit =
     ops === 0 ? "no proposed changes" : ops === 1 ? "1 proposed change" : `${ops} proposed changes`;
-  let text =
-    `Done: ${previewBit}, ${opBit}. ` +
-    "Proposed edits stay proposals until you accept each one from Review — the timeline is unchanged.";
+  let text = `Done: ${previewBit}, ${opBit}.`;
   if (previews > 0) {
     text += ` Preview files: ${job.artifacts.map((artifact) => artifact.url).join(", ")}.`;
   }

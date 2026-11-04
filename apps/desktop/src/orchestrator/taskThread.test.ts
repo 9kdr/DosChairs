@@ -195,14 +195,13 @@ describe("thread copy", () => {
     expect(text).toContain("1 preview");
     expect(text).toContain("2 proposed changes");
     expect(text).toContain("http://127.0.0.1:8787/p/preview.mp4");
-    expect(text).toContain("stay proposals until you accept each one from Review");
-    expect(text).toContain("the timeline is unchanged");
+    expect(text).toContain("Done: 1 preview, 2 proposed changes.");
+    expect(text).not.toContain("Review");
   });
 
   it("says plainly when the agent proposed nothing", () => {
     const text = textForJob(job("completed"));
-    expect(text).toContain("no previews, no proposed changes");
-    expect(text).toContain("the timeline is unchanged");
+    expect(text).toContain("Done: no previews, no proposed changes.");
   });
 
   it("repeats the agent's verbatim error and promises nothing changed", () => {
