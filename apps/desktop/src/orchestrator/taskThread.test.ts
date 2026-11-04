@@ -17,19 +17,23 @@ import {
   isThreadDemo,
   liveJobEntries,
   liveRowsForJobs,
+  liveSubmitError,
   noteKey,
   noteTurnText,
   openingBrief,
   openingKey,
   openTurnScope,
+  recordLiveJob,
   replyForSubmitError,
   resetLiveJobs,
+  retryLiveTask,
   runTurn,
   selectionForNote,
-  shortRequestId,
   stopLiveTask,
+  submitLiveTurn,
   taskForLiveJob,
   textForJob,
+  waitingRowsFor,
   withOpenTurnError,
 } from "./taskThread";
 import { writeTaskThread } from "./threadStore";
@@ -158,13 +162,17 @@ describe("thread copy", () => {
     expect(isThreadDemo({ VITE_CHAIR_THREAD_DEMO: "1" })).toBe(true);
   });
 
-  it("streams the live request id while the turn runs", () => {
+  it("keeps request ids out of the agent's thread text", () => {
     const queued = textForJob(job("queued"));
     const working = textForJob(job("in_progress"));
-    expect(queued).toContain(shortRequestId("req_0123456789abcdef"));
-    expect(working).toContain(shortRequestId("req_0123456789abcdef"));
-    expect(queued).not.toContain("stand-in");
-    expect(working).not.toContain("stand-in");
+    const done = textForJob(job("completed"));
+    for (const text of [queued, working, done]) {
+      expect(text).not.toContain("req_0123456789abcdef");
+      expect(text).not.toContain("req-");
+      expect(text).not.toContain("stand-in");
+    }
+    expect(queued).toContain("queued on the agent");
+    expect(working).toContain("working on it");
   });
 
   it("reports the real completed result as proposals only", () => {
@@ -514,6 +522,77 @@ describe("live task list", () => {
     const reopen = openTurnScope(row.id, row.lane, true);
     expect(reopen.key).toBe(scope.key);
     expect(inputForTurn(row, openingBrief(row), reopen.changesetId)).toEqual(creationInput);
+  });
+});
+
+describe("waiting and failed rows", () => {
+  const prompted: RunningTask = {
+    id: "task-prompt-7",
+    name: "trim the silence",
+    status: "Running",
+    lane: "edit",
+    plan: { brief: "trim the silence", lanes: ["edit"] },
+  };
+
+  it("shows a fresh task as waiting for the agent", () => {
+    const rows = waitingRowsFor([prompted]);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ id: prompted.id, name: "trim the silence" });
+    expect(rows[0]?.status).toBe("Waiting for the agent");
+  });
+
+  it("marks a failed submit with the plain error, never swallowed", async () => {
+    const failing: FetchFn = async () => {
+      throw new TypeError("fetch failed");
+    };
+    const client = createServicesClient({ fetchFn: failing });
+    await submitLiveTurn(client, prompted);
+    expect(liveSubmitError(prompted.id)).toBe("fetch failed");
+    const rows = waitingRowsFor([prompted]);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.status).toBe("Failed: fetch failed");
+  });
+
+  it("clears the failure once a later submit succeeds", async () => {
+    let calls = 0;
+    const flaky: FetchFn = async (input, init) => {
+      calls += 1;
+      if (calls === 1) throw new TypeError("fetch failed");
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          request_id: "req_retry00000001",
+          status: "queued",
+          status_url: "http://127.0.0.1:8787/jobs/req_retry00000001",
+          cancel_url: "http://127.0.0.1:8787/jobs/req_retry00000001/cancel",
+        }),
+      };
+    };
+    const client = createServicesClient({ fetchFn: flaky });
+    await submitLiveTurn(client, prompted);
+    expect(waitingRowsFor([prompted])[0]?.status).toContain("Failed:");
+    await submitLiveTurn(client, prompted);
+    expect(liveSubmitError(prompted.id)).toBeUndefined();
+    // The job is live now, so the task leaves the waiting list.
+    expect(waitingRowsFor([prompted])).toEqual([]);
+  });
+
+  it("retry clears the recorded failure so the next poll resubmits", async () => {
+    const failing: FetchFn = async () => {
+      throw new TypeError("fetch failed");
+    };
+    const client = createServicesClient({ fetchFn: failing });
+    await submitLiveTurn(client, prompted);
+    expect(waitingRowsFor([prompted])[0]?.status).toBe("Failed: fetch failed");
+    retryLiveTask(prompted.id);
+    expect(liveSubmitError(prompted.id)).toBeUndefined();
+    expect(waitingRowsFor([prompted])[0]?.status).toBe("Waiting for the agent");
+  });
+
+  it("hides submitted and settled tasks from the waiting list", () => {
+    recordLiveJob("req_waiting1", prompted);
+    expect(waitingRowsFor([prompted])).toEqual([]);
   });
 });
 

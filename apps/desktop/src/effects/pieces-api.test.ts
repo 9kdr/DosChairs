@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { FetchFn } from "@/lib/services/client";
-import { fetchPieces } from "./pieces-api";
+import { fetchPieces, PiecesError } from "./pieces-api";
 
 const piece = {
   id: "macro:user:title:lower",
@@ -33,7 +33,26 @@ describe("fetchPieces", () => {
     const fetchFn: FetchFn = async () => {
       throw new TypeError("failed");
     };
-    await expect(fetchPieces("", { fetchFn, agentUrl: "http://agent" })).rejects.toThrow(/unreachable/);
+    const error = await fetchPieces("", { fetchFn, agentUrl: "http://agent" }).catch(
+      (reason: unknown) => reason,
+    );
+    expect(error).toBeInstanceOf(PiecesError);
+    expect((error as PiecesError).kind).toBe("offline");
+    expect((error as Error).message).toMatch(/unreachable/);
+  });
+
+  it("says refused with the agent's reason when it answers no", async () => {
+    const down: FetchFn = async () => ({
+      ok: false,
+      status: 503,
+      json: async () => ({ error: { code: "pieces_unavailable", message: "macro folder missing" } }),
+    });
+    const error = await fetchPieces("", { fetchFn: down }).catch((reason: unknown) => reason);
+    expect(error).toBeInstanceOf(PiecesError);
+    expect(error).toMatchObject({ status: 503 });
+    expect((error as PiecesError).kind).toBe("refused");
+    expect((error as Error).message).toContain("refused");
+    expect((error as Error).message).toContain("macro folder missing");
   });
 
   it("rejects a payload with no pieces array and a non-ok status", async () => {

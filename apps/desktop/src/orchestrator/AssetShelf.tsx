@@ -31,7 +31,6 @@ import type {
 import { SmoothScrollTarget } from "@/components/smooth-scroll";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { PiecesShelf } from "@/effects/PiecesShelf";
 import type { ClipChoice } from "@/effects/EffectMaker";
 import type { ChangesetItem } from "@chair/timeline-ir";
 import {
@@ -45,14 +44,12 @@ import {
 import { Input } from "@/components/ui/input";
 import { Menu, MenuPopup, MenuRadioGroup, MenuRadioItem, MenuTrigger } from "@/components/ui/menu";
 import { Spinner } from "@/components/ui/spinner";
-import { Tabs, TabsList, TabsTab } from "@/components/ui/tabs";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "@/components/ui/tooltip";
 import { pressStartsDrag, writeChairRefs } from "@/lib/chair-ref";
 import { cn } from "@/lib/utils";
 import { fileToBase64, importProjectAsset, useProjectAssets } from "@/project/assets";
 
 type AssetKind = "video" | "image" | "audio";
-type Scope = "assets" | "pieces";
 type TypeFilter = "all" | AssetKind;
 type ViewStyle = "cards" | "compact" | "more";
 type Shift = "fade" | "in" | "out";
@@ -68,8 +65,8 @@ type AssetItem = {
 };
 
 /**
- * The shelf's own rows are assets only. Pieces render through PiecesShelf
- * (the Pieces tab below), which reads the agent's piece listing with kinds.
+ * The shelf's rows are assets only. Pieces live in the dock's Pieces
+ * section, which reads the agent's piece listing with kinds.
  */
 type ShelfItem = AssetItem;
 
@@ -401,30 +398,17 @@ function ShelfError({
   );
 }
 
-/** The project has nothing on this shelf tab yet. Frame and header stay. */
-function ShelfEmpty({
-  scope,
-  onRetry,
-  still,
-}: {
-  scope: Scope;
-  onRetry: () => void;
-  still: boolean;
-}) {
-  const Icon = scope === "assets" ? Film : Puzzle;
+/** The project has no assets yet. Frame and header stay. */
+function ShelfEmpty({ onRetry, still }: { onRetry: () => void; still: boolean }) {
   return (
     <motion.div {...(still ? FADE_STILL : FADE_MOVE)}>
       <Empty className="py-8 md:py-10">
         <EmptyHeader>
           <EmptyMedia variant="icon">
-            <Icon />
+            <Film />
           </EmptyMedia>
-          <EmptyTitle>{scope === "assets" ? "No assets yet" : "No pieces yet"}</EmptyTitle>
-          <EmptyDescription>
-            {scope === "assets"
-              ? "Drop media in this project's folder, or import files to start the shelf."
-              : "Pieces the agent offers land here."}
-          </EmptyDescription>
+          <EmptyTitle>No assets yet</EmptyTitle>
+          <EmptyDescription>Import, or connect Resolve.</EmptyDescription>
         </EmptyHeader>
         <EmptyContent>
           <Button type="button" size="sm" variant="outline" onClick={onRetry}>
@@ -453,7 +437,10 @@ type AssetShelfProps = {
   frozen?: boolean;
   /** Lock indicator transitions so highlights track 1:1 mid-morph. */
   transitionLock?: boolean;
-  /** Clips an effect-kind piece can land on; the Pieces tab owns the editor. */
+  /**
+   * Kept for callers that also feed the dock's Pieces section; the shelf
+   * itself renders assets only.
+   */
   clips?: ClipChoice[];
   onApplyPiece?: (item: ChangesetItem) => string | null;
   onUndoPiece?: (itemId: string) => void;
@@ -461,23 +448,12 @@ type AssetShelfProps = {
   pieceRefusal?: string | null;
 };
 
-export function AssetShelf({
-  className,
-  projectId,
-  frozen = false,
-  transitionLock = false,
-  clips = [],
-  onApplyPiece,
-  onUndoPiece,
-  onOpenHistory,
-  pieceRefusal = null,
-}: AssetShelfProps) {
+export function AssetShelf({ className, projectId, frozen = false, transitionLock = false }: AssetShelfProps) {
   const reduce = useReducedMotion();
   const listing = useProjectAssets(projectId);
   // Files the user imports with no linked editor ride above the listing.
   // They are session-local: the shelf never writes them into the project.
   const [imports, setImports] = useState<AssetItem[]>([]);
-  const [scope, setScope] = useState<Scope>("assets");
   const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");
   // Sizing for the assets list, compact unless the user picked otherwise.
   // Persisted across sessions.
@@ -591,10 +567,10 @@ export function AssetShelf({
 
   const needle = query.trim().toLowerCase();
   const folder = folders.find((item) => item.id === openFolder) ?? null;
-  const paneKey = `${scope}:${view}:${openFolder ?? "root"}`;
+  const paneKey = `${view}:${openFolder ?? "root"}`;
 
   const folderRows = useMemo(() => {
-    if (scope !== "assets" || folder) return [];
+    if (folder) return [];
     return folders.filter((item) => !removedIds.has(item.id)).filter((item) => {
       const contents = item.assetIds.flatMap((id) => {
         if (removedIds.has(id)) return [];
@@ -609,7 +585,7 @@ export function AssetShelf({
       if (item.name.toLowerCase().includes(needle)) return true;
       return typed.some((asset) => asset.name.toLowerCase().includes(needle));
     });
-  }, [assets, folder, folders, needle, removedIds, scope, typeFilter]);
+  }, [assets, folder, folders, needle, removedIds, typeFilter]);
 
   const visible = useMemo(() => {
     const pool = folder
@@ -629,7 +605,6 @@ export function AssetShelf({
     if (!list || list.length === 0) return;
     const picked = [...list];
     setShift(openFolder ? "out" : "fade");
-    setScope("assets");
     setOpenFolder(null);
     setTypeFilter("all");
     setQuery("");
@@ -887,13 +862,13 @@ export function AssetShelf({
     icon: LayoutGrid,
   };
   const ViewIcon = viewChoice.icon;
-  // No data at all for this scope: the empty state. Data that only
-  // filters to nothing keeps the "Nothing matches." line instead.
+  // No data at all: the empty state. Data that only filters to
+  // nothing keeps the "Nothing matches." line instead.
   const listedCount = folders.length + assets.length;
-  const scopeEmpty = listing.phase === "ready" && listedCount === 0;
+  const shelfEmpty = listing.phase === "ready" && listedCount === 0;
   const filteredEmpty =
     listing.phase === "ready" &&
-    !scopeEmpty &&
+    !shelfEmpty &&
     folderRows.length === 0 &&
     visible.length === 0;
   const rowGap = view === "more" ? "gap-1" : view === "compact" ? "gap-1.5" : "gap-2";
@@ -934,7 +909,7 @@ export function AssetShelf({
     >
       <div className="flex min-w-0 shrink-0 items-center gap-2">
         <Film className="size-4 shrink-0 text-neutral-400" />
-        <h2 className="min-w-0 truncate text-sm font-semibold tracking-wide text-neutral-100">Search</h2>
+        <h2 className="min-w-0 truncate text-sm font-semibold tracking-wide text-neutral-100">Assets</h2>
         <Button
           type="button"
           size="sm"
@@ -961,31 +936,7 @@ export function AssetShelf({
 
       <div className="grid min-h-0 min-w-0 flex-1 grid-cols-[minmax(0,1fr)] grid-rows-[minmax(0,1fr)] gap-3 overflow-hidden">
         <div className="flex h-full min-h-0 min-w-0 flex-col gap-3">
-      <Tabs
-        value={scope}
-        onValueChange={(value) => {
-          setShift("fade");
-          setScope(value as Scope);
-        }}
-      >
-        <TabsList size="sm" className="grid w-full grid-cols-2">
-          <TabsTab value="assets">Assets</TabsTab>
-          <TabsTab value="pieces">Pieces</TabsTab>
-        </TabsList>
-      </Tabs>
-
-      {scope === "pieces" ? (
-        <PiecesShelf
-          clips={clips}
-          onApplyPiece={onApplyPiece}
-          onUndoPiece={onUndoPiece}
-          onOpenHistory={onOpenHistory}
-          refusal={pieceRefusal}
-        />
-      ) : (
-      <>
       <div className="relative z-20 flex min-w-0 shrink-0 flex-wrap items-center gap-1.5">
-        {scope === "assets" ? (
           <Menu>
             <MenuTrigger
               render={
@@ -1019,7 +970,6 @@ export function AssetShelf({
               </MenuRadioGroup>
             </MenuPopup>
           </Menu>
-        ) : null}
         <Menu>
           <MenuTrigger
             render={
@@ -1113,7 +1063,7 @@ export function AssetShelf({
               exit="leave"
               className="absolute inset-0 flex min-h-0 flex-col"
             >
-              {scope === "assets" && folder ? (
+              {folder ? (
                 <Button
                   type="button"
                   size="sm"
@@ -1142,8 +1092,8 @@ export function AssetShelf({
                     onRetry={listing.retry}
                     still={reduce || frozen}
                   />
-                ) : scopeEmpty ? (
-                  <ShelfEmpty scope={scope} onRetry={listing.retry} still={reduce || frozen} />
+                ) : shelfEmpty ? (
+                  <ShelfEmpty onRetry={listing.retry} still={reduce || frozen} />
                 ) : view === "cards" ? (
                   <ul className="relative grid grid-cols-2 content-start gap-2">
                     <AnimatePresence mode={listMode} initial={false}>
@@ -1350,8 +1300,6 @@ export function AssetShelf({
                       </AnimatePresence>
                     </ul>
                 ) : null}
-                  </>
-                )}
                 <AnimatePresence initial={false}>
                   {filteredEmpty ? (
                     <motion.p
@@ -1374,8 +1322,6 @@ export function AssetShelf({
             </motion.div>
           </AnimatePresence>
         </div>
-      </>
-      )}
         </div>
       </div>
     </section>

@@ -86,11 +86,19 @@ export function spawnSubagents(task: RunningTask): Subagent[] {
   }));
 }
 
-/** Honest line for a lane with no connected tools. Submits nothing. */
+/**
+ * Honest line for a lane with no connected helper. Plain words, no tool
+ * ids. Submits nothing.
+ */
 export function gatedAgentText(agent: Subagent): string {
-  const tools = agent.tools.join(", ");
+  const work =
+    agent.lane === "effects"
+      ? "effects and pieces work"
+      : agent.lane === "colour"
+        ? "colour work"
+        : "editing work";
   return (
-    `${agent.label} subagent isn't connected yet — ${tools} ` +
-    `${agent.tools.length === 1 ? "is" : "are"} still on the way. Nothing changed.`
+    `${agent.label} isn't connected yet — ${work} is still on the way. ` +
+    "Nothing changed."
   );
 }
