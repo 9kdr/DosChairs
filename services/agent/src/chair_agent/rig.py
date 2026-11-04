@@ -85,8 +85,19 @@ def _finite(value: Any) -> bool:
     )
 
 
-def validate_rig(data: Mapping[str, Any]) -> dict[str, Any]:
-    """Validate raw model output as a Rig. Raises InvalidRig naming the gap."""
+def validate_rig(
+    data: Mapping[str, Any],
+    *,
+    width: float | None = None,
+    height: float | None = None,
+    duration_sec: float | None = None,
+) -> dict[str, Any]:
+    """Validate raw model output as a Rig. Raises InvalidRig naming the gap.
+
+    With the canvas and duration given, keys outside the frame or past the
+    end are rejected (the generate repair retry asks the model to fix them),
+    so a bad draft can never fly the cursor off screen.
+    """
     if not isinstance(data, Mapping):
         raise InvalidRig("rig must be an object")
     path = data.get("inputPath")
@@ -102,9 +113,20 @@ def validate_rig(data: Mapping[str, Any]) -> dict[str, Any]:
         moment = float(key["time"])
         if moment < 0:
             raise InvalidRig(f"rig inputPath[{index}] time must be >= 0")
+        if duration_sec is not None and moment > duration_sec:
+            raise InvalidRig(
+                f"rig inputPath[{index}] time {moment:g}s is past the "
+                f"{duration_sec:g}s duration"
+            )
         if moment < seen:
             raise InvalidRig("rig inputPath times must not go backwards")
         seen = moment
+        for field, bound in (("x", width), ("y", height)):
+            if bound is not None and not 0 <= float(key[field]) <= bound:
+                raise InvalidRig(
+                    f"rig inputPath[{index}] {field} {key[field]} is outside "
+                    f"the 0..{bound:g} canvas"
+                )
     for field in ("stiffness", "damping", "mass"):
         value = data.get(field)
         if value is None:
@@ -244,7 +266,9 @@ def generate_rig(
         while True:
             try:
                 parsed = _parse_rig_completion(text)
-                rig = validate_rig(parsed)
+                rig = validate_rig(
+                    parsed, width=width, height=height, duration_sec=duration_sec,
+                )
                 break
             except InvalidRig as error:
                 errors.append(str(error))

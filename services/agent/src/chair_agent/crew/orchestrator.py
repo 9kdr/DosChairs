@@ -154,6 +154,10 @@ def run_task(
             current = task.model_copy(update={"goal": f"{task.goal} (retry: {error})"})
             continue
         problems = section_verify(task, output.items)
+        if output.fallback:
+            # A beat marker passes the section check but proves nothing:
+            # the runner failed, so the task fails (after one retry).
+            problems = [f"subagent fell back ({output.notes})", *problems]
         if problems:
             attempt_notes.append(f"{attempt} failed verify: {'; '.join(problems)}")
             current = task.model_copy(update={"goal": f"{task.goal} (retry: {problems[-1]})"})

@@ -81,7 +81,7 @@ def test_generate_validates_and_returns_rig(isolated) -> None:
 def test_generate_rejects_bad_physics_then_repairs(isolated) -> None:
     bad = _rig(damping="soft")
     client = FakeClient(execute=[json.dumps(bad), json.dumps(_rig())])
-    out = rig.generate_rig("swing in", width=1280, height=720, fps=30,
+    out = rig.generate_rig("swing in", width=1920, height=1080, fps=30,
                            duration_sec=2.0, client=client)
     assert client.execute_calls == 2
     assert "repaired on retry" in out["notes"]
@@ -89,9 +89,35 @@ def test_generate_rejects_bad_physics_then_repairs(isolated) -> None:
 
     always_bad = FakeClient(execute=[json.dumps(bad)] * 3)
     with pytest.raises(InvalidRig, match="failed validation 3 times"):
-        rig.generate_rig("swing in", width=1280, height=720, fps=30,
+        rig.generate_rig("swing in", width=1920, height=1080, fps=30,
                          duration_sec=2.0, client=always_bad)
     assert always_bad.execute_calls == 3
+
+
+def test_validate_rig_rejects_keys_off_canvas_or_past_duration(isolated) -> None:
+    bounds = {"width": 1920, "height": 1080, "duration_sec": 3.0}
+    with pytest.raises(InvalidRig, match="outside the 0..1920 canvas"):
+        rig.validate_rig(_rig(inputPath=[{"time": 0, "x": 2000, "y": 10}]), **bounds)
+    with pytest.raises(InvalidRig, match="outside the 0..1080 canvas"):
+        rig.validate_rig(_rig(inputPath=[{"time": 0, "x": 10, "y": -5}]), **bounds)
+    with pytest.raises(InvalidRig, match="past the 3s duration"):
+        rig.validate_rig(_rig(inputPath=[{"time": 5, "x": 10, "y": 10}]), **bounds)
+    kept = rig.validate_rig(
+        _rig(inputPath=[{"time": 3.0, "x": 1920, "y": 1080}]), **bounds
+    )
+    assert kept["inputPath"][0]["x"] == 1920
+
+
+def test_generate_repairs_off_canvas_keys(isolated) -> None:
+    bad = _rig(inputPath=[{"time": 0, "x": 5000, "y": 10}])
+    client = FakeClient(execute=[json.dumps(bad), json.dumps(_rig())])
+    out = rig.generate_rig(
+        "swing in", width=1920, height=1080, fps=30, duration_sec=3.0,
+        client=client,
+    )
+    assert client.execute_calls == 2
+    assert "repaired on retry" in out["notes"]
+    assert rig.status_snapshot()["repairs"] == 1
 
 
 def test_generate_rejects_empty_brief_backwards_time_and_bad_flags(isolated) -> None:

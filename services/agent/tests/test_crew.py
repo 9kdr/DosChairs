@@ -69,7 +69,11 @@ def _evidence():
     return frames, audio
 
 
-def test_brief_plus_plan_produces_tasks_and_one_pending_changeset() -> None:
+def test_brief_plus_plan_rejects_fallback_runs(monkeypatch) -> None:
+    """Failing runners fall back to beat markers; the crew reports rejected."""
+    monkeypatch.setattr(
+        "chair_agent.sounds.get_library", lambda *args, **kwargs: []
+    )
     reset_status()
     client = FakeCrewClient(TASKS_JSON)  # type: ignore[assignment]
     frames, audio = _evidence()
@@ -80,18 +84,48 @@ def test_brief_plus_plan_produces_tasks_and_one_pending_changeset() -> None:
     )
     assert len(run.tasks) >= 4
     assert {task.section for task in run.tasks} >= {"cut", "sound", "motion", "effects"}
-    accepted = [result for result in run.results if result.verdict == "accepted"]
-    assert len(accepted) >= 4
-    for result in accepted:
-        assert result.items, result.task_id
-        for item in result.items:
-            assert item.beat_id, item.id
+    assert all(result.verdict == "rejected" for result in run.results)
+    for result in run.results:
+        assert result.error and "fell back" in result.error, result.task_id
     assert run.changeset is not None
-    dumped = run.changeset.model_dump(mode="json", by_alias=True)
-    assert dumped["items"]
-    assert all(item["status"] == "pending" for item in dumped["items"])
+    assert run.changeset.items == []
     assert run.verdict is not None
-    assert run.verdict.accepted, run.verdict.reasons
+    assert not run.verdict.accepted
+
+
+def test_run_task_rejects_a_beat_marker_fallback() -> None:
+    from chair_agent.crew.command import Task
+    from chair_agent.crew.orchestrator import run_task
+
+    reset_status()
+    task = Task(id="t1", beatId="b1", section="cut", goal="trim the cold open")
+    result = run_task(task, "cold open")
+    assert result.verdict == "rejected"
+    assert result.error and "fell back" in result.error
+    assert "no media" in result.error
+
+
+def test_run_task_still_accepts_real_runner_items(monkeypatch) -> None:
+    from chair_agent.crew.command import Task
+    from chair_agent.crew.orchestrator import RUNNERS, reset_status, run_task
+    from chair_agent.crew.subagents import SubagentOutput
+    from chair_agent.edit_ops import trim_op
+
+    def fake_cut(task, **kwargs):
+        return SubagentOutput(
+            items=[trim_op(
+                "t1-trim", "clip-1", "Tighten the head.", start_frames=12,
+                beat_id=task.beat_id,
+            )],
+            notes="fake cut",
+        )
+
+    monkeypatch.setitem(RUNNERS, "cut", fake_cut)
+    reset_status()
+    task = Task(id="t1", beatId="b1", section="cut", goal="trim the cold open")
+    result = run_task(task, "cold open")
+    assert result.verdict == "accepted"
+    assert [item.op for item in result.items] == ["trim"]
 
 
 def test_unknown_beat_id_is_rejected() -> None:
@@ -118,7 +152,10 @@ def test_project_plan_shape_is_accepted() -> None:
     assert plan_beats({"steps": [{"id": "s1", "title": "Open"}]})[0]["id"] == "s1"
 
 
-def test_health_counters_track_the_run() -> None:
+def test_health_counters_track_the_run(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "chair_agent.sounds.get_library", lambda *args, **kwargs: []
+    )
     reset_status()
     client = FakeCrewClient(TASKS_JSON)  # type: ignore[assignment]
     frames, audio = _evidence()
@@ -129,8 +166,8 @@ def test_health_counters_track_the_run() -> None:
     )
     snapshot = status_snapshot()
     assert snapshot["tasks_queued"] >= 4
-    assert snapshot["tasks_done"] >= 4
-    assert snapshot["tasks_failed"] == 0
+    assert snapshot["tasks_done"] == 0
+    assert snapshot["tasks_failed"] >= 4
     assert snapshot["last_latency_ms"] is not None
 
 

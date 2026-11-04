@@ -1021,3 +1021,33 @@ def test_tape_stop_needs_an_audio_stream(store: JobStore, two_shot_media: Path) 
     job = _wait_store(store, ticket["id"])
     assert job["status"] == "failed"
     assert "audio" in (job["error"] or "")
+
+
+def test_hung_ffmpeg_is_killed_with_a_plain_error(store: JobStore) -> None:
+    with pytest.raises(RuntimeError, match=r"ffmpeg timed out after 0\.2 seconds"):
+        store._run_command(
+            "job-hang", ["sleep", "30"], lambda line: None,
+            what="ffmpeg", timeout=0.2,
+        )
+
+
+def test_hung_ffprobe_fails_with_a_plain_error(
+    store: JobStore, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    script = tmp_path / "slow-probe"
+    script.write_text("#!/bin/sh\nsleep 30\n")
+    script.chmod(0o755)
+    monkeypatch.setattr("chair_sidecar.jobs.binary", lambda name: str(script))
+    with pytest.raises(RuntimeError, match=r"ffprobe timed out after 0\.2 seconds"):
+        store._probe(tmp_path / "clip.mp4", timeout=0.2)
+
+
+def test_hung_decode_fails_with_a_plain_error(
+    store: JobStore, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    script = tmp_path / "slow-decode"
+    script.write_text("#!/bin/sh\nsleep 30\n")
+    script.chmod(0o755)
+    monkeypatch.setattr("chair_sidecar.jobs.binary", lambda name: str(script))
+    with pytest.raises(RuntimeError, match=r"ffmpeg decode timed out after 0\.2 seconds"):
+        store._decode_mono(tmp_path / "clip.mp4", timeout=0.2)

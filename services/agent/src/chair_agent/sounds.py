@@ -26,7 +26,14 @@ from pathlib import Path
 from pydantic import BaseModel, ConfigDict, Field
 
 from chair_agent.client import Message, ModelClient
-from chair_agent.edit_ops import Changeset, ChangesetItem, build_changeset, validate_changeset
+from chair_agent.edit_ops import (
+    Changeset,
+    ChangesetItem,
+    build_changeset,
+    sfx_clip_op,
+    sfx_track_op,
+    validate_changeset,
+)
 
 AUDIO_EXTENSIONS = frozenset({".wav", ".aif", ".aiff", ".mp3", ".m4a", ".ogg", ".flac"})
 
@@ -670,33 +677,41 @@ def cues_to_changeset(
     base_revision: str,
     track_id: str = "audio-sfx-1",
 ) -> Changeset:
-    """Pending items only: a NEW audio track plus one add_clip per cue. No apply."""
-    by_id = {entry.id: entry for entry in entries}
-    items: list[ChangesetItem] = [
-        ChangesetItem(
-            id="track-sfx-1", op="add_track", rationale="New audio track for sound cues.",
-            patch={"track": {"id": track_id, "kind": "audio"}},
+    """Pending items only: a NEW audio track plus one add_clip per cue. No apply.
+
+    Clips are full snapshots via edit_ops (the executor shape), so the
+    Resolve writer places them; the cue gain rides on the clip, and no
+    track-targeted set_gain is emitted. An empty library fails instead of
+    returning an empty track as success.
+    """
+    if not entries:
+        raise ValueError(
+            "no sounds in the library: point CHAIR_SOUNDS_DIR at a folder "
+            "with audio files, then POST /sounds/refresh"
         )
-    ]
+    by_id = {entry.id: entry for entry in entries}
+    items: list[ChangesetItem] = []
     for index, cue in enumerate(cues):
         entry = by_id.get(cue.entry_id)
         if entry is None:
             raise ValueError(f"cue uses unknown entry: {cue.entry_id!r}")
-        items.append(ChangesetItem(
-            id=f"cue-{index + 1}", op="add_clip", targetId=track_id, rationale=cue.reason,
-            patch={
-                "mediaRef": entry.path,
-                "source": entry.source,
-                "license": entry.license,
-                "startSeconds": cue.start_seconds,
-                "kind": cue.kind,
-                "attribution": entry.attribution,
-            },
+        rationale = cue.reason
+        if entry.attribution:
+            rationale = f"{cue.reason} (credit: {entry.attribution})"
+        items.append(sfx_clip_op(
+            f"cue-{index + 1}", track_id, f"cue-{index + 1}", rationale,
+            media_ref=entry.path,
+            name=entry.name,
+            start_seconds=cue.start_seconds,
+            duration_seconds=entry.duration or 1.0,
+            gain_db=cue.gain_db,
+            kind=cue.kind,
+            source=entry.source,
+            license=entry.license,
         ))
-        items.append(ChangesetItem(
-            id=f"cue-{index + 1}-gain", op="set_gain", targetId=track_id,
-            rationale=f"Keep the {cue.kind} under the mix at {cue.gain_db} dB.",
-            patch={"gainDb": cue.gain_db, "clipId": f"cue-{index + 1}"},
+    if items:
+        items.insert(0, sfx_track_op(
+            "track-sfx-1", "New audio track for sound cues.", track_id=track_id,
         ))
     changeset = build_changeset(changeset_id, base_revision, items, summary="Sound cues")
     dumped = changeset.model_dump(mode="json", by_alias=True, exclude_none=True)
