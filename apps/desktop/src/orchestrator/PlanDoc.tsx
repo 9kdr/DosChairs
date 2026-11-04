@@ -33,8 +33,9 @@ import {
 import { Tabs, TabsList, TabsTab } from "@/components/ui/tabs";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
-import { parsePlanMarkdown, usePlan, type BoardItem } from "./plan-api";
+import { parsePlanMarkdown, usePlan, type BoardItem, type ProjectPlan } from "./plan-api";
 import { PlanBeats } from "./PlanBeats";
+import { InfoHint } from "@/components/info-hint";
 import { AgentView, PlanBoard } from "./PlanBoard";
 import { skeletonGroupsForText, splitMarkdownBlocks } from "./planSkeleton";
 
@@ -80,6 +81,8 @@ type PlanDocProps = {
   notice?: string | null;
   className?: string;
   projectId?: string | null;
+  /** Told each time the structured plan loads or changes. */
+  onPlan?: (plan: ProjectPlan) => void;
 };
 
 type PlanSection = "script" | "beats" | "board";
@@ -531,9 +534,13 @@ function MarkdownText({
   return <div className="flex min-h-0 flex-col gap-3">{blocks}</div>;
 }
 
-export function PlanDoc({ open, mode, onOpen, onClose, notice, className, projectId }: PlanDocProps) {
+export function PlanDoc({ open, mode, onOpen, onClose, notice, className, projectId, onPlan }: PlanDocProps) {
   const [section, setSection] = useState<PlanSection>("script");
   const { plan, loading, error, saveState, updateFront, appendBoard, generate, digest } = usePlan(projectId ?? null);
+  // Mirror the structured plan up so the dashboard can suggest its next steps.
+  useEffect(() => {
+    if (plan) onPlan?.(plan);
+  }, [plan, onPlan]);
   const [digesting, setDigesting] = useState<string | null>(null);
   const [tabs, setTabs] = useState<DocTab[]>(INITIAL_TABS);
   const [doc, setDoc] = useState<string>("brief");
@@ -1296,7 +1303,12 @@ export function PlanDoc({ open, mode, onOpen, onClose, notice, className, projec
     if (open && mode === target) onClose();
     else onOpen(target);
   };
-  const modeButton = (target: PlanMode, label: string, Icon: typeof PenLine) => {
+  const modeButton = (
+    target: PlanMode,
+    label: string,
+    tip: string,
+    Icon: typeof PenLine,
+  ) => {
     const active = open && mode === target;
     return (
       <Tooltip>
@@ -1304,33 +1316,37 @@ export function PlanDoc({ open, mode, onOpen, onClose, notice, className, projec
           render={
             <Button
               type="button"
-              size="icon-sm"
+              size="sm"
               variant="ghost"
               aria-label={label}
               aria-pressed={active}
               onClick={() => toggleMode(target)}
-              className={cn(active && "bg-white/10")}
+              className={cn("text-muted-foreground hover:text-neutral-100", active && "bg-white/10 text-neutral-100")}
             >
               <Icon />
+              {label}
             </Button>
           }
         />
-        <TooltipPopup sideOffset={8}>{label}</TooltipPopup>
+        <TooltipPopup sideOffset={8}>{tip}</TooltipPopup>
       </Tooltip>
     );
   };
   const planHeader = (
     <div className="flex shrink-0 items-center gap-1">
       <h2 className="text-title font-medium text-neutral-100">Plan</h2>
+      <InfoHint>
+        Your brief for this cut. Chair reads it before it splits a command into tasks.
+      </InfoHint>
       <div className="ml-auto flex items-center gap-0.5">
-        {modeButton("edit", "Edit plan", PenLine)}
-        {modeButton("talk", "Discuss", MessageSquare)}
+        {modeButton("edit", "Edit", "Edit the plan text", PenLine)}
+        {modeButton("talk", "Discuss", "Talk the plan through with Chair", MessageSquare)}
         <Tooltip>
           <TooltipTrigger
             render={
               <Button
                 type="button"
-                size="icon-sm"
+                size="sm"
                 variant="ghost"
                 ref={docsButtonRef}
                 aria-label={docsToken ? "Google Docs connected" : "Connect Google Docs"}
@@ -1340,13 +1356,15 @@ export function PlanDoc({ open, mode, onOpen, onClose, notice, className, projec
                   setDocsError(null);
                   setDocsOpen((current) => !current);
                 }}
+                className="text-muted-foreground hover:text-neutral-100"
               >
                 {docsToken ? <Link2 /> : <Unlink />}
+                Docs
               </Button>
             }
           />
           <TooltipPopup sideOffset={8}>
-            {docsToken ? "Google Docs connected" : "Connect Google Docs"}
+            {docsToken ? "Google Docs connected" : "Import the plan from Google Docs"}
           </TooltipPopup>
         </Tooltip>
       </div>
@@ -1476,14 +1494,43 @@ export function PlanDoc({ open, mode, onOpen, onClose, notice, className, projec
       ) : null;
 
   if (!open) {
+    const planned = plan?.back.tasks ?? [];
     return (
       <article
         aria-label="Plan"
-        className={cn("flex shrink-0 flex-col gap-3", className)}
+        className={cn("flex shrink-0 flex-col gap-4", className)}
       >
         {planHeader}
         {docsPopout}
-        <p className="line-clamp-2 text-body leading-6 text-muted-foreground">{excerpt}</p>
+        <div className="flex max-w-[62ch] flex-col gap-1.5">
+          <p className="text-meta font-medium text-muted-foreground">Brief</p>
+          <p className="line-clamp-5 text-body leading-7 text-neutral-200">{excerpt}</p>
+        </div>
+        {planned.length > 0 ? (
+          <div className="flex max-w-[62ch] flex-col gap-1.5">
+            <p className="text-meta font-medium text-muted-foreground">
+              Planned tasks <span className="tabular-nums text-neutral-600">{planned.length}</span>
+            </p>
+            <ol className="flex flex-col gap-1">
+              {planned.slice(0, 4).map((task, index) => (
+                <li key={task.id} className="flex min-w-0 gap-3 text-body leading-6">
+                  <span className="w-4 shrink-0 text-right tabular-nums text-neutral-600">
+                    {index + 1}
+                  </span>
+                  <span className="min-w-0 truncate text-neutral-200" title={task.detail || task.title}>
+                    {task.title}
+                    {task.detail ? (
+                      <span className="text-muted-foreground"> — {task.detail}</span>
+                    ) : null}
+                  </span>
+                </li>
+              ))}
+            </ol>
+            {planned.length > 4 ? (
+              <p className="pl-7 text-meta text-muted-foreground">+{planned.length - 4} more</p>
+            ) : null}
+          </div>
+        ) : null}
         {notice ? <p className="text-meta text-muted-foreground">{notice}</p> : null}
       </article>
     );

@@ -5,12 +5,17 @@ import {
   Film,
   Folder,
   Image,
+  Palette,
   PlusIcon,
+  Sparkles,
   Upload,
+  Waypoints,
   type LucideIcon,
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
+import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
+import { InfoHint } from "@/components/info-hint";
 import { Input } from "@/components/ui/input";
 import { Menu, MenuItem, MenuPopup, MenuTrigger } from "@/components/ui/menu";
 import { Tabs, TabsList, TabsTab } from "@/components/ui/tabs";
@@ -19,6 +24,7 @@ import {
   PIECE_KIND_LABEL,
   fetchPieces,
   type PieceInfo,
+  type PieceKind,
 } from "@/effects/pieces-api";
 import { cn } from "@/lib/utils";
 import { writeChairRefs } from "@/lib/chair-ref";
@@ -64,7 +70,7 @@ function inKind(kind: ShelfKind, asset: ShelfAssetKind): boolean {
   if (kind === "all") return true;
   if (kind === "media") return asset !== "audio";
   if (kind === "sounds") return asset === "audio";
-  return false;
+  return false; // Pieces tab: files stay out.
 }
 
 type ShelfProps = {
@@ -207,27 +213,41 @@ export function Shelf({
       inKind(kind, asset.kind) &&
       (needle === "" || asset.name.toLowerCase().includes(needle)),
   );
-  const showFolders = !folder && kind !== "pieces";
+  const showFolders = !folder && kind !== "pieces" && kind !== "sounds";
   const folders = showFolders
     ? listing.folders.filter((item) => needle === "" || item.name.toLowerCase().includes(needle))
     : [];
-  const showPieces = !folder && (kind === "all" || kind === "pieces");
+  // Sound pieces live under Sounds too, next to the audio files.
+  const showPieces = !folder && kind !== "media";
   const catalog = (pieces ?? []).filter(
     (piece) =>
-      needle === "" ||
-      piece.name.toLowerCase().includes(needle) ||
-      piece.summary.toLowerCase().includes(needle),
+      (kind !== "sounds" || piece.kind === "sound") &&
+      (needle === "" ||
+        piece.name.toLowerCase().includes(needle) ||
+        piece.summary.toLowerCase().includes(needle)),
   );
 
   const openPiece = (piece: PieceInfo) => {
     if (piece.kind === "effect") setEditing({ id: piece.id, name: piece.name });
     else setExpandedId(piece.id);
   };
+  const importHere = () => fileRef.current?.click();
+  const nothing = folders.length === 0 && assets.length === 0 && (!showPieces || catalog.length === 0);
+  const emptyCopy: Record<ShelfKind, { title: string; body: string }> = {
+    all: { title: "The shelf is empty", body: "Import footage, stills and audio, or make a piece." },
+    media: { title: "No media yet", body: "Import footage or stills to drag into the bar." },
+    pieces: { title: "No pieces yet", body: "A piece is a reusable look, effect or motion." },
+    sounds: { title: "No sounds yet", body: "Import audio, or ask Chair for a sting in the bar." },
+  };
 
   return (
     <div className={cn("flex h-full min-h-0 w-full min-w-0 flex-1 flex-col gap-3", className)}>
-      <div className="flex shrink-0 items-center gap-2">
-        <h2 className="text-sm font-medium text-neutral-200">Shelf</h2>
+      <div className="flex shrink-0 items-center gap-1">
+        <h2 className="text-title font-medium text-neutral-100">Shelf</h2>
+        <InfoHint>
+          Drag a row into the command bar, or type @ in it, to point Chair at it. Double-click
+          an effect to open it in the maker.
+        </InfoHint>
         <Menu>
           <MenuTrigger
             render={
@@ -235,7 +255,7 @@ export function Shelf({
                 type="button"
                 size="sm"
                 variant="ghost"
-                className="ml-auto shrink-0"
+                className="ml-auto shrink-0 text-muted-foreground hover:text-neutral-100"
                 aria-label="Add to shelf"
               />
             }
@@ -244,10 +264,7 @@ export function Shelf({
             Add
           </MenuTrigger>
           <MenuPopup align="end">
-            <MenuItem
-              closeOnClick
-              onClick={() => fileRef.current?.click()}
-            >
+            <MenuItem closeOnClick onClick={importHere}>
               <Upload />
               Import file…
             </MenuItem>
@@ -270,228 +287,278 @@ export function Shelf({
           }}
         />
       </div>
-      <div className="flex shrink-0 items-center gap-2">
-        <Tabs
-          value={kind}
-          onValueChange={(value) => setKind(value as ShelfKind)}
-          className="min-w-0 flex-1"
-        >
-          <TabsList size="sm" aria-label="Shelf filter" className="flex w-full justify-start">
-            {KINDS.map((item) => (
-              <TabsTab key={item.id} value={item.id} className="min-w-0 flex-1 px-2">
-                {item.label}
-              </TabsTab>
-            ))}
-          </TabsList>
-        </Tabs>
-      </div>
-      <div className="shrink-0">
-        <Input
-          type="search"
-          size="sm"
-          value={query}
-          placeholder="Search the shelf"
-          aria-label="Search the shelf"
-          onChange={(event) => setQuery(event.target.value)}
-          className="border-transparent bg-white/[0.04] dark:bg-white/[0.04]"
-        />
-      </div>
-      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+      <Tabs
+        value={kind}
+        onValueChange={(value) => setKind(value as ShelfKind)}
+        className="shrink-0"
+      >
+        <TabsList size="sm" aria-label="Shelf filter" className="flex w-full justify-start">
+          {KINDS.map((item) => (
+            <TabsTab key={item.id} value={item.id} className="min-w-0 flex-1 px-2">
+              {item.label}
+            </TabsTab>
+          ))}
+        </TabsList>
+      </Tabs>
+      <Input
+        type="search"
+        size="sm"
+        value={query}
+        placeholder="Search the shelf"
+        aria-label="Search the shelf"
+        onChange={(event) => setQuery(event.target.value)}
+        className="shrink-0 border-transparent bg-white/[0.04] dark:bg-white/[0.04]"
+      />
+      <div className="-mr-2 min-h-0 flex-1 overflow-y-auto overscroll-contain pr-2">
         {listing.phase === "loading" ? (
-          <p className="px-1 py-2 text-sm text-neutral-400">Loading the shelf…</p>
+          <p className="px-1 py-2 text-meta text-neutral-400">Loading the shelf…</p>
         ) : listing.phase === "error" ? (
-          <div className="flex flex-col items-start gap-2 rounded-2xl bg-white/[0.03] px-5 py-6">
-            <h3 className="text-sm font-medium text-neutral-200">Couldn&apos;t load the shelf</h3>
-            <p className="text-sm leading-6 text-neutral-400">{listing.error}</p>
-            <Button type="button" size="sm" variant="outline" onClick={listing.retry}>
-              Check again
-            </Button>
-          </div>
+          <ShelfNotice
+            title="Couldn't load the shelf"
+            body={listing.error ?? ""}
+            action="Check again"
+            onAction={listing.retry}
+          />
         ) : (
-          <ul className="flex flex-col gap-1.5" aria-label="Shelf">
+          <ul className="flex flex-col gap-0.5" aria-label="Shelf">
             {folder ? (
               <li>
                 <button
                   type="button"
                   onClick={() => setOpenFolder(null)}
-                  className="flex w-full cursor-pointer items-center gap-2.5 rounded-2xl px-3 py-2 text-left text-sm text-neutral-300 outline-none transition-colors hover:bg-white/[0.06] focus-visible:ring-2 focus-visible:ring-ring"
+                  className="flex w-full cursor-pointer items-center gap-3 rounded-xl px-2 py-1.5 text-left text-body text-neutral-300 outline-none transition-colors hover:bg-white/[0.05] focus-visible:ring-2 focus-visible:ring-ring"
                 >
-                  <ChevronLeftIcon className="size-4 shrink-0" aria-hidden="true" />
+                  <span className="grid size-8 shrink-0 place-items-center">
+                    <ChevronLeftIcon className="size-4" aria-hidden="true" />
+                  </span>
                   <span className="min-w-0 flex-1 truncate">All files</span>
                 </button>
               </li>
             ) : null}
             {folders.map((item) => (
-              <li key={item.id}>
-                <div
-                  role="button"
-                  tabIndex={0}
-                  draggable
-                  onClick={() => setOpenFolder(item.id)}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter") setOpenFolder(item.id);
-                  }}
-                  onDragStart={(event) =>
-                    writeChairRefs(event.dataTransfer, [
-                      { kind: "asset", id: item.id, label: item.name },
-                    ])
-                  }
-                  className="flex w-full cursor-grab items-center gap-2.5 rounded-2xl bg-white/[0.03] px-3 py-2 text-left outline-none transition-colors hover:bg-white/[0.06] focus-visible:ring-2 focus-visible:ring-ring"
-                >
-                  <Folder className="size-4 shrink-0 text-neutral-400" aria-hidden="true" />
-                  <span className="min-w-0 flex-1 truncate text-sm text-neutral-200">
-                    {item.name}
-                  </span>
-                  <span className="shrink-0 text-xs text-muted-foreground">Folder</span>
-                </div>
-              </li>
+              <ShelfRow
+                key={item.id}
+                icon={Folder}
+                name={item.name}
+                tag="Folder"
+                hint="Open folder"
+                onActivate={() => setOpenFolder(item.id)}
+                refs={[{ kind: "asset", id: item.id, label: item.name }]}
+              />
             ))}
-            {assets.map((item) => {
-              const Icon = ASSET_ICON[item.kind];
-              const selected = selectedId === item.id;
-              return (
-                <li key={item.id}>
-                  <div
-                    role="button"
-                    tabIndex={0}
-                    draggable
-                    aria-pressed={selected}
-                    onClick={() => setSelectedId((current) => (current === item.id ? null : item.id))}
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter" || event.key === " ") {
-                        event.preventDefault();
-                        setSelectedId((current) => (current === item.id ? null : item.id));
-                      }
-                    }}
-                    onDragStart={(event) =>
-                      writeChairRefs(event.dataTransfer, [
-                        { kind: "asset", id: item.id, label: item.name },
-                      ])
-                    }
-                    className={cn(
-                      "flex w-full cursor-grab items-center gap-2.5 rounded-2xl bg-white/[0.03] px-3 py-2 text-left outline-none transition-colors hover:bg-white/[0.06] focus-visible:ring-2 focus-visible:ring-ring",
-                      selected && "bg-white/[0.06]",
-                    )}
-                  >
-                    <Icon className="size-4 shrink-0 text-neutral-400" aria-hidden="true" />
-                    <span className="min-w-0 flex-1 truncate text-sm text-neutral-200">
-                      {item.name}
-                    </span>
-                    <span className="shrink-0 text-xs text-muted-foreground">
-                      {ASSET_TAG[item.kind]}
-                    </span>
-                  </div>
-                </li>
-              );
-            })}
-            {showPieces ? (
-              <>
-                {pieces === null && piecesFailure ? (
-                  <li>
-                    <div className="flex flex-col items-start gap-2 rounded-2xl bg-white/[0.03] px-5 py-6">
-                      <h3 className="text-sm font-medium text-neutral-200">
-                        Couldn&apos;t load pieces
-                      </h3>
-                      <p className="text-sm leading-6 text-neutral-400">{piecesFailure}</p>
-                      <Button type="button" size="sm" variant="outline" onClick={reloadPieces}>
-                        Check again
-                      </Button>
-                    </div>
-                  </li>
-                ) : null}
-                {catalog.map((piece) => {
+            {assets.map((item) => (
+              <ShelfRow
+                key={item.id}
+                icon={ASSET_ICON[item.kind]}
+                name={item.name}
+                tag={ASSET_TAG[item.kind]}
+                selected={selectedId === item.id}
+                onActivate={() => setSelectedId((current) => (current === item.id ? null : item.id))}
+                refs={[{ kind: "asset", id: item.id, label: item.name }]}
+              />
+            ))}
+            {showPieces && pieces === null && piecesFailure ? (
+              <li>
+                <ShelfNotice
+                  title="Couldn't load pieces"
+                  body={piecesFailure}
+                  action="Check again"
+                  onAction={reloadPieces}
+                />
+              </li>
+            ) : null}
+            {showPieces
+              ? catalog.map((piece) => {
                   const expanded = expandedPiece === piece.id;
                   return (
-                    <li
+                    <ShelfRow
                       key={piece.id}
-                      className={cn(
-                        "group rounded-2xl bg-white/[0.03]",
-                        expanded && "bg-white/[0.06]",
-                      )}
-                    >
-                      <div
-                        role="button"
-                        tabIndex={0}
-                        aria-expanded={expanded}
-                        draggable
-                        title={piece.summary || piece.name}
-                        onClick={() =>
-                          setExpandedId((current) => (current === piece.id ? null : piece.id))
-                        }
-                        onDoubleClick={() => openPiece(piece)}
-                        onKeyDown={(event) => {
-                          if (event.key === "Enter") openPiece(piece);
-                          else if (event.key === " ") {
-                            event.preventDefault();
-                            setExpandedId((current) =>
-                              current === piece.id ? null : piece.id,
-                            );
-                          }
-                        }}
-                        onDragStart={(event) =>
-                          writeChairRefs(event.dataTransfer, [
-                            { kind: "piece", id: piece.id, label: piece.name },
-                          ])
-                        }
-                        className="flex w-full cursor-grab items-center gap-2.5 rounded-2xl px-3 py-2 text-left outline-none active:cursor-grabbing focus-visible:ring-2 focus-visible:ring-ring"
-                      >
-                        <span
-                          aria-hidden="true"
-                          className={cn(
-                            "size-1.5 shrink-0 rounded-full",
-                            piece.source === "user" ? "bg-amber-300" : "bg-neutral-500",
-                          )}
-                        />
-                        <span className="min-w-0 flex-1 truncate text-sm text-neutral-200">
-                          {piece.name}
-                        </span>
-                        <span className="shrink-0 text-xs text-muted-foreground">
-                          {PIECE_KIND_LABEL[piece.kind]}
-                        </span>
-                        <Button
-                          type="button"
-                          size="xs"
-                          variant="ghost"
-                          aria-label={`Open ${piece.name}`}
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            openPiece(piece);
-                          }}
-                          className="shrink-0 opacity-0 group-focus-within:opacity-100 group-hover:opacity-100 focus-visible:opacity-100"
-                        >
-                          Open
-                        </Button>
-                      </div>
-                      {expanded ? (
-                        <div className="px-3 pb-3">
-                          <p className="text-xs leading-5 text-neutral-400">
-                            {piece.summary || "No description yet."}
-                          </p>
-                          <p className="mt-1 text-xs text-muted-foreground">
-                            {piece.controls.length === 0
-                              ? "No published controls — drag it into the brief to use it."
-                              : `${piece.controls.length} control${piece.controls.length === 1 ? "" : "s"}: ${piece.controls
-                                  .slice(0, 4)
-                                  .map((control) => control.name)
-                                  .join(", ")}${piece.controls.length > 4 ? "…" : ""}`}
-                          </p>
-                        </div>
-                      ) : null}
-                    </li>
+                      icon={PIECE_ICON[piece.kind]}
+                      name={piece.name}
+                      tag={PIECE_KIND_LABEL[piece.kind]}
+                      hint={piece.summary || piece.name}
+                      expanded={expanded}
+                      onActivate={() =>
+                        setExpandedId((current) => (current === piece.id ? null : piece.id))
+                      }
+                      onOpen={() => openPiece(piece)}
+                      refs={[{ kind: "piece", id: piece.id, label: piece.name }]}
+                      action={
+                        piece.kind === "effect" ? (
+                          <Button
+                            type="button"
+                            size="xs"
+                            variant="ghost"
+                            aria-label={`Open ${piece.name} in the maker`}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              openPiece(piece);
+                            }}
+                            className="shrink-0 text-muted-foreground opacity-0 group-focus-within:opacity-100 group-hover:opacity-100 hover:text-neutral-100 focus-visible:opacity-100"
+                          >
+                            Open
+                          </Button>
+                        ) : null
+                      }
+                      detail={
+                        expanded ? (
+                          <div className="px-[3.25rem] pb-2.5">
+                            <p className="text-meta leading-5 text-neutral-300">
+                              {piece.summary || "No description yet."}
+                            </p>
+                            <p className="mt-1 text-meta text-muted-foreground">
+                              {piece.source === "user" ? "Made by you" : "Built in"}
+                              {" · "}
+                              {piece.controls.length === 0
+                                ? "drag it into the bar to use it"
+                                : `${piece.controls.length} control${piece.controls.length === 1 ? "" : "s"}: ${piece.controls
+                                    .slice(0, 4)
+                                    .map((control) => control.name)
+                                    .join(", ")}${piece.controls.length > 4 ? "…" : ""}`}
+                            </p>
+                          </div>
+                        ) : null
+                      }
+                    />
                   );
-                })}
-              </>
-            ) : null}
-            {folders.length === 0 && assets.length === 0 && (!showPieces || catalog.length === 0) ? (
+                })
+              : null}
+            {nothing ? (
               <li>
-                <p className="px-1 py-2 text-sm text-muted-foreground">
-                  {needle === "" ? "Nothing here yet." : "Nothing matches."}
-                </p>
+                {needle !== "" ? (
+                  <ShelfNotice
+                    title="Nothing matches"
+                    body={`No ${kind === "all" ? "item" : KINDS.find((item) => item.id === kind)?.label.toLowerCase()} named “${query.trim()}”.`}
+                    action="Clear search"
+                    onAction={() => setQuery("")}
+                  />
+                ) : (
+                  <ShelfNotice
+                    title={emptyCopy[kind].title}
+                    body={emptyCopy[kind].body}
+                    action={kind === "pieces" ? "New piece" : "Import file…"}
+                    onAction={kind === "pieces" ? onCreate : importHere}
+                    secondary={kind === "all" ? { label: "New piece", run: onCreate } : undefined}
+                  />
+                )}
               </li>
             ) : null}
           </ul>
         )}
       </div>
     </div>
+  );
+}
+
+/** The one icon per piece kind, so pieces get the same leading slot as media. */
+const PIECE_ICON: Record<PieceKind, LucideIcon> = {
+  macro: BlocksIcon,
+  effect: Sparkles,
+  motion: Waypoints,
+  sound: AudioLines,
+  look: Palette,
+};
+
+/**
+ * One shelf row: the same leading slot (icon), name, and a right-aligned
+ * kind tag for media, folders and pieces. Draggable into the bar.
+ */
+function ShelfRow({
+  icon: Icon,
+  name,
+  tag,
+  hint,
+  selected = false,
+  expanded,
+  refs,
+  action,
+  detail,
+  onActivate,
+  onOpen,
+}: {
+  icon: LucideIcon;
+  name: string;
+  tag: string;
+  hint?: string;
+  selected?: boolean;
+  /** Set on rows that expand; drives aria-expanded. */
+  expanded?: boolean;
+  refs: Parameters<typeof writeChairRefs>[1];
+  action?: ReactNode;
+  detail?: ReactNode;
+  onActivate: () => void;
+  /** Enter and double-click open the row (pieces only). */
+  onOpen?: () => void;
+}) {
+  return (
+    <li
+      className={cn(
+        "group rounded-xl transition-colors hover:bg-white/[0.05]",
+        (selected || expanded) && "bg-white/[0.06]",
+      )}
+    >
+      <div
+        role="button"
+        tabIndex={0}
+        draggable
+        title={hint ?? "Drag into the command bar"}
+        aria-expanded={expanded}
+        aria-pressed={expanded === undefined && !onOpen ? selected : undefined}
+        onClick={onActivate}
+        onDoubleClick={onOpen}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") {
+            event.preventDefault();
+            (onOpen ?? onActivate)();
+          } else if (event.key === " ") {
+            event.preventDefault();
+            onActivate();
+          }
+        }}
+        onDragStart={(event) => writeChairRefs(event.dataTransfer, refs)}
+        className="flex w-full cursor-grab items-center gap-3 rounded-xl px-2 py-1.5 text-left outline-none active:cursor-grabbing focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-white/[0.06] text-neutral-400">
+          <Icon className="size-4" aria-hidden="true" />
+        </span>
+        <span className="min-w-0 flex-1 truncate text-body text-neutral-100">{name}</span>
+        {action}
+        <span className="w-16 shrink-0 text-right text-meta text-muted-foreground">{tag}</span>
+      </div>
+      {detail}
+    </li>
+  );
+}
+
+function ShelfNotice({
+  title,
+  body,
+  action,
+  onAction,
+  secondary,
+}: {
+  title: string;
+  body: string;
+  action: string;
+  onAction: () => void;
+  secondary?: { label: string; run: () => void };
+}) {
+  return (
+    <Empty className="items-start gap-3 px-1 py-4 text-left md:py-4">
+      <EmptyHeader className="items-start text-left">
+        <EmptyTitle className="text-body font-medium text-neutral-200">{title}</EmptyTitle>
+        <EmptyDescription className="text-meta">{body}</EmptyDescription>
+      </EmptyHeader>
+      <EmptyContent className="flex-row items-center gap-2">
+        <Button type="button" size="sm" variant="outline" onClick={onAction}>
+          {action}
+        </Button>
+        {secondary ? (
+          <Button type="button" size="sm" variant="ghost" onClick={secondary.run}>
+            {secondary.label}
+          </Button>
+        ) : null}
+      </EmptyContent>
+    </Empty>
   );
 }

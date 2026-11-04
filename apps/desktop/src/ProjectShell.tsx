@@ -15,8 +15,9 @@ import { EffectMaker } from "./effects/EffectMaker";
 import { parseAction } from "./orchestrator/actions";
 import { PlanDoc } from "./orchestrator/PlanDoc";
 import { RunningTasks, type RunningTask } from "./orchestrator/RunningTasks";
+import type { ProjectPlan } from "./orchestrator/plan-api";
 import { Shelf } from "./orchestrator/Shelf";
-import { suggestionsFor } from "./orchestrator/suggestions";
+import { suggestionsFor, type Suggestion } from "./orchestrator/suggestions";
 import { TaskChat, UNDO_PROMPT } from "./orchestrator/TaskChat";
 import { setupTask } from "./orchestrator/taskSetup";
 import {
@@ -85,6 +86,8 @@ export function ProjectShell({ projectId, projectName, editorId, onHome }: Proje
   const [notice, setNotice] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [suggestion, setSuggestion] = useState<{ id: number; text: string } | null>(null);
+  // The structured plan, mirrored up from the Plan card so suggestions follow it.
+  const [plan, setPlan] = useState<ProjectPlan | null>(null);
   const [narrowTab, setNarrowTab] = useState<NarrowTab>("tasks");
   // Bumped after card Undo/Redo/Retry so the rows repaint at once, not next poll.
   const [liveNonce, setLiveNonce] = useState(0);
@@ -254,7 +257,7 @@ export function ProjectShell({ projectId, projectName, editorId, onHome }: Proje
   const showNarrowTabs = showSide && !taskChat;
   const narrowShowsPanel = showNarrowTabs && narrowTab !== "tasks";
   const allTasks = [...workingTasks, ...recentTasks];
-  const suggestions = suggestionsFor({ timeline: project.timeline, tasks: allTasks });
+  const suggestions = suggestionsFor({ plan, tasks: allTasks });
 
   const planPane = (
     <div className="h-full min-h-0 overflow-y-auto overscroll-contain">
@@ -268,6 +271,7 @@ export function ProjectShell({ projectId, projectName, editorId, onHome }: Proje
         }}
         onClose={() => setPlanOpen(false)}
         notice={notice}
+        onPlan={setPlan}
       />
     </div>
   );
@@ -284,11 +288,22 @@ export function ProjectShell({ projectId, projectName, editorId, onHome }: Proje
       onCreate={openMakerPage}
     />
   );
-  // The empty task list is already its own card; working/recent tiles get one.
   const hasTasks = workingTasks.length + recentTasks.length > 0;
+  /** A chip: retry the failed task, or drop the prompt into the bar. */
+  const pickSuggestion = (item: Suggestion) => {
+    if (item.kind === "retry") {
+      const target = allTasks.find((task) => task.id === item.taskId);
+      if (target) retryTask(target);
+    } else {
+      setSuggestion({ id: Date.now(), text: item.text });
+    }
+  };
   const tasksList = (
     <RunningTasks
       history={project.history}
+      // Chips live in the empty card; once tasks exist they sit above the bar.
+      suggestions={hasTasks ? [] : suggestions}
+      onSuggest={pickSuggestion}
       tasks={workingTasks}
       recentTasks={recentTasks}
       onOpen={openTask}
@@ -304,7 +319,11 @@ export function ProjectShell({ projectId, projectName, editorId, onHome }: Proje
   );
 
   return (
-    <ToastProvider>
+    <ToastProvider
+      position="bottom-right"
+      viewportClassName="data-[position*=bottom]:bottom-36 min-[1000px]:data-[position*=bottom]:bottom-28 data-[position*=right]:right-3 [--toast-inset:--spacing(3)] sm:[--toast-inset:--spacing(3)]"
+      toastClassName="rounded-2xl border-white/[0.06]"
+    >
       <section
         aria-label={projectName}
         className="@container absolute inset-0 flex min-h-0 flex-col overflow-hidden bg-background text-neutral-100"
@@ -414,56 +433,41 @@ export function ProjectShell({ projectId, projectName, editorId, onHome }: Proje
           ) : page === "board" ? (
             <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden">
               <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
-                <div className="mx-auto grid w-full grid-cols-1 gap-3 py-2 @min-[1000px]:grid-cols-12">
-                  <div className="@min-[1000px]:col-span-12">
-                    {hasTasks ? (
-                      <section
-                        aria-label="Tasks"
-                        className="rounded-card bg-card p-4 text-neutral-100"
-                      >
-                        {tasksList}
-                      </section>
-                    ) : (
-                      tasksList
-                    )}
+                <div className="mx-auto flex min-h-full w-full flex-col gap-3 pt-2 pb-4">
+                  {tasksList}
+                  <div className="grid grid-cols-1 gap-3 @min-[1000px]:max-h-[560px] @min-[1000px]:min-h-[340px] @min-[1000px]:flex-1 @min-[1000px]:grid-cols-12 @min-[1000px]:grid-rows-1">
+                    <section
+                      aria-label="Plan"
+                      className="flex min-h-0 flex-col rounded-card bg-card p-4 text-neutral-100 @max-[760px]:hidden @min-[1000px]:col-span-7"
+                    >
+                      {planPane}
+                    </section>
+                    <section
+                      aria-label="Shelf"
+                      className="flex h-[420px] min-h-0 flex-col rounded-card bg-card p-4 text-neutral-100 @max-[760px]:hidden @min-[1000px]:col-span-5 @min-[1000px]:h-auto"
+                    >
+                      {shelfPane}
+                    </section>
                   </div>
-                  <section
-                    aria-label="Plan"
-                    className="flex h-[520px] min-h-0 flex-col rounded-card bg-card p-4 text-neutral-100 @max-[760px]:hidden @min-[1000px]:col-span-7"
-                  >
-                    {planPane}
-                  </section>
-                  <section
-                    aria-label="Shelf"
-                    className="flex h-[520px] min-h-0 flex-col rounded-card bg-card p-4 text-neutral-100 @max-[760px]:hidden @min-[1000px]:col-span-5"
-                  >
-                    {shelfPane}
-                  </section>
                 </div>
               </div>
               <div className="mx-auto flex w-full max-w-3xl shrink-0 flex-col gap-2 @max-[760px]:max-w-none">
-                {suggestions.length > 0 ? (
+                {hasTasks && suggestions.length > 0 ? (
                   <div
                     className="flex flex-wrap gap-1.5 px-1"
                     role="group"
                     aria-label="Suggested next steps"
                   >
                     {suggestions.map((item) => (
-                      <button
+                      <Button
                         key={item.label}
                         type="button"
-                        onClick={() => {
-                          if (item.kind === "retry") {
-                            const target = allTasks.find((task) => task.id === item.taskId);
-                            if (target) retryTask(target);
-                          } else {
-                            setSuggestion({ id: Date.now(), text: item.text });
-                          }
-                        }}
-                        className="rounded-full bg-white/[0.06] px-2.5 py-1 text-xs text-neutral-300 transition-colors hover:bg-white/[0.1] hover:text-neutral-100 focus-visible:ring-2 focus-visible:ring-ring"
+                        size="sm"
+                        variant="outline"
+                        onClick={() => pickSuggestion(item)}
                       >
                         {item.label}
-                      </button>
+                      </Button>
                     ))}
                   </div>
                 ) : null}

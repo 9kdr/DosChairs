@@ -1,16 +1,25 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { DragEvent, KeyboardEvent, MouseEvent, PointerEvent } from "react";
-import { ArrowUpRight, Check, Loader2, Redo2, RotateCcw, Square, Undo2 } from "lucide-react";
+import {
+  ArrowUpRight,
+  Check,
+  HistoryIcon,
+  Loader2,
+  Redo2,
+  RotateCcw,
+  Square,
+  Undo2,
+} from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { DitherShader } from "@/lib/dither";
 import type { DitherColor } from "@/lib/dither";
 import { Button } from "@/components/ui/button";
-import { DitherArt } from "@/components/dither-art";
 import { InfoHint } from "@/components/info-hint";
-import { Empty, EmptyArt } from "@/components/ui/empty";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { clockTime, historyForTask, opLabel, type HistoryEntry } from "../project/store";
 import { activityForTask } from "./TaskActivity";
+import type { Suggestion } from "./suggestions";
 import { createServicesClient } from "@/lib/services/client";
 import type { AgentJobStatus } from "@/lib/services/types";
 import {
@@ -123,6 +132,8 @@ export interface RunningTasksProps {
   recentTasks?: readonly RunningTask[];
   /** Accepted history: gates each tile's Undo button. Empty until accepts land. */
   history?: readonly HistoryEntry[];
+  /** Real next steps for the empty card; renders nothing when empty. */
+  suggestions?: readonly Suggestion[];
   /** Hold the dither shaders on their current frame (e.g. mid-morph). */
   frozen?: boolean;
   onOpen?: (task: RunningTask) => void;
@@ -136,6 +147,8 @@ export interface RunningTasksProps {
   onRedoResolve?: (task: RunningTask) => void;
   /** Open the full History page, from the Recent group's link. */
   onOpenHistory?: () => void;
+  /** A suggestion chip was picked: retry its task, or fill the bar. */
+  onSuggest?: (suggestion: Suggestion) => void;
 }
 
 const LANE_LABEL: Record<TaskLane, string> = {
@@ -381,7 +394,6 @@ function TaskTile({
   const retryable = liveSubmitError(task.id) !== undefined || landed?.state === "failed";
   const showDither = !finished && !failed;
   const seen = finished && isTaskSeen(task.projectId, task.id);
-  const unseen = finished && !failed && !expanded && !seen;
   const activity = activityForTask(task);
   // Finished tiles show the flow steps as done; the outcome already sits in
   // the meta line (and the landed line below), so the live step drops out
@@ -391,8 +403,38 @@ function TaskTile({
         .filter((item) => item.state !== "active")
         .map((item) => ({ ...item, state: "done" as const }))
     : activity.steps;
-  const tileActionClass =
-    "bg-card text-muted-foreground opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100 hover:text-neutral-100 focus-visible:opacity-100 @max-[760px]:opacity-100";
+  const outcome = failed ? "Failed" : (status ?? "Done");
+  const outcomeDot =
+    outcome === "Landed"
+      ? "bg-emerald-400"
+      : outcome === "Failed"
+        ? "bg-red-400"
+        : outcome === "Undone" || outcome === "Stopped"
+          ? "bg-amber-400"
+          : "bg-neutral-500";
+  const tileActionClass = "text-muted-foreground hover:text-neutral-100";
+  const action = (
+    label: string,
+    Icon: typeof Undo2,
+    text: string,
+    run: (() => void) | undefined,
+  ) => (
+    <Button
+      type="button"
+      size="sm"
+      variant="ghost"
+      aria-label={label}
+      onClick={(event) => {
+        event.stopPropagation();
+        run?.();
+      }}
+      onKeyDown={(event) => event.stopPropagation()}
+      className={tileActionClass}
+    >
+      <Icon />
+      {text}
+    </Button>
+  );
 
   return (
     <motion.div
@@ -414,9 +456,12 @@ function TaskTile({
         onMouseUp={handlePointerUp}
         onClick={handleClick}
         onKeyDown={handleKeyDown}
-        className="dark group relative cursor-pointer overflow-hidden rounded-card bg-card data-[dragging]:opacity-64"
+        className="dark group relative cursor-pointer overflow-hidden rounded-2xl bg-surface-raised outline-none transition-colors hover:bg-neutral-800 focus-visible:ring-2 focus-visible:ring-ring data-[dragging]:opacity-64"
       >
         {showDither ? (
+          // The dither bleeds in from the right edge and is clipped by the
+          // tile's rounded corners. Its left edge fades out, and the text
+          // column below keeps clear of it, so it never sits under a title.
           <DitherShader
             field={TASK_FIELD}
             palette={["transparent", LANE_INK[task.lane]]}
@@ -426,192 +471,94 @@ function TaskTile({
             suspended={frozen || Boolean(reduce)}
             stillTime={1.6}
             cell={3}
-            className="absolute inset-0 opacity-35"
+            className="pointer-events-none absolute inset-y-0 right-0 w-[40%] max-w-[360px] opacity-45"
             style={{
-              maskImage: "linear-gradient(to right, transparent 30%, #000 65%)", // taste-skill-ignore: mask bleeds the dither flow in from the tile's right edge, not a fill.
-              WebkitMaskImage: "linear-gradient(to right, transparent 30%, #000 65%)", // taste-skill-ignore: mask bleeds the dither flow in from the tile's right edge, not a fill.
+              maskImage: "linear-gradient(to right, transparent 0%, #000 55%)", // taste-skill-ignore: mask fades the dither's left edge so it bleeds in from the tile's right edge, not a fill.
+              WebkitMaskImage: "linear-gradient(to right, transparent 0%, #000 55%)", // taste-skill-ignore: mask fades the dither's left edge so it bleeds in from the tile's right edge, not a fill.
             }}
           />
         ) : null}
-        {showDither ? (
-          <div
-            aria-hidden
-            className="pointer-events-none absolute inset-0"
-            style={{
-              background: "linear-gradient(to right, var(--card) 0%, transparent 45%)", // taste-skill-ignore: neutral scrim keeps the task titles legible over the dither sea.
-            }}
-          />
-        ) : null}
-        {showDither ? (
-          <div
-            aria-hidden
-            className="pointer-events-none absolute inset-0"
-            style={{
-              background:
-                "linear-gradient(to left, var(--card) 0%, var(--card) 12%, transparent 26%)", // taste-skill-ignore: neutral scrim keeps the tile controls off the dither sea.
-            }}
-          />
-        ) : null}
-        <div className="relative flex flex-col gap-2 p-4">
+        <div className="relative flex flex-col gap-2 px-4 py-3">
           <div className="flex items-center justify-between gap-3">
-            <div
-              className="flex min-w-0 flex-1 items-center gap-2"
-            >
-              {failed && !seen ? (
-                <span
-                  role="img"
-                  aria-label="Failed"
-                  className="size-2 shrink-0 rounded-full bg-red-400/70"
-                />
-              ) : !finished ? (
-                <Loader2
-                  className="size-3.5 shrink-0 animate-spin text-neutral-400"
-                  aria-label="Working"
-                />
-              ) : !unseen ? null : status === "Planned" || status === "Stopped" ? (
-                <span
-                  role="img"
-                  aria-label="Not yet looked at"
-                  className="size-2 shrink-0 rounded-full bg-neutral-500"
-                />
-              ) : (
-                <span
-                  role="img"
-                  aria-label="Not yet looked at"
-                  className="size-2 shrink-0 rounded-full bg-emerald-400"
-                />
-              )}
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-title font-medium text-neutral-100" title={task.name}>
-                  {task.name}
-                </p>
-                <p
-                  className="truncate text-meta text-muted-foreground"
-                  title={landed?.line ?? detail ?? undefined}
-                >
-                  {LANE_LABEL[task.lane]}
-                  {status ? ` · ${status}` : ""}
-                  {landed && landed.skipped.length > 0 ? (
-                    <>
-                      {" "}
-                      <InfoHint>
-                        {landed.skipped.length === 1 ? (
-                          landed.skipped[0]!.reason
-                        ) : (
-                          <span>
-                            {landed.skipped.map((skip) => (
-                              <span key={skip.intent} className="block">
-                                {skip.reason}
-                              </span>
-                            ))}
-                          </span>
-                        )}
-                      </InfoHint>
-                    </>
-                  ) : null}
-                </p>
-              </div>
-            </div>
-            <div className="flex shrink-0 items-center gap-1.5">
-              {failed && retryable && onRetry ? (
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="ghost"
-                  aria-label={`Retry ${task.name}`}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    onRetry();
-                  }}
-                  onKeyDown={(event) => event.stopPropagation()}
-                  className={tileActionClass}
-                >
-                  <RotateCcw />
-                  Retry
-                </Button>
-              ) : null}
-              {!failed && landed?.state === "landed" && landed.undo && onUndoResolve ? (
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="ghost"
-                  aria-label={`Undo Resolve write for ${task.name}`}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    onUndoResolve();
-                  }}
-                  onKeyDown={(event) => event.stopPropagation()}
-                  className={tileActionClass}
-                >
-                  <Undo2 />
-                  Undo
-                </Button>
-              ) : null}
-              {!failed && landed?.state === "undone" && landed.redo && onRedoResolve ? (
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="ghost"
-                  aria-label={`Redo Resolve write for ${task.name}`}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    onRedoResolve();
-                  }}
-                  onKeyDown={(event) => event.stopPropagation()}
-                  className={tileActionClass}
-                >
-                  <Redo2 />
-                  Redo
-                </Button>
-              ) : null}
-              {!failed && !landed && task.jobId && canStopTask(task) ? (
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="ghost"
-                  aria-label={`Stop ${task.name}`}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    onStop?.();
-                  }}
-                  onKeyDown={(event) => event.stopPropagation()}
-                  className={tileActionClass}
-                >
-                  <Square />
-                  Stop task
-                </Button>
-              ) : null}
-              {onUndo && undoable && !landed ? (
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="ghost"
-                  aria-label={`Undo ${task.name}`}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    onUndo();
-                  }}
-                  onKeyDown={(event) => event.stopPropagation()}
-                  className={tileActionClass}
-                >
-                  <Undo2 />
-                  Undo
-                </Button>
-              ) : null}
-              <Button
-                type="button"
-                size="icon-xs"
-                variant="ghost"
-                aria-label={`Open ${task.name}`}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  open();
-                }}
-                onKeyDown={(event) => event.stopPropagation()}
-                className="bg-card text-muted-foreground hover:text-neutral-100"
+            <div className={cn("min-w-0 flex-1", showDither && "pr-6 @max-[620px]:pr-0")}>
+              <p className="truncate text-title font-medium text-neutral-100" title={task.name}>
+                {task.name}
+              </p>
+              <p
+                className="flex min-w-0 items-center gap-1.5 truncate text-meta text-muted-foreground"
+                title={landed?.line ?? detail ?? undefined}
               >
-                <ArrowUpRight />
-              </Button>
+                {finished ? (
+                  <span
+                    role="img"
+                    aria-label={seen ? outcome : `${outcome}, not yet looked at`}
+                    className={cn("size-1.5 shrink-0 rounded-full", outcomeDot, seen && "opacity-50")}
+                  />
+                ) : (
+                  <Loader2
+                    className="size-3 shrink-0 animate-spin text-neutral-400"
+                    aria-label="Working"
+                  />
+                )}
+                <span className={cn("shrink-0", finished && !seen && "text-neutral-200")}>
+                  {finished ? outcome : (step ?? "Working")}
+                </span>
+                <span aria-hidden="true">·</span>
+                <span className="truncate">{LANE_LABEL[task.lane]}</span>
+                {landed && landed.skipped.length > 0 ? (
+                  <InfoHint>
+                    {landed.skipped.length === 1 ? (
+                      landed.skipped[0]!.reason
+                    ) : (
+                      <span>
+                        {landed.skipped.map((skip) => (
+                          <span key={skip.intent} className="block">
+                            {skip.reason}
+                          </span>
+                        ))}
+                      </span>
+                    )}
+                  </InfoHint>
+                ) : null}
+              </p>
+            </div>
+            <div className="flex shrink-0 items-center gap-1">
+              {failed && retryable && onRetry
+                ? action(`Retry ${task.name}`, RotateCcw, "Retry", onRetry)
+                : null}
+              {!failed && landed?.state === "landed" && landed.undo && onUndoResolve
+                ? action(`Undo Resolve write for ${task.name}`, Undo2, "Undo", onUndoResolve)
+                : null}
+              {!failed && landed?.state === "undone" && landed.redo && onRedoResolve
+                ? action(`Redo Resolve write for ${task.name}`, Redo2, "Redo", onRedoResolve)
+                : null}
+              {!failed && !landed && task.jobId && canStopTask(task)
+                ? action(`Stop ${task.name}`, Square, "Stop", onStop)
+                : null}
+              {onUndo && undoable && !landed
+                ? action(`Undo ${task.name}`, Undo2, "Undo", onUndo)
+                : null}
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <Button
+                      type="button"
+                      size="icon-sm"
+                      variant="ghost"
+                      aria-label={`Open ${task.name}`}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        open();
+                      }}
+                      onKeyDown={(event) => event.stopPropagation()}
+                      className={cn(tileActionClass, showDither && "bg-black/40 hover:bg-black/55")}
+                    />
+                  }
+                >
+                  <ArrowUpRight />
+                </TooltipTrigger>
+                <TooltipPopup side="top">Open task</TooltipPopup>
+              </Tooltip>
             </div>
           </div>
           <AnimatePresence initial={false}>
@@ -684,6 +631,7 @@ export function RunningTasks({
   tasks = [],
   recentTasks = [],
   history = [],
+  suggestions = [],
   frozen = false,
   onOpen,
   onUndo,
@@ -692,6 +640,7 @@ export function RunningTasks({
   onUndoResolve,
   onRedoResolve,
   onOpenHistory,
+  onSuggest,
 }: RunningTasksProps) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const working = useMemo(
@@ -699,94 +648,119 @@ export function RunningTasks({
     [tasks],
   );
   const recent = useMemo(() => [...recentTasks].slice(-5).reverse(), [recentTasks]);
-  if (working.length === 0 && recent.length === 0) {
-    return (
-      <div className={cn("rounded-card bg-card p-4 text-neutral-100", className)}>
-        <Empty className="gap-2 py-1 md:py-1">
-          <EmptyArt>
-            <DitherArt seed={2} />
-          </EmptyArt>
-          <p className="text-sm text-muted-foreground">Nothing running</p>
-        </Empty>
-      </div>
-    );
-  }
   const toggle = (id: string) => setExpandedId((current) => (current === id ? null : id));
-  return (
-    <div className={cn("@container flex flex-col gap-4 text-neutral-100", className)}>
-      {working.length > 0 ? (
-        <section aria-label="Working">
-          <div className="flex items-center gap-2 px-1 pb-2">
-            <h3 className="text-xs font-medium text-muted-foreground">Working</h3>
-            <span className="text-xs tabular-nums text-neutral-600">{working.length}</span>
-          </div>
-          <div className="grid grid-cols-1 gap-2 @min-[620px]:grid-cols-2 @min-[960px]:grid-cols-3">
-            {working.map((task, index) => (
-              <TaskTile
-                key={task.id}
-                task={task}
-                seed={index + 1}
-                frozen={frozen}
-                finished={false}
-                expanded={expandedId === task.id}
-                history={history}
-                onToggle={() => toggle(task.id)}
-                onOpen={() => onOpen?.(task)}
-                onUndo={onUndo ? () => onUndo(task) : undefined}
-                onStop={() => {
-                  onStop?.(task);
-                  void stopLiveTask(createServicesClient(), task).catch(() => {});
-                }}
-                onRetry={onRetry ? () => onRetry(task) : undefined}
-                onUndoResolve={onUndoResolve ? () => onUndoResolve(task) : undefined}
-                onRedoResolve={onRedoResolve ? () => onRedoResolve(task) : undefined}
-              />
-            ))}
-          </div>
-        </section>
-      ) : null}
-      {recent.length > 0 ? (
-        <section aria-label="Recent">
-          <div className="flex items-center gap-2 px-1 pb-2">
-            <h3 className="text-xs font-medium text-muted-foreground">Recent</h3>
-            <span className="text-xs tabular-nums text-neutral-600">{recent.length}</span>
-            {onOpenHistory ? (
-              <Button
-                type="button"
-                size="sm"
-                variant="ghost"
-                className="ml-auto"
-                onClick={onOpenHistory}
-              >
-                All in History
-              </Button>
-            ) : null}
-          </div>
-          <div className="grid grid-cols-1 gap-2 @min-[620px]:grid-cols-2 @min-[960px]:grid-cols-3">
-            {recent.map((task, index) => (
-              <TaskTile
-                key={task.id}
-                task={task}
-                seed={101 + index}
-                frozen={frozen}
-                finished
-                expanded={expandedId === task.id}
-                history={history}
-                onToggle={() => toggle(task.id)}
-                onOpen={() => onOpen?.(task)}
-                onUndo={onUndo ? () => onUndo(task) : undefined}
-                onStop={() => {
-                  onStop?.(task);
-                  void stopLiveTask(createServicesClient(), task).catch(() => {});
-                }}
-                onRetry={onRetry ? () => onRetry(task) : undefined}
-                onUndoResolve={onUndoResolve ? () => onUndoResolve(task) : undefined}
-                onRedoResolve={onRedoResolve ? () => onRedoResolve(task) : undefined}
-              />
-            ))}
-          </div>
-        </section>
-      ) : null}
+  // Both groups: Working left, Recent right. One group alone fills the
+  // card as a grid with one column per tile, so no half-empty rows.
+  const split = working.length > 0 && recent.length > 0;
+  const gridFor = (count: number) =>
+    split
+      ? "grid-cols-1"
+      : count === 1
+        ? "grid-cols-1"
+        : count === 2
+          ? "grid-cols-1 @min-[620px]:grid-cols-2"
+          : "grid-cols-1 @min-[620px]:grid-cols-2 @min-[960px]:grid-cols-3";
+  const tile = (task: RunningTask, seed: number, finished: boolean) => (
+    <TaskTile
+      key={task.id}
+      task={task}
+      seed={seed}
+      frozen={frozen}
+      finished={finished}
+      expanded={expandedId === task.id}
+      history={history}
+      onToggle={() => toggle(task.id)}
+      onOpen={() => onOpen?.(task)}
+      onUndo={onUndo ? () => onUndo(task) : undefined}
+      onStop={() => {
+        onStop?.(task);
+        void stopLiveTask(createServicesClient(), task).catch(() => {});
+      }}
+      onRetry={onRetry ? () => onRetry(task) : undefined}
+      onUndoResolve={onUndoResolve ? () => onUndoResolve(task) : undefined}
+      onRedoResolve={onRedoResolve ? () => onRedoResolve(task) : undefined}
+    />
+  );
+  const groupLabel = (label: string, count: number) => (
+    <div className="flex items-center gap-2 px-1 pb-2">
+      <h3 className="text-meta font-medium text-muted-foreground">{label}</h3>
+      <span className="text-meta tabular-nums text-neutral-600">{count}</span>
     </div>
+  );
+  return (
+    <section
+      aria-label="Tasks"
+      className={cn("@container rounded-card bg-card p-4 text-neutral-100", className)}
+    >
+      <div className="flex items-center gap-1 pb-3">
+        <h2 className="text-title font-medium text-neutral-100">Tasks</h2>
+        <InfoHint>
+          Each command becomes tasks. A task lands on a copy in Resolve and has one Undo.
+        </InfoHint>
+        {onOpenHistory ? (
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            className="ml-auto text-muted-foreground hover:text-neutral-100"
+            onClick={onOpenHistory}
+          >
+            <HistoryIcon />
+            History
+          </Button>
+        ) : null}
+      </div>
+      {working.length === 0 && recent.length === 0 ? (
+        <div className="flex flex-col items-start gap-3 pb-1">
+          <p className="text-body text-muted-foreground">
+            Nothing running. Describe an edit in the bar below.
+          </p>
+          {suggestions.length > 0 ? (
+            <div
+              className="flex flex-wrap items-center gap-2"
+              role="group"
+              aria-label="Suggested next steps"
+            >
+              {suggestions.map((item) => (
+                <Button
+                  key={item.label}
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => onSuggest?.(item)}
+                >
+                  {item.kind === "retry" ? <RotateCcw /> : null}
+                  {item.label}
+                </Button>
+              ))}
+            </div>
+          ) : null}
+        </div>
+      ) : (
+        <div
+          className={cn(
+            "grid grid-cols-1 gap-4",
+            split && "@min-[900px]:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]",
+          )}
+        >
+          {working.length > 0 ? (
+            <section aria-label="Working" className="min-w-0">
+              {groupLabel("Working", working.length)}
+              <div className={cn("grid gap-2", gridFor(working.length))}>
+                {working.map((task, index) => tile(task, index + 1, false))}
+              </div>
+            </section>
+          ) : null}
+          {recent.length > 0 ? (
+            <section aria-label="Recent" className="min-w-0">
+              {groupLabel("Recent", recent.length)}
+              <div className={cn("grid gap-2", gridFor(recent.length))}>
+                {recent.map((task, index) => tile(task, 101 + index, true))}
+              </div>
+            </section>
+          ) : null}
+        </div>
+      )}
+    </section>
   );
 }

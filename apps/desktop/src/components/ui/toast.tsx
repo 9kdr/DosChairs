@@ -66,9 +66,13 @@ function upsertReplayClassName(toast: {
 function Toasts({
   position,
   portalProps,
+  viewportClassName,
+  toastClassName,
 }: {
   position: ToastPosition;
   portalProps?: React.ComponentProps<typeof Toast.Portal>;
+  viewportClassName?: string;
+  toastClassName?: string;
 }): React.ReactElement {
   const { toasts } = Toast.useToastManager();
   const swipeDirection = getSwipeDirection(position);
@@ -85,6 +89,7 @@ function Toasts({
           "data-[position*=left]:left-(--toast-inset)",
           "data-[position*=right]:right-(--toast-inset)",
           "data-[position*=center]:left-1/2 data-[position*=center]:-translate-x-1/2",
+          viewportClassName,
         )}
         data-position={position}
         data-slot="toast-viewport"
@@ -142,6 +147,7 @@ function Toasts({
                 "data-expanded:data-ending-style:data-[swipe-direction=up]:transform-[translateY(calc(var(--toast-swipe-movement-y)-100%-var(--toast-inset)))]",
                 "data-expanded:data-ending-style:data-[swipe-direction=down]:transform-[translateY(calc(var(--toast-swipe-movement-y)+100%+var(--toast-inset)))]",
                 upsertReplayClassName(toast),
+                toastClassName,
               )}
               {...toastData?.rootProps}
               data-position={position}
@@ -295,18 +301,29 @@ export type ToastPosition =
 export interface ToastProviderProps extends Toast.Provider.Props {
   position?: ToastPosition;
   portalProps?: React.ComponentProps<typeof Toast.Portal>;
+  /** Extra classes for the fixed viewport, e.g. to lift it above a pinned bar. */
+  viewportClassName?: string;
+  /** Extra classes for each toast card. */
+  toastClassName?: string;
 }
 
 export function ToastProvider({
   children,
   position = "bottom-right",
   portalProps,
+  viewportClassName,
+  toastClassName,
   ...props
 }: ToastProviderProps): React.ReactElement {
   return (
     <Toast.Provider toastManager={toastManager} {...props}>
       {children}
-      <Toasts portalProps={portalProps} position={position} />
+      <Toasts
+        portalProps={portalProps}
+        position={position}
+        toastClassName={toastClassName}
+        viewportClassName={viewportClassName}
+      />
     </Toast.Provider>
   );
 }
