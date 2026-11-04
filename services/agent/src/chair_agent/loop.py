@@ -25,6 +25,8 @@ from chair_agent.executor import (
     SkippedIntent,
     Span,
     ToolCall,
+    canonical_intent,
+    canonical_intents,
     cuts_to_changeset,
     fill_tool_calls,
     sound_changeset_items,
@@ -92,9 +94,10 @@ def run_loop(
     """
     if planned is None:
         planned = plan_brief(brief, client=client)
+    canon = canonical_intents(planned.intents)
     executable_plan = Plan(
         brief=planned.brief,
-        intents=[i for i in planned.intents if i in DISPATCHABLE_INTENTS],
+        intents=[i for i in canon if i in DISPATCHABLE_INTENTS],
         steps=[s for s in planned.steps if s.tool in _EXECUTOR_TOOLS],
     )
     tool_calls = fill_tool_calls(executable_plan, spans, proxy_url=context.proxy_url)
@@ -119,7 +122,7 @@ def run_loop(
     skipped.extend(
         SkippedIntent(intent=intent, reason=f"Chair cannot dispatch {intent} yet")
         for intent in planned.intents
-        if intent not in DISPATCHABLE_INTENTS
+        if canonical_intent(intent) not in DISPATCHABLE_INTENTS
     )
     combined = build_changeset(
         context.changeset_id,
@@ -179,7 +182,7 @@ def _resolve_sfx_files(
 
     from chair_agent import sounds
 
-    wanted = [intent for intent in intents if intent in SOUND_INTENTS]
+    wanted = [intent for intent in canonical_intents(intents) if intent in SOUND_INTENTS]
     if not wanted:
         return {}, []
     entries = sounds.get_library()
@@ -358,7 +361,7 @@ def handle_edit(
         # Ducking inverts silence into dialogue regions, so it measures
         # silence too — but the cut filter keeps those spans out of the
         # blades unless the brief also asks for silence cuts.
-        dispatch_intents = list(planned.intents)
+        dispatch_intents = canonical_intents(list(planned.intents))
         if "duck_music_under_dialogue" in dispatch_intents and "silence" not in dispatch_intents:
             dispatch_intents.append("silence")
         used_silence = silence if silence is not None else build_sidecar_tools()

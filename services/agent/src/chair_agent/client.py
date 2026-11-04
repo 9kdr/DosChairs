@@ -268,6 +268,8 @@ def build_brief_planner_messages(brief: str) -> list[Message]:
         "Return a JSON object matching this schema:\n"
         "{\n"
         '  "intents": ["silence", ...],\n'
+        "Intents use exactly these spellings: silence, filler, riser_into_cut, "
+        "tape_stop_outro, duck_music_under_dialogue. Never invent another name.\n"
         '  "steps": [\n'
         '    {"tool": "<tool_name>", "goal": "<what this step achieves>"}\n'
         "  ]\n"

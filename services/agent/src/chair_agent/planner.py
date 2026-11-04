@@ -32,6 +32,11 @@ SOUND_INTENTS = ("riser_into_cut", "tape_stop_outro", "duck_music_under_dialogue
 
 DISPATCHABLE_INTENTS = frozenset({"silence", "filler", *SOUND_INTENTS})
 
+#: Canonical spellings the planner prompt asks the model for. The model
+#: still invents variants ("tape_stop_out"), so the executor canonicalizes
+#: by keyword instead of exact-matching.
+CANONICAL_INTENTS = ("silence", "filler", *SOUND_INTENTS)
+
 _STATUS_LOCK = threading.Lock()
 _STATUS: dict[str, Any] = {"plans": 0, "last_plan_ms": None, "last_error": None}
 

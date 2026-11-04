@@ -712,3 +712,31 @@ def test_handle_edit_says_so_on_an_empty_timeline(
     )
     with pytest.raises(ValueError, match="Put a clip on the timeline first"):
         handle_edit(_job({"brief": "duck music under dialogue", "project_id": "x"}))
+
+
+def test_model_intent_variants_still_dispatch() -> None:
+    from chair_agent.executor import canonical_intent
+
+    assert canonical_intent("tape_stop_out") == "tape_stop_outro"
+    assert canonical_intent("Riser_Build") == "riser_into_cut"
+    assert canonical_intent("grade") == "grade"
+    planned = Plan(
+        brief="riser into the cut at 00:00:05, tape stop at the end, duck music",
+        intents=["riser_into_cut", "tape_stop_out", "duck music"],
+        steps=[PlanStep(tool="editor_op", goal="place sounds")],
+    )
+    context = LoopContext(
+        proxy_url="file:///proxy.mp4", base_revision="rev-0",
+        target_id="music-1", changeset_id="cs-sound-4",
+        total_frames=600, rate=30.0,
+    )
+    result = run_loop(
+        planned.brief, context, [Span(start_frames=60, frames=60, kind="silence")],
+        artifact_urls=["file:///previews/sound.mp4"],
+        planned=planned, sfx=_sound_sfx(),
+    )
+    assert result.verdict.accepted
+    assert result.skipped == []
+    assert [op["op"] for op in result.changeset["items"]] == [
+        "add_track", "add_clip", "add_clip", "set_gain",
+    ]

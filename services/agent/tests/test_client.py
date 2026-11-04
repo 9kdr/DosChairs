@@ -150,6 +150,7 @@ def test_brief_planner_prompt_carries_tool_registry() -> None:
     assert "measure_audio" in messages[0].content
     assert "render_preview" in messages[0].content
     assert "editor_op" in messages[0].content
+    assert "tape_stop_outro" in messages[0].content
     assert messages[1].content == "Cut pauses and add warm grade"
     with pytest.raises(ValueError):
         build_brief_planner_messages("  ")

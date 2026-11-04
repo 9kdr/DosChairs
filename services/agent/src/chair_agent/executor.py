@@ -21,7 +21,40 @@ from chair_agent.edit_ops import (
     sfx_clip_op,
     sfx_track_op,
 )
-from chair_agent.planner import SOUND_INTENTS, Plan
+from chair_agent.planner import CANONICAL_INTENTS, SOUND_INTENTS, Plan
+
+
+def canonical_intent(intent: str) -> str:
+    """Map a planner intent to its canonical spelling by keyword.
+
+    The model invents variants ("tape_stop_out"), so exact-matching drops
+    real plans. Keywords win: riser, tape+stop, duck, silence, filler.
+    Unknown intents pass through unchanged for the skipped report.
+    """
+    if intent in CANONICAL_INTENTS:
+        return intent
+    lowered = intent.lower()
+    if "riser" in lowered or "buildup" in lowered or "build-up" in lowered:
+        return "riser_into_cut"
+    if "tape" in lowered and "stop" in lowered:
+        return "tape_stop_outro"
+    if "duck" in lowered:
+        return "duck_music_under_dialogue"
+    if "silence" in lowered or "silent" in lowered:
+        return "silence"
+    if "filler" in lowered:
+        return "filler"
+    return intent
+
+
+def canonical_intents(intents: list[str]) -> list[str]:
+    """Canonical spelling per intent, order kept, duplicates dropped."""
+    seen: list[str] = []
+    for intent in intents:
+        canon = canonical_intent(intent)
+        if canon not in seen:
+            seen.append(canon)
+    return seen
 
 SpanKind = Literal["silence", "filler"]
 
@@ -117,8 +150,9 @@ def cuts_to_changeset(
     """
     wanted = list(merge_spans(spans))
     if intents is not None:
-        kinds = {"silence"} if "silence" in intents else set()
-        if "filler" in intents:
+        canon = canonical_intents(list(intents))
+        kinds = {"silence"} if "silence" in canon else set()
+        if "filler" in canon:
             kinds.add("filler")
         wanted = [span for span in wanted if span.kind in kinds]
     items = [
@@ -205,7 +239,7 @@ def sound_changeset_items(
         raise ValueError("sound items need a rate above 0")
     items: list[ChangesetItem] = []
     skipped: list[SkippedIntent] = []
-    wanted = [intent for intent in intents if intent in SOUND_INTENTS]
+    wanted = [intent for intent in canonical_intents(intents) if intent in SOUND_INTENTS]
     if not wanted:
         return items, skipped
     total_seconds = total_frames / rate if total_frames > 0 else 0.0
