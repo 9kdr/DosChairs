@@ -852,8 +852,8 @@ def install_module(
         "dir": str(folder), "files": [str(manifest_path), str(js_path)],
         "renamed": stem != record.stem,
         "fallback": (
-            "Resolve loads OGraf titles on macOS and Windows only; on Linux copy "
-            "the folder to a Mac or Windows install."
+            "Resolve loads OGraf titles on macOS and Windows only; on Linux the "
+            "agent bakes the piece to a PNG sequence for the Loader path instead."
         ),
     }
     _register(record.model_copy(update={"installs": [*record.installs, install]}), env)
