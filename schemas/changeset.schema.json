@@ -45,6 +45,10 @@
         },
         "targetId": { "type": "string" },
         "beatId": { "type": "string" },
+        "specRef": {
+          "type": "string",
+          "description": "Effect spec id for add_effect items. Resolves to schemas/effect-spec.schema.json."
+        },
         "rationale": { "type": "string" },
         "patch": { "type": "object" },
         "status": { "enum": ["pending", "accepted", "rejected"] }
