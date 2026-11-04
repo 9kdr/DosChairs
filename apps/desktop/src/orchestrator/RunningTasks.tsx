@@ -454,7 +454,9 @@ function TaskTile({
                 />
               ) : null}
               <div className="min-w-0 flex-1">
-                <p className="truncate text-title font-medium text-neutral-100">{task.name}</p>
+                <p className="truncate text-title font-medium text-neutral-100" title={task.name}>
+                  {task.name}
+                </p>
                 <p className="truncate text-meta text-muted-foreground" title={detail ?? undefined}>
                   {LANE_LABEL[task.lane]}
                   {step ? ` · ${step}` : ""}
