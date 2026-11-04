@@ -1,4 +1,4 @@
-import { ArrowLeft, BlocksIcon, HomeIcon, MessageSquareIcon, PanelRight } from "lucide-react";
+import { ArrowLeft, BlocksIcon, HomeIcon, MessageSquareIcon, PanelRight, X } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { ChatPrompt } from "@/components/chat-prompt";
 import { ServiceStatus } from "@/components/service-status";
@@ -12,6 +12,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { formatCutDuration } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type { EditorId } from "./home/data";
 import { EditorLogo } from "./home/EditorLogo";
@@ -60,17 +61,6 @@ const SUGGESTIONS = [
   "Make a dither title piece",
 ];
 
-function formatCutDuration(totalSeconds: number): string {
-  const total = Math.max(0, Math.round(totalSeconds));
-  const hours = Math.floor(total / 3600);
-  const minutes = Math.floor((total % 3600) / 60);
-  const seconds = total % 60;
-  if (hours > 0) {
-    return `${hours}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
-  }
-  return `${minutes}:${String(seconds).padStart(2, "0")}`;
-}
-
 /** Compact cut line for the header from the timeline the store already has. */
 function cutSummary(timeline: Timeline | null): string | null {
   if (!timeline) return null;
@@ -95,37 +85,60 @@ type SectionId = (typeof SECTIONS)[number]["id"];
 type SideTab = "plan" | "shelf" | "history";
 type PlanMode = "edit" | "talk";
 
-/** The tabbed Plan/Shelf/History card, shared by the side column and the narrow drawer. */
+/**
+ * The tabbed Plan/Shelf/History card, shared by the side column and the
+ * narrow drawer. In the drawer, one header row holds the tabs plus the
+ * close button; the side column has no close button.
+ */
 function SidePanel({
   tab,
   onTab,
   plan,
   shelf,
   history,
+  onClose,
 }: {
   tab: SideTab;
   onTab: (tab: SideTab) => void;
   plan: ReactNode;
   shelf: ReactNode;
   history: ReactNode;
+  onClose?: () => void;
 }) {
   return (
-    <>
-      <Tabs value={tab} onValueChange={(value) => onTab(value as SideTab)}>
+    <Tabs
+      value={tab}
+      onValueChange={(value) => onTab(value as SideTab)}
+      className="flex min-h-0 flex-1 flex-col"
+    >
+      <div className="flex shrink-0 items-center gap-2">
         <TabsList
           variant="underline"
           size="sm"
-          className="grid w-full shrink-0 grid-cols-3 border-b border-line"
+          className="grid w-full flex-1 grid-cols-3 border-b border-line"
         >
           <TabsTab value="plan">Plan</TabsTab>
           <TabsTab value="shelf">Shelf</TabsTab>
           <TabsTab value="history">History</TabsTab>
         </TabsList>
-      </Tabs>
+        {onClose ? (
+          <Button
+            type="button"
+            size="icon-sm"
+            variant="ghost"
+            aria-label="Close panel"
+            onClick={onClose}
+            autoFocus
+            className="shrink-0 self-start"
+          >
+            <X />
+          </Button>
+        ) : null}
+      </div>
       <div className="mt-3 min-h-0 flex-1 overflow-hidden">
         {tab === "plan" ? plan : tab === "shelf" ? shelf : history}
       </div>
-    </>
+    </Tabs>
   );
 }
 
@@ -462,6 +475,7 @@ export function ProjectShell({ projectId, projectName, editorId, onHome }: Proje
             plan={planPane}
             shelf={shelfPane}
             history={historyPane}
+            onClose={() => setPanelOpen(false)}
           />
         </PanelDrawer>
       </div>
