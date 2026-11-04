@@ -75,7 +75,8 @@
         "GradientWash({ t, width, height, ink?, accent?, paper?, flow?, scale?, speed? })   // slow domain-warped gradient",
         "GrainOverlay({ t, fps?, amount? })   // film grain keyed to the frame number",
         "HalftoneLayer({ tone, cell?, ink? })   // round-dot halftone screen as CSS",
-        "GlowWrap({ color?, radius?, strength?, children })   // soft outer glow"
+        "GlowWrap({ color?, radius?, strength?, children })   // soft outer glow",
+        "seekShadersComRenderer(renderer, t); createShadersComAdapter(() => target): SeekAdapter   // shaders.com: rebuild + paint [t, 0]"
       ]
     },
     {
@@ -144,6 +145,16 @@
         "seekTransition(draw, t, duration): paint one frame",
         "createTransitionAdapter(draw, duration): SeekAdapter"
       ]
+    },
+    {
+      "name": "shaders",
+      "summary": "shaders.com WebGPU components, MIT. Frame-locked only: createRendererFromJSON(preset), then renderFrame({deltaSeconds: t}) plus one {deltaSeconds: 0} repaint per seek \u2014 byte-identical frames for the same t in any order. No WebGL fallback; needs WebGPU (headless chromium runs it on SwiftShader). Props are named uniforms (colors as #rrggbb, numbers with min/max); sample keyframed props at t into buildPreset.",
+      "api": [
+        "import { createRendererFromJSON } from 'shaders/core'",
+        "seekShadersComRenderer(renderer, t): advance by t, then settle with a zero repaint",
+        "createShadersComAdapter(() => ({ canvas, buildPreset, createRenderer })): SeekAdapter   // rebuilds per seek, coalesces overlaps"
+      ],
+      "prefix": true
     }
   ]
 }

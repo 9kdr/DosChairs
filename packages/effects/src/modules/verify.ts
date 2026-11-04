@@ -43,6 +43,16 @@ export interface VerifyOutcome {
    * when there is no canvas or its buffer cannot be read.
    */
   paintCoverage?: number | null;
+  /**
+   * Worst shaders.com canvas status seen ("unavailable" beats "pending"
+   * beats "ready"); null when the module paints no shaders.com canvas.
+   * "ready" means the renderer initialized and submitted its frames, but
+   * the dump harness runs on virtual time, which expires before real GPU
+   * work finishes — so a settled paint usually still reads "pending"
+   * here. Pixel proof for these modules lives in screenshots, not this
+   * field. "unavailable" always means WebGPU failed on this host.
+   */
+  shadersStatus?: string | null;
 }
 
 const VERIFY_TIMEOUT_MS = 60_000;
@@ -63,11 +73,19 @@ export function findChromium(): string | null {
     process.env["PLAYWRIGHT_BROWSERS_PATH"]?.trim() ||
     join(process.env["HOME"] ?? "", ".cache", "ms-playwright");
   try {
-    for (const name of readdirSync(cache)) {
-      if (name.startsWith("chromium-")) {
-        const hit = found(join(cache, name, "chrome-linux", "chrome"));
+    const names = readdirSync(cache);
+    // Full chromium first: the stripped headless shell can create a WebGPU
+    // device yet fail to present the canvas, which reads as a blank frame.
+    for (const name of names) {
+      if (name.startsWith("chromium-") && !name.startsWith("chromium_headless_shell-")) {
+        const hit = found(join(cache, name, "chrome-linux", "chrome"))
+          ?? found(join(cache, name, "chrome-linux64", "chrome"))
+          ?? found(join(cache, name, "chrome-linux", "headless_shell"));
         if (hit) return hit;
-      } else if (name.startsWith("chromium_headless_shell-")) {
+      }
+    }
+    for (const name of names) {
+      if (name.startsWith("chromium_headless_shell-")) {
         const hit = found(join(cache, name, "chrome-headless-shell-linux64", "chrome-headless-shell"));
         if (hit) return hit;
       }
@@ -123,7 +141,13 @@ stage.style.height = height + "px";
 function collapse(s) { return String(s).replace(/\\s+/g, " ").trim().slice(0, 200); }
 
 function measure() {
-  const facts = { text: "", covers: [], shaderFailed: false, shaderLog: null, paintCoverage: null };
+  const facts = { text: "", covers: [], shaderFailed: false, shaderLog: null, paintCoverage: null, shadersStatus: null };
+  for (const c of stage.querySelectorAll("canvas")) {
+    const s = c.dataset ? c.dataset.shadersStatus : null;
+    if (s === "unavailable") facts.shadersStatus = "unavailable";
+    else if (s === "pending" && facts.shadersStatus !== "unavailable") facts.shadersStatus = "pending";
+    else if (s === "ready" && facts.shadersStatus === null) facts.shadersStatus = "ready";
+  }
   try {
     facts.text = collapse(stage.innerText ?? stage.textContent ?? "");
     const failed = stage.querySelector("[data-shader-failed]");
@@ -205,6 +229,26 @@ try {
   requestAnimationFrame(() => requestAnimationFrame(() => {
     try { measure(); } catch { /* keep the synchronous facts */ }
   }));
+  // shaders.com paints asynchronously: once no canvas is still pending,
+  // refine the facts one last time so coverage sees the settled frame.
+  // The synchronous facts above already stand if the budget runs out first.
+  let waits = 0;
+  const settleTimer = setInterval(() => {
+    try {
+      let pending = false;
+      for (const c of stage.querySelectorAll("canvas")) {
+        if (c.dataset && c.dataset.shadersStatus === "pending") { pending = true; break; }
+      }
+      waits++;
+      // Up to ~100 virtual seconds: SwiftShader paints 1920x1080 slowly,
+      // and only shaders.com canvases ever read "pending", so other
+      // modules settle on the first poll with no slowdown.
+      if (!pending || waits > 1000) {
+        clearInterval(settleTimer);
+        measure();
+      }
+    } catch { clearInterval(settleTimer); }
+  }, 100);
 } catch (err) {
   document.getElementById("result").textContent = JSON.stringify({
     text: "verify mount crashed: " + String((err && err.message) || err),
@@ -273,7 +317,14 @@ export async function verifyInBrowser(
       const child = spawn(
         chromium,
         [
-          "--headless", "--no-sandbox", "--disable-gpu", "--enable-unsafe-swiftshader",
+          // Software rendering everywhere (SwiftShader), so frames match
+          // across machines: WebGL2 for the ShaderPass modules, WebGPU for
+          // shaders.com. No --disable-gpu: it also disables the WebGPU
+          // adapter.
+          "--headless", "--no-sandbox", "--disable-dev-shm-usage",
+          "--enable-unsafe-webgpu", "--ignore-gpu-blocklist", "--enable-webgl",
+          "--use-angle=swiftshader", "--enable-unsafe-swiftshader",
+          "--use-vulkan=swiftshader", "--enable-features=Vulkan",
           "--virtual-time-budget=15000", "--timeout=45000", "--dump-dom",
           `http://127.0.0.1:${port}/`,
         ],
@@ -303,7 +354,7 @@ export async function verifyInBrowser(
       throw new Error(`browser verification found no result in the page (dump head: ${head || "(empty)"})`);
     }
     const facts = JSON.parse(match[1] ?? "{}") as {
-      text?: string; covers?: string[]; shaderFailed?: boolean; shaderLog?: string | null; paintCoverage?: number | null;
+      text?: string; covers?: string[]; shaderFailed?: boolean; shaderLog?: string | null; paintCoverage?: number | null; shadersStatus?: string | null;
     };
     return {
       skipped: false,
@@ -312,6 +363,7 @@ export async function verifyInBrowser(
       shaderFailed: facts.shaderFailed === true,
       shaderLog: typeof facts.shaderLog === "string" ? facts.shaderLog : null,
       paintCoverage: typeof facts.paintCoverage === "number" ? facts.paintCoverage : null,
+      shadersStatus: typeof facts.shadersStatus === "string" ? facts.shadersStatus : null,
     };
   } finally {
     server.close();

@@ -21,4 +21,5 @@ export * from "./anime.js";
 export * from "./matter.js";
 export * from "./transitions.js";
 export * from "./flubber.js";
+export * from "./shaderscom.js";
 export * from "./presets.js";
