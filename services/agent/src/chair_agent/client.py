@@ -1,4 +1,6 @@
 import os
+import threading
+import time
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Literal, Protocol
@@ -122,6 +124,25 @@ def keys_configured(env: Mapping[str, str] | None = None) -> dict[str, bool]:
     }
 
 
+_AUTH_LOCK = threading.Lock()
+_AUTH_STATUS: dict[str, str | None] = {"last_auth_error": None, "last_auth_error_at": None}
+
+
+def note_auth_error(error: str) -> None:
+    """Remember the last 401/403 so /health stops claiming a stale key works."""
+    with _AUTH_LOCK:
+        _AUTH_STATUS["last_auth_error"] = error
+        _AUTH_STATUS["last_auth_error_at"] = time.strftime(
+            "%Y-%m-%dT%H:%M:%SZ", time.gmtime()
+        )
+
+
+def auth_status_snapshot() -> dict[str, str | None]:
+    """Last model auth failure and when it happened; both None when never."""
+    with _AUTH_LOCK:
+        return dict(_AUTH_STATUS)
+
+
 class HttpxTransport:
     def __init__(self, base_url: str, *, client: httpx.Client | None = None) -> None:
         self.base_url = base_url.rstrip("/")
@@ -132,7 +153,14 @@ class HttpxTransport:
         if api_key:
             headers["Authorization"] = f"Bearer {api_key}"
         response = self._client.post(f"{self.base_url}{path}", json=body, headers=headers)
-        response.raise_for_status()
+        try:
+            response.raise_for_status()
+        except httpx.HTTPStatusError as error:
+            if error.response.status_code in (401, 403):
+                note_auth_error(
+                    f"{error.response.status_code} from {self.base_url}{path}"
+                )
+            raise
         payload = response.json()
         if not isinstance(payload, dict):
             raise UnexpectedResponse

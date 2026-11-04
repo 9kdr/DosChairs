@@ -24,7 +24,13 @@ from chair_agent.client import (
 from chair_agent.models import TOOLS
 
 _TOOL_NAMES = frozenset(tool.name for tool in TOOLS)
-DISPATCHABLE_INTENTS = frozenset({"silence", "filler"})
+
+#: Sound-design intents the executor can dispatch to SFX and ducking ops.
+#: The model planner already emits these; the rules fallback detects them
+#: from the same brief words so a keyless run still plans them.
+SOUND_INTENTS = ("riser_into_cut", "tape_stop_outro", "duck_music_under_dialogue")
+
+DISPATCHABLE_INTENTS = frozenset({"silence", "filler", *SOUND_INTENTS})
 
 _STATUS_LOCK = threading.Lock()
 _STATUS: dict[str, Any] = {"plans": 0, "last_plan_ms": None, "last_error": None}
@@ -60,6 +66,12 @@ def _intents(brief: str) -> list[str]:
         intents.append("silence")
     if "filler" in lowered:
         intents.append("filler")
+    if "riser" in lowered or "build-up" in lowered or "buildup" in lowered:
+        intents.append("riser_into_cut")
+    if "tape stop" in lowered or "tape-stop" in lowered or "tape_stop" in lowered:
+        intents.append("tape_stop_outro")
+    if "duck" in lowered:
+        intents.append("duck_music_under_dialogue")
     return intents
 
 
@@ -84,13 +96,25 @@ def plan_rules(brief: str) -> Plan:
         raise ValueError("brief must be a non-empty string")
     intents = _intents(brief)
     if not intents:
-        raise ValueError("brief names no cleanup v1 plans: say 'silence' or 'filler'")
+        raise ValueError(
+            "brief names nothing Chair plans yet: say 'silence', 'filler', "
+            "'riser', 'tape stop', or 'duck'"
+        )
     steps = []
-    if "silence" in intents:
+    sound = [intent for intent in intents if intent in SOUND_INTENTS]
+    if "silence" in intents or "duck_music_under_dialogue" in intents:
         steps.append(PlanStep(tool="measure_audio", goal="find silent spans on the proxy"))
-    if "filler" in intents:
+    if "filler" in intents or "duck_music_under_dialogue" in intents:
         steps.append(PlanStep(tool="transcribe", goal="find filler words on the proxy"))
-    steps.append(PlanStep(tool="editor_op", goal="cut the flagged spans"))
+    if sound:
+        steps.append(
+            PlanStep(
+                tool="editor_op",
+                goal="place SFX and ducking on a new audio track: " + ", ".join(sound),
+            )
+        )
+    elif "silence" in intents or "filler" in intents:
+        steps.append(PlanStep(tool="editor_op", goal="cut the flagged spans"))
     steps.append(PlanStep(tool="render_preview", goal="render a low-res preview"))
     unknown = [step.tool for step in steps if step.tool not in _TOOL_NAMES]
     if unknown:

@@ -107,6 +107,117 @@ _STATUS: dict[str, str | None] = {"last_pick_at": None, "last_error": None}
 _INDEX_CACHE: dict[str, object] = {"entries": [], "counts": {}}
 
 
+#: SFX kinds the sidecar can synthesize from scratch (stdlib DSP, no assets).
+SYNTH_KINDS = ("riser", "tape-stop", "whoosh", "impact")
+
+_SYNTH_TAGS: dict[str, frozenset[str]] = {
+    "riser": frozenset({"riser", "uplifter"}),
+    "tape-stop": frozenset({"tape", "stop"}),
+    "whoosh": frozenset({"whoosh", "swoosh"}),
+    "impact": frozenset({"impact", "hit", "braam", "stinger", "thump", "snap"}),
+}
+
+
+def sidecar_url(env: Mapping[str, str] | None = None) -> str:
+    """Sidecar base URL: CHAIR_SIDECAR_URL or the local default."""
+    from chair_agent.shots import DEFAULT_SIDECAR_URL
+
+    source: Mapping[str, str] = os.environ if env is None else env
+    return (source.get("CHAIR_SIDECAR_URL", "").strip() or DEFAULT_SIDECAR_URL)
+
+
+def sfx_for_kind(entries: Sequence[SoundEntry], kind: str) -> SoundEntry | None:
+    """First library entry tagged for the kind. None when the shelf is bare."""
+    wanted = _SYNTH_TAGS.get(kind, frozenset({kind}))
+    for entry in entries:
+        if wanted & set(entry.tags):
+            return entry
+    return None
+
+
+def _poll_sidecar_job(base_url: str, tool: str, body: dict) -> dict:
+    """Submit a sidecar job and poll it to done. Raises on failure/timeout."""
+    payload = json.dumps(body).encode()
+    submit = urllib.request.Request(
+        f"{base_url.rstrip('/')}/jobs/{tool}",
+        data=payload, headers={"Content-Type": "application/json"},
+    )
+    try:
+        with urllib.request.urlopen(submit, timeout=30) as response:
+            ticket = json.loads(response.read().decode("utf-8"))
+    except OSError as error:
+        raise RuntimeError(f"sidecar {tool} did not accept the job: {error}") from error
+    job_id = ticket.get("id")
+    if not isinstance(job_id, str) or not job_id:
+        raise RuntimeError(f"sidecar {tool} returned no job id")
+    deadline = time.time() + 300
+    while time.time() < deadline:
+        try:
+            with urllib.request.urlopen(
+                f"{base_url.rstrip('/')}/jobs/{job_id}", timeout=30
+            ) as response:
+                job = json.loads(response.read().decode("utf-8"))
+        except OSError as error:
+            raise RuntimeError(f"sidecar {tool} job went quiet: {error}") from error
+        status = job.get("status")
+        if status == "done":
+            result = job.get("result")
+            if not isinstance(result, dict):
+                raise RuntimeError(f"sidecar {tool} finished without a result")
+            return result
+        if status == "failed":
+            raise RuntimeError(f"sidecar {tool} failed: {job.get('error')}")
+        if status not in ("queued", "running"):
+            raise RuntimeError(f"sidecar {tool} has unknown status: {status!r}")
+        time.sleep(0.5)
+    raise RuntimeError(f"sidecar {tool} timed out")
+
+
+def fetch_synth_entry(kind: str, base_url: str) -> SoundEntry:
+    """Synthesize one SFX file in the sidecar; index it as a synth entry."""
+    if kind not in SYNTH_KINDS:
+        raise ValueError(f"sidecar synthesizes {', '.join(SYNTH_KINDS)}: not {kind!r}")
+    result = _poll_sidecar_job(base_url, "synth_sfx", {"kind": kind})
+    path = result.get("path")
+    if not isinstance(path, str) or not path:
+        raise RuntimeError("sidecar synth_sfx finished without a path")
+    duration = result.get("duration_seconds")
+    return SoundEntry(
+        id=f"synth:{kind}",
+        name=f"{kind} (synth)",
+        path=path,
+        source="synth",
+        license="generated in the sidecar",
+        duration=float(duration) if isinstance(duration, (int, float)) else None,
+        tags=sorted(_SYNTH_TAGS[kind]),
+    )
+
+
+def render_tape_stop_entry(
+    base_url: str, source: str, *, at_seconds: float, duration: float = 1.5
+) -> SoundEntry:
+    """Render the program tail through a tape stop in the sidecar.
+
+    Returns the new audio file as a synth entry. Never touches the source.
+    """
+    result = _poll_sidecar_job(base_url, "tape_stop", {
+        "source": source, "at": at_seconds, "duration": duration,
+    })
+    path = result.get("path")
+    if not isinstance(path, str) or not path:
+        raise RuntimeError("sidecar tape_stop finished without a path")
+    heard = result.get("duration_seconds")
+    return SoundEntry(
+        id="synth:tape-stop-render",
+        name="tape stop (rendered tail)",
+        path=path,
+        source="synth",
+        license="generated in the sidecar",
+        duration=float(heard) if isinstance(heard, (int, float)) else duration,
+        tags=["tape", "stop"],
+    )
+
+
 def status_snapshot() -> dict[str, object]:
     """Health counters: library size per source, last pick time, last error."""
     with _STATUS_LOCK:

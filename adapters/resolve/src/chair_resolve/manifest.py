@@ -23,6 +23,10 @@ class Manifest(BaseModel):
     version: str
     capabilities: Capabilities
     fallbacks: dict[str, str]
+    audio_capabilities: dict[str, bool] = {
+        "place_sfx_on_new_track": True,
+        "volume_keyframes": False,
+    }
 
 
 MANIFEST = Manifest(
@@ -49,5 +53,11 @@ MANIFEST = Manifest(
         "fusionMacros": "render the effect to a clip and place it by hand",
         "templateScan": "no Fusion folder found: name the macro in the brief by hand",
         "ografTitles": "install with install_ograf, then drag from Effects > Titles > OGraf",
+        "placeSfx": "import the SFX file into the media pool, then append it to a new audio track by hand",
+        "audioKeyframes": (
+            "Studio scripting cannot set Fairlight volume keyframes: "
+            "select the music clip in Fairlight, open the Automation lane, "
+            "and add the -12 dB ducking ramps from the changeset patch by hand"
+        ),
     },
 )

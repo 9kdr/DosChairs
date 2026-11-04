@@ -96,6 +96,7 @@ class Job(BaseModel):
     changeset: ChangesetProposal | None = None
     planner: str | None = None
     message: str | None = None
+    skipped: list[dict[str, Any]] = []
     billable: bool | None = None
     webhook_attempts: int = 0
     webhook_delivered: bool = False
@@ -265,6 +266,7 @@ class JobController:
         *,
         planner: str | None = None,
         message: str | None = None,
+        skipped: list[dict[str, Any]] | None = None,
     ) -> Job:
         with self._lock:
             job = self._running(request_id)
@@ -278,6 +280,7 @@ class JobController:
             job.changeset = changeset
             job.planner = planner
             job.message = message
+            job.skipped = skipped or []
             self._save()
         self._notify(request_id)
         return self.get(request_id)
@@ -438,6 +441,8 @@ def _envelope(job: Job) -> dict[str, Any]:
         payload = {"artifacts": [item.model_dump(mode="json") for item in job.artifacts]}
         if job.changeset is not None:
             payload["changeset"] = job.changeset.model_dump(mode="json")
+        if job.skipped:
+            payload["skipped"] = job.skipped
     return {
         "request_id": job.request_id,
         "status": job.status,
@@ -454,6 +459,7 @@ class HandlerResult(BaseModel):
     ops: list[dict[str, Any]] = []
     planner: str | None = None
     message: str | None = None
+    skipped: list[dict[str, Any]] = []
 
 
 class Moderated(Exception):
@@ -495,6 +501,7 @@ def run_worker(
                     result.ops,
                     planner=result.planner,
                     message=result.message,
+                    skipped=result.skipped,
                 )
             except Exception as error:
                 # A bad handler result fails its job, never the worker.
