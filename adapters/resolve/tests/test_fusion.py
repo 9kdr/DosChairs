@@ -262,6 +262,34 @@ def test_remove_effect_fallback_is_a_noop() -> None:
     assert item.loaded == [] and item.deleted == []
 
 
+def test_remove_effect_unwinds_when_delete_is_refused() -> None:
+    """Sole version: delete refused, so the build group is undone (#295)."""
+    FakeComp = _FAKES["FakeComp"]
+    item = FakeItem()  # sole version: names == ["Comp 1"]
+    comp = FakeComp()
+    comp.StartUndo("chair build")
+    comp.AddTool("Background")
+    item.comps["Comp 1"] = comp
+    op = {"comp_name": "Comp 1", "prev_comp_name": None,
+          "undo": {"prev_comp_name": None}}
+    assert remove_effect(item, op) is True
+    assert item.loaded == []
+    assert item.deleted == ["Comp 1"]  # tried, refused, fell through
+    assert item.GetFusionCompNameList() == ["Comp 1"]
+    assert len(comp.GetToolList(False)) == 2  # bare version stands
+
+
+def test_remove_effect_fails_without_any_undo() -> None:
+    import types
+
+    item = FakeItem()  # sole version: names == ["Comp 1"]
+    item.comps["Comp 1"] = types.SimpleNamespace()  # no Undo, no tools
+    op = {"comp_name": "Comp 1", "prev_comp_name": None,
+          "undo": {"prev_comp_name": None}}
+    assert remove_effect(item, op) is False
+    assert item.loaded == []
+
+
 def test_add_effect_import_fast_path_when_ingested(tmp_path: Path) -> None:
     """Opt-in fast path: a working import keeps the old file behavior."""
     spec = _spec()
