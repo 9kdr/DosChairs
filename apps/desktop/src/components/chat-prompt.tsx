@@ -8,7 +8,7 @@ import type {
 } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { Button } from "@/components/ui/button";
-import { Menu, MenuPopup, MenuRadioGroup, MenuRadioItem, MenuTrigger } from "@/components/ui/menu";
+import { Menu, MenuGroup, MenuGroupLabel, MenuPopup, MenuRadioGroup, MenuRadioItem, MenuTrigger } from "@/components/ui/menu";
 import { acceptsChairRef, readChairRefs, type ChairRef } from "@/lib/chair-ref";
 import { useServiceHealth } from "@/lib/services/useServices";
 import { cn } from "@/lib/utils";
@@ -61,6 +61,27 @@ export function orchestratorLabel(option: string): string {
   const family = /^muse-([a-z]+)/.exec(id)?.[1];
   if (family == null) return id;
   return `Muse ${family.charAt(0).toUpperCase()}${family.slice(1)}`;
+}
+
+export type OrchestratorGroup = { provider: string; items: string[] };
+
+/**
+ * Picker options grouped per provider for the open menu: each group renders
+ * under a coss Menu group label (e.g. "Meta") instead of repeating the
+ * parenthesized suffix on every row. Order follows the options.
+ */
+export function orchestratorGroups(options: readonly string[]): OrchestratorGroup[] {
+  const groups: OrchestratorGroup[] = [];
+  for (const option of options) {
+    const provider = / \(([^()]*)\)$/.exec(option)?.[1] ?? "Other";
+    const last = groups[groups.length - 1];
+    if (last != null && last.provider === provider) {
+      last.items.push(option);
+    } else {
+      groups.push({ provider, items: [option] });
+    }
+  }
+  return groups;
 }
 
 /** The stored pick when still offered, else the agent's planner model when offered, else the first available model, or null. */
@@ -1206,24 +1227,29 @@ export function ChatPrompt({
                               editorRef.current?.focus();
                             }}
                           >
-                            {options.map((item) => {
-                              const isUnsupported = item.endsWith("(Anthropic)");
-                              return (
-                                <MenuRadioItem
-                                  key={item}
-                                  value={item}
-                                  disabled={isUnsupported}
-                                  closeOnClick={!isUnsupported}
-                                >
-                                  <span>{item}</span>
-                                  {isUnsupported ? (
-                                    <span className="ml-1 text-xs text-neutral-500">
-                                      (unsupported)
-                                    </span>
-                                  ) : null}
-                                </MenuRadioItem>
-                              );
-                            })}
+                            {orchestratorGroups(options).map((group) => (
+                              <MenuGroup key={group.provider}>
+                                <MenuGroupLabel>{group.provider}</MenuGroupLabel>
+                                {group.items.map((item) => {
+                                  const isUnsupported = item.endsWith("(Anthropic)");
+                                  return (
+                                    <MenuRadioItem
+                                      key={item}
+                                      value={item}
+                                      disabled={isUnsupported}
+                                      closeOnClick={!isUnsupported}
+                                    >
+                                      <span>{orchestratorLabel(item)}</span>
+                                      {isUnsupported ? (
+                                        <span className="ml-1 text-xs text-neutral-500">
+                                          (unsupported)
+                                        </span>
+                                      ) : null}
+                                    </MenuRadioItem>
+                                  );
+                                })}
+                              </MenuGroup>
+                            ))}
                           </MenuRadioGroup>
                         </MenuPopup>
                       </Menu>

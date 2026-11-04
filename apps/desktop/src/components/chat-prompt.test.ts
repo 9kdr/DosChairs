@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { orchestratorLabel, orchestratorOptions, resolveOrchestrator } from "./chat-prompt";
+import { orchestratorGroups, orchestratorLabel, orchestratorOptions, resolveOrchestrator } from "./chat-prompt";
 import type { ProviderId } from "../settings/providers";
 
 const NO_KEYS: Record<ProviderId, string | null> = {
@@ -117,6 +117,22 @@ describe("orchestrator picker", () => {
     expect(orchestratorLabel("muse-spark-1 (Meta)")).toBe("Muse Spark");
     expect(orchestratorLabel("muse-wonder-1.0 (Meta)")).toBe("Muse Wonder");
     expect(orchestratorLabel("gpt-x (OpenAI)")).toBe("gpt-x");
+  });
+
+  it("groups options per provider for the menu group labels", () => {
+    const options = orchestratorOptions(
+      { ...NO_KEYS, meta: "key", openai: "sk-x" },
+      {
+        enabled: ALL_ON,
+        customModels: { ...NO_CUSTOM, openai: ["gpt-x"] },
+        disabledModels: NONE_OFF,
+      },
+    );
+    expect(orchestratorGroups(options)).toEqual([
+      { provider: "Meta", items: ["muse-wonder-1.0 (Meta)", "muse-spark-1 (Meta)"] },
+      { provider: "OpenAI", items: ["gpt-x (OpenAI)"] },
+    ]);
+    expect(orchestratorGroups([])).toEqual([]);
   });
 
   it("prefers the agent planner when nothing is saved, a saved choice still wins", () => {
