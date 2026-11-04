@@ -30,11 +30,11 @@ export interface RenderOptions {
   fps: number;
   durationSec: number;
   /** Inspector baseline props (static overrides on top of the defaults). */
-  props?: Record<string, unknown>;
+  props?: Record<string, unknown> | undefined;
   /** Baked keyframe table {prop: [[sec, value], ...]} for animated props. */
-  keyframes?: Record<string, [number, unknown][]>;
+  keyframes?: Record<string, [number, unknown][]> | undefined;
   outDir: string;
-  chromium?: string;
+  chromium?: string | undefined;
 }
 
 export interface RenderOutcome {

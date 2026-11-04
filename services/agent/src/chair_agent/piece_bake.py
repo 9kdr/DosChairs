@@ -282,7 +282,9 @@ def bake_for_apply(
         fps = float(spec.get("fps", 0))
         duration_sec = float(spec.get("durationSec", 0))
     except (TypeError, ValueError) as error:
-        raise BakeError(f"bake needs width, height, fps, durationSec: {error}")
+        raise BakeError(
+            f"bake needs width, height, fps, durationSec: {error}"
+        ) from error
     merged = dict(sequences or {})
     for plan in plans:
         outcome = bake_module(

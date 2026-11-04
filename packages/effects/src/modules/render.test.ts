@@ -110,7 +110,7 @@ describe("renderFrames", () => {
     expect(outcome.files).toHaveLength(2);
     const [first, second] = outcome.files.map((f) => readFileSync(f));
     for (const png of [first, second]) {
-      expect(png.subarray(0, 8)).toEqual(
+      expect(png!.subarray(0, 8)).toEqual(
         Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
       );
       expect(pngSize(png!)).toEqual({ width: 480, height: 270 });
