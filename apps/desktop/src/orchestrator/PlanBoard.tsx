@@ -203,11 +203,11 @@ export function PlanBoard({ items, digests, digesting, onChange, onDigest, onFil
             const cover = item.images[0];
             const digest = digests[item.id];
             const host = boardHost(item.url);
-            // A link keeps the default "Link" title until the person names
-            // it; the card shows the host until then. Editing still edits
-            // the stored title.
+            // A link keeps its default title ("Link", "Link 2") until the
+            // person names it; the card shows the host until then. Editing
+            // still edits the stored title.
             const title =
-              item.kind === "link" && (item.title === "" || item.title === "Link")
+              item.kind === "link" && (item.title === "" || /^Link( \d+)?$/.test(item.title))
                 ? (host ?? item.title)
                 : item.title;
             const name = title || "board item";
