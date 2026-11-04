@@ -208,6 +208,7 @@ def test_gradient_counts_as_background_scope() -> None:
     assert modules.scope_from_brief("a liquid gradient") == {
         "wantsBackground": True, "wantsText": False,
     }
+    assert modules.scope_from_brief("lower third for the host")["wantsText"] is True
 
 
 def test_empty_brief_fails() -> None:
@@ -217,25 +218,35 @@ def test_empty_brief_fails() -> None:
         modules.generate_module("  ")
 
 
-def test_generate_adapts_reuse_without_a_model(isolated, monkeypatch) -> None:
+def test_generate_adapts_reuse_through_the_model(isolated, monkeypatch) -> None:
     seen: list = []
 
     def fake_check(module_id, source, env, scope=None):
         seen.append((source, scope))
         return ok_report()
 
-    client = FakeClient([fenced(TEXT_SRC)])
+    values = {"speed": 0.2, "colorA": "#0a1a3f"}
+    client = FakeClient([json.dumps(values)])
     monkeypatch.setattr(modules, "_check_source", fake_check)
     record = modules.generate_module(PROOF, client=client)
     assert record is not None
-    assert client.calls == 0  # adapt is deterministic: the model is never asked
+    assert client.calls == 1
     assert "mesh-gradient" in seen[0][0]
     assert seen[0][1] == {"wantsBackground": True, "wantsText": False}
+    assert "default: 0.2" in seen[0][0]
     assert record.brief == "a liquid gradient"
-    assert "Adapted from mesh-gradient" in record.notes
+    assert "Adapted from mesh-gradient with muse-spark-1.3-contributor" in record.notes
     assert "Add Text+ 'LAUNCH' in Resolve" in record.notes
     snap = piece_plan.status_snapshot()
     assert snap["adapted"] == 1 and snap["planned"] == 1
+
+
+def test_generate_adapts_without_a_model(isolated, monkeypatch) -> None:
+    monkeypatch.setattr(modules, "_check_source", lambda *a: ok_report())
+    _no_model(monkeypatch)
+    record = modules.generate_module(PROOF)
+    assert record is not None
+    assert "(deterministic fallback: no model)" in record.notes
 
 
 def test_generate_all_native_returns_guidance(isolated) -> None:
@@ -282,7 +293,59 @@ def test_generate_with_passed_plan_counts_once(isolated, monkeypatch) -> None:
     assert piece_plan.status_snapshot()["planned"] == 1
 
 
-def test_adapt_applies_brief_values(isolated, monkeypatch) -> None:
+def _no_model(monkeypatch) -> None:
+    def boom(model=None):
+        raise InvalidModule("module generation needs a model: test")
+
+    monkeypatch.setattr(modules, "_model_client", boom)
+
+
+def test_adapt_falls_back_without_a_model(isolated, monkeypatch) -> None:
+    seen: list = []
+
+    def fake_check(module_id, source, env, scope=None):
+        seen.append(source)
+        return ok_report()
+
+    monkeypatch.setattr(modules, "_check_source", fake_check)
+    _no_model(monkeypatch)
+    record = modules.adapt_library_piece(
+        "dither-reveal", "dither title saying HELLO in #FF0000"
+    )
+    assert 'default: "HELLO"' in seen[0]
+    assert 'default: "#ff0000"' in seen[0]
+    assert "(deterministic fallback: no model)" in record.notes
+    assert "(colorBack, label from the brief)" in record.notes
+    with pytest.raises(InvalidModule, match="unknown library piece"):
+        modules.adapt_library_piece("nope", "a brief")
+    with pytest.raises(InvalidModule, match="unknown library piece"):
+        modules.adapt_library_piece("../x", "a brief")
+
+
+def test_adapt_uses_model_values(isolated, monkeypatch) -> None:
+    seen: list = []
+
+    def fake_check(module_id, source, env, scope=None):
+        seen.append(source)
+        return ok_report()
+
+    values = {"speed": 0.2, "colorBack": "#0A1A3F", "colorFront": "#7FB2FF"}
+    client = FakeClient([json.dumps(values)])
+    monkeypatch.setattr(modules, "_check_source", fake_check)
+    record = modules.adapt_library_piece(
+        "dither-reveal", "a slow dither title in deep blue", client=client
+    )
+    assert client.calls == 1
+    assert "speed" in client.last_messages[0].content
+    assert "colorBack" in client.last_messages[0].content
+    assert "default: 0.2" in seen[0]
+    assert 'default: "#0a1a3f"' in seen[0]
+    assert 'default: "#7fb2ff"' in seen[0]
+    assert "with muse-spark-1.3-contributor" in record.notes
+    assert "(colorBack, colorFront, speed from the brief)" in record.notes
+
+
+def test_adapt_falls_back_on_bad_model_values(isolated, monkeypatch) -> None:
     seen: list = []
 
     def fake_check(module_id, source, env, scope=None):
@@ -291,15 +354,73 @@ def test_adapt_applies_brief_values(isolated, monkeypatch) -> None:
 
     monkeypatch.setattr(modules, "_check_source", fake_check)
     record = modules.adapt_library_piece(
-        "dither-reveal", "dither title saying HELLO in #FF0000"
+        "dither-reveal", "a slow dither title",
+        client=FakeClient(['{"nope": 1}']),
     )
-    assert 'default: "HELLO"' in seen[0]
-    assert 'default: "#ff0000"' in seen[0]
-    assert "(colorBack, label from the brief)" in record.notes
-    with pytest.raises(InvalidModule, match="unknown library piece"):
-        modules.adapt_library_piece("nope", "a brief")
-    with pytest.raises(InvalidModule, match="unknown library piece"):
-        modules.adapt_library_piece("../x", "a brief")
+    assert "(deterministic fallback: invalid model values)" in record.notes
+    assert 'label: { type: "string", default: "Liquid Light"' in seen[0]
+
+    class BoomClient:
+        models = type("M", (), {"executor": "boom"})()
+
+        def execute(self, messages):
+            raise RuntimeError("network down")
+
+    record = modules.adapt_library_piece(
+        "dither-reveal", "a slow dither title", client=BoomClient()
+    )
+    assert "(deterministic fallback: model call failed)" in record.notes
+
+
+def test_adapt_falls_back_when_check_rejects_model_values(
+    isolated, monkeypatch
+) -> None:
+    calls: list = []
+
+    def flaky_check(module_id, source, env, scope=None):
+        calls.append(source)
+        if len(calls) == 1:
+            return ok_report(ok=False, errors=["model values broke the frame"])
+        return ok_report()
+
+    monkeypatch.setattr(modules, "_check_source", flaky_check)
+    record = modules.adapt_library_piece(
+        "dither-reveal", "a slow dither title",
+        client=FakeClient(['{"speed": 0.2}']),
+    )
+    assert "(deterministic fallback: model values failed the check)" in record.notes
+    assert piece_plan.status_snapshot()["adapted"] == 1
+
+
+def test_prop_schema_and_value_validation() -> None:
+    source = (
+        'speed: { type: "number", min: 0, max: 2, default: 1, title: "Speed" },\n'
+        'ink: { type: "color", default: "#101018", title: "Ink" },\n'
+        'label: { type: "string", default: "Hi", title: "Label" },\n'
+        'on: { type: "boolean", default: false, title: "On" },\n'
+    )
+    schema = modules._prop_schema(source)
+    assert [(p["id"], p["type"]) for p in schema] == [
+        ("speed", "number"), ("ink", "color"), ("label", "string"), ("on", "boolean"),
+    ]
+    assert (schema[0]["min"], schema[0]["max"]) == (0.0, 2.0)
+    good = modules._validate_values(
+        schema, {"speed": 0.2, "ink": "#0A1A3F", "label": "Yo", "on": True}
+    )
+    assert good == {"speed": 0.2, "ink": "#0a1a3f", "label": "Yo", "on": True}
+    for bad in (
+        {"nope": 1},
+        {"speed": 9},
+        {"speed": "fast"},
+        {"speed": True},
+        {"ink": "blue"},
+        {"ink": "#12345"},
+        {"label": 5},
+        {"on": "yes"},
+        ["speed"],
+    ):
+        with pytest.raises(InvalidModule):
+            modules._validate_values(schema, bad)
 
 
 def test_plan_counts_reach_health(isolated) -> None:
@@ -357,7 +478,8 @@ def test_http_generate_guidance_for_all_native(isolated) -> None:
 
 
 @needs_toolchain
-def test_http_generate_adapts_reuse(isolated) -> None:
+def test_http_generate_adapts_reuse(isolated, monkeypatch) -> None:
+    _no_model(monkeypatch)  # deterministic in any env, even with a key
     server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
     port = server.server_address[1]
     threading.Thread(target=server.serve_forever, daemon=True).start()

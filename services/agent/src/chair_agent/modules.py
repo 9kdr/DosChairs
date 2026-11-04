@@ -15,6 +15,7 @@ this module drives that CLI. Nothing here touches the timeline.
 from __future__ import annotations
 
 import json
+import math
 import os
 import re
 import shutil
@@ -537,6 +538,7 @@ _BACKGROUND_WORDS = {
 _TEXT_WORDS = {
     "text", "title", "caption", "says", "say", "label", "word", "words",
     "letter", "letters", "type", "typographic", "typography", "heading", "subtitle",
+    "third",
 }
 
 
@@ -594,57 +596,170 @@ def register_source(
     return record
 
 
+_PROP_LINE = re.compile(
+    r'^\s*(?P<id>[\w$]+): \{\s*type: "(?P<kind>string|color|number|boolean)"'
+    r"(?P<rest>.*)\}\s*,?\s*$"
+)
 _PROP_DEFAULT = re.compile(
-    r'^(?P<head>\s*(?P<id>[\w$]+): \{\s*type: "(?P<kind>string|color)",'
-    r'\s*default: ")(?P<value>[^"]*)(?P<tail>".*)$'
+    r'^(?P<head>\s*(?P<id>[\w$]+): \{\s*type: "(?P<kind>string|color|number|boolean)",'
+    r'.*?\s*default: )(?P<value>"(?:[^"\\]|\\.)*"|[^,}]+)(?P<tail>[,}].*)$'
 )
 
 
-def _apply_brief_values(
-    source: str, *, texts: list[str], colors: list[str]
+def _prop_schema(source: str) -> list[dict[str, Any]]:
+    """The gold module's prop schema, parsed from its props block."""
+    schema: list[dict[str, Any]] = []
+    for line in source.split("\n"):
+        match = _PROP_LINE.match(line)
+        if match is None:
+            continue
+        entry: dict[str, Any] = {"id": match["id"], "type": match["kind"]}
+        rest = match["rest"]
+        ranged = re.search(
+            r"min:\s*(-?[\d.]+),\s*max:\s*(-?[\d.]+),\s*default:\s*(-?[\d.]+)", rest
+        )
+        if ranged is not None:
+            entry["min"], entry["max"], entry["default"] = (
+                float(group) for group in ranged.groups()
+            )
+        else:
+            text = re.search(r'default: "((?:[^"\\]|\\.)*)"', rest)
+            flag = re.search(r"default: (true|false)", rest)
+            if text is not None:
+                entry["default"] = text.group(1)
+            elif flag is not None:
+                entry["default"] = flag.group(1) == "true"
+        titled = re.search(r'title: "((?:[^"\\]|\\.)*)"', rest)
+        if titled is not None:
+            entry["title"] = titled.group(1)
+        schema.append(entry)
+    return schema
+
+
+def build_adapt_messages(
+    piece_id: str, schema: list[dict[str, Any]], brief: str
+) -> list[Message]:
+    """Ask the model for prop values only: a JSON object, nothing else."""
+    if not brief.strip():
+        raise InvalidModule("adapt needs a non-empty 'brief'")
+    return [
+        Message(
+            role="developer",
+            content=(
+                f"You adapt the Chair gold module {piece_id!r} by choosing prop values. "
+                "Reply with ONE JSON object mapping prop ids to new values and nothing else. "
+                "Only include props the brief asks to change; leave the rest out. "
+                "Rules: a number must stay within its [min, max]; a color must be a "
+                "lowercase '#rrggbb' string; a string is plain text; a boolean is "
+                "true or false. Unknown prop ids invalidate the whole reply.\n"
+                f"Prop schema:\n{json.dumps(schema, indent=2)}"
+            ),
+        ),
+        Message(role="user", content=brief.strip()),
+    ]
+
+
+def _parse_values_completion(text: str) -> Any:
+    """The model's reply as a JSON value (fenced or raw)."""
+    cleaned = text.strip()
+    fenced = re.search(r"```(?:json)?\s*([\s\S]*?)\s*```", cleaned)
+    if fenced is not None:
+        cleaned = fenced.group(1)
+    try:
+        return json.loads(cleaned)
+    except json.JSONDecodeError as error:
+        raise InvalidModule("model did not return prop values JSON") from error
+
+
+def _validate_values(
+    schema: list[dict[str, Any]], values: Any
+) -> dict[str, Any]:
+    """Model prop values, checked against the schema (ids, type, range)."""
+    if not isinstance(values, dict):
+        raise InvalidModule("model prop values must be a JSON object")
+    by_id = {prop["id"]: prop for prop in schema}
+    unknown = sorted(set(values) - set(by_id))
+    if unknown:
+        raise InvalidModule(f"model used unknown props: {', '.join(unknown)}")
+    out: dict[str, Any] = {}
+    for pid, value in values.items():
+        spec = by_id[pid]
+        kind = spec["type"]
+        if kind == "number":
+            if (
+                isinstance(value, bool)
+                or not isinstance(value, (int, float))
+                or not math.isfinite(value)
+            ):
+                raise InvalidModule(f"prop {pid!r} wants a number")
+            low, high = spec.get("min"), spec.get("max")
+            if low is not None and high is not None and not low <= value <= high:
+                raise InvalidModule(f"prop {pid!r} wants a number in [{low}, {high}]")
+        elif kind == "color":
+            if not isinstance(value, str) or not re.fullmatch(r"#[0-9a-fA-F]{6}", value):
+                raise InvalidModule(f"prop {pid!r} wants a '#rrggbb' color")
+            value = value.lower()
+        elif kind == "string":
+            if not isinstance(value, str):
+                raise InvalidModule(f"prop {pid!r} wants a string")
+        elif kind == "boolean":
+            if not isinstance(value, bool):
+                raise InvalidModule(f"prop {pid!r} wants true/false")
+        out[pid] = value
+    return out
+
+
+def _format_value(kind: str, value: Any) -> str:
+    if kind in ("string", "color"):
+        return '"' + str(value).replace("\\", "\\\\").replace('"', '\\"') + '"'
+    if kind == "boolean":
+        return "true" if value else "false"
+    return repr(value)
+
+
+def _apply_values(
+    source: str, values: dict[str, Any]
 ) -> tuple[str, list[str]]:
-    """Rewrite string/color prop defaults from the brief, in file order."""
+    """Rewrite prop defaults from a value map, in file order."""
     applied: list[str] = []
-    texts = [text.replace("\\", "\\\\").replace('"', '\\"') for text in texts]
     lines = []
-    text_at = color_at = 0
     for line in source.split("\n"):
         match = _PROP_DEFAULT.match(line)
-        if match is not None:
-            kind = match["kind"]
-            if kind == "string" and text_at < len(texts):
-                line = f"{match['head']}{texts[text_at]}{match['tail']}"
-                applied.append(match["id"])
-                text_at += 1
-            elif kind == "color" and color_at < len(colors):
-                line = f"{match['head']}{colors[color_at]}{match['tail']}"
-                applied.append(match["id"])
-                color_at += 1
+        if match is not None and match["id"] in values:
+            line = (
+                f"{match['head']}"
+                f"{_format_value(match['kind'], values[match['id']])}"
+                f"{match['tail']}"
+            )
+            applied.append(match["id"])
         lines.append(line)
     return "\n".join(lines), applied
 
 
-def adapt_library_piece(
-    piece_id: str, brief: str, env: Mapping[str, str] | None = None
-) -> ModuleRecord:
-    """Adapt a gold library piece with values from the brief (no model).
-
-    Literals (quoted or saying-phrases) land in string props and #rrggbb
-    colors in color props, in file order; the result runs the normal
-    check and store path, so it is a real piece under the brief's scope.
-    """
-    if not re.fullmatch(r"[a-z0-9-]+", piece_id or ""):
-        raise InvalidModule(f"unknown library piece: {piece_id!r}")
-    path = _effects_dir() / "library" / f"{piece_id}.tsx"
-    if not path.is_file():
-        raise InvalidModule(f"unknown library piece: {piece_id!r}")
+def _brief_value_map(
+    schema: list[dict[str, Any]], brief: str
+) -> dict[str, Any]:
+    """Deterministic values from the brief: literals to strings, hex to colors."""
     texts = piece_plan.brief_literals(brief)
     colors = [found.lower() for found in re.findall(r"#[0-9a-fA-F]{6}\b", brief)]
-    adapted, applied = _apply_brief_values(
-        path.read_text(encoding="utf-8"), texts=texts, colors=colors
+    strings = [prop["id"] for prop in schema if prop["type"] == "string"]
+    paints = [prop["id"] for prop in schema if prop["type"] == "color"]
+    return dict(zip(strings, texts, strict=False)) | dict(
+        zip(paints, colors, strict=False)
     )
+
+
+def _adapt_with_values(
+    piece_id: str,
+    brief: str,
+    source: str,
+    values: dict[str, Any],
+    credit: str,
+    env: Mapping[str, str] | None,
+) -> ModuleRecord:
+    adapted, applied = _apply_values(source, values)
     record = register_source(adapted, brief=brief, env=env)
-    notes = f"Adapted from {piece_id}"
+    notes = f"Adapted from {piece_id} {credit}"
     if applied:
         notes += f" ({', '.join(applied)} from the brief)"
     updated = record.model_copy(update={"notes": notes + "."})
@@ -653,13 +768,77 @@ def adapt_library_piece(
     return updated
 
 
+def adapt_library_piece(
+    piece_id: str,
+    brief: str,
+    *,
+    client: ModelClient | None = None,
+    model: str | None = None,
+    env: Mapping[str, str] | None = None,
+) -> ModuleRecord:
+    """Adapt a gold library piece with values from the brief.
+
+    One constrained model call turns the brief into prop values (schema in,
+    validated values out). Deterministic adapting (literals and hex colors
+    only) is the fallback when there is no model or the call fails, and the
+    notes say which path ran.
+    """
+    if not re.fullmatch(r"[a-z0-9-]+", piece_id or ""):
+        raise InvalidModule(f"unknown library piece: {piece_id!r}")
+    path = _effects_dir() / "library" / f"{piece_id}.tsx"
+    if not path.is_file():
+        raise InvalidModule(f"unknown library piece: {piece_id!r}")
+    source = path.read_text(encoding="utf-8")
+    schema = _prop_schema(source)
+    try:
+        active = client if client is not None else _model_client(model)
+    except InvalidModule:
+        return _adapt_with_values(
+            piece_id, brief, source, _brief_value_map(schema, brief),
+            "(deterministic fallback: no model)", env,
+        )
+    model_name = (
+        getattr(getattr(active, "models", None), "executor", None)
+        or module_model(env)
+    )
+    try:
+        completion = active.execute(build_adapt_messages(piece_id, schema, brief))
+    except Exception:
+        return _adapt_with_values(
+            piece_id, brief, source, _brief_value_map(schema, brief),
+            "(deterministic fallback: model call failed)", env,
+        )
+    try:
+        values = _validate_values(
+            schema, _parse_values_completion(completion.text)
+        )
+    except InvalidModule:
+        return _adapt_with_values(
+            piece_id, brief, source, _brief_value_map(schema, brief),
+            "(deterministic fallback: invalid model values)", env,
+        )
+    try:
+        return _adapt_with_values(
+            piece_id, brief, source, values, f"with {model_name}", env
+        )
+    except InvalidModule:
+        return _adapt_with_values(
+            piece_id, brief, source, _brief_value_map(schema, brief),
+            "(deterministic fallback: model values failed the check)", env,
+        )
+
+
 def _generate_adapted(
     plan: piece_plan.PiecePlan,
     part: piece_plan.PiecePart,
+    client: ModelClient | None,
+    model: str | None,
     env: Mapping[str, str] | None,
 ) -> ModuleRecord:
     """Adapt the topmost reuse part's gold module; note the rest as guidance."""
-    record = adapt_library_piece(part.piece_id or "", part.brief, env=env)
+    record = adapt_library_piece(
+        part.piece_id or "", part.brief, client=client, model=model, env=env
+    )
     guide = piece_plan.guidance(plan, adapted_id=part.piece_id)
     notes = (
         f"{record.notes} Piece plan: {plan.counts.native} native,"
@@ -710,7 +889,7 @@ def generate_module(
             if part.route == "reuse" and part.piece_id
         ]
         if reuse_parts:
-            return _generate_adapted(plan, reuse_parts[0], env)
+            return _generate_adapted(plan, reuse_parts[0], client, model, env)
         piece_plan.note_guided()
         return None
     scoped = "; ".join(part.brief for part in new_parts)
