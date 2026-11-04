@@ -13,7 +13,7 @@
  */
 import { spawnSync, spawn } from "node:child_process";
 import { createServer } from "node:http";
-import { accessSync, constants, existsSync, readdirSync, statSync } from "node:fs";
+import { accessSync, constants, readdirSync, statSync } from "node:fs";
 import type { AddressInfo } from "node:net";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
