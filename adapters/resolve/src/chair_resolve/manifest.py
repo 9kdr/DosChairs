@@ -6,6 +6,7 @@ class Capabilities(BaseModel):
 
     keyframes: bool
     fusion_comps: bool
+    fusion_macros: bool = True
     adjustment_layers: bool
     markers: bool
     subtitles: bool
@@ -41,5 +42,6 @@ MANIFEST = Manifest(
         "subtitles": "import captions in Studio by hand",
         "adjustmentLayers": "add an adjustment clip in Studio by hand",
         "speedChanges": "retime the clip in Studio by hand",
+        "fusionMacros": "render the effect to a clip and place it by hand",
     },
 )
