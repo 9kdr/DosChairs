@@ -8,12 +8,14 @@ import {
 import type { AgentJob, AgentJobStatus } from "../lib/services/types";
 import type { RunningTask } from "./RunningTasks";
 import {
+  activeStepLabel,
   activityForLiveError,
   activityForLiveJob,
   activityForLivePending,
   applyFinishedSound,
   clearPollFailure,
   hasSoundItems,
+  headerStatusFor,
   headlineForSubmitError,
   initialTurnsFor,
   inputForTurn,
@@ -23,6 +25,7 @@ import {
   liveJobEntries,
   liveRowsForJobs,
   liveSubmitError,
+  maybeApplyFinishedSound,
   noteKey,
   notePollFailure,
   noteTurnText,
@@ -45,6 +48,7 @@ import {
   undoLandedWrite,
   waitingRowsFor,
   withOpenTurnError,
+  type HeaderState,
 } from "./taskThread";
 import { writeTaskThread } from "./threadStore";
 
@@ -873,5 +877,84 @@ describe("finished sound writes", () => {
       state: "landed",
       line: "Undo failed: Undo isn't available on this agent yet.",
     });
+  });
+});
+
+describe("maybeApplyFinishedSound", () => {
+  const soundEntry = (requestId: string) => ({
+    requestId,
+    task,
+    job: job("completed", {
+      request_id: requestId,
+      changeset: { status: "proposed", ops: [{ op: "set_gain", patch: { gainDb: -12 } }] },
+    }),
+  });
+
+  it("settles once the card's write state lands, firing only once per job", async () => {
+    const fetchFn = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        timeline_name: "Demo Cut (sound copy)",
+        original_timeline: "Demo Cut",
+        tracks_added: 1,
+        clips_added: 1,
+        skipped: [],
+      }),
+    }));
+    const first = maybeApplyFinishedSound(soundEntry("req_shared"), { fetchFn });
+    const second = maybeApplyFinishedSound(soundEntry("req_shared"), { fetchFn });
+    expect(second).toBe(first);
+    expect(landedFor(task.id)).toBeUndefined();
+    await first;
+    expect(fetchFn).toHaveBeenCalledTimes(1);
+    expect(landedFor(task.id)?.state).toBe("landed");
+  });
+
+  it("resolves at once when there is nothing to write", async () => {
+    const plain = job("completed", { changeset: { status: "proposed", ops: [{ op: "trim" }] } });
+    await expect(
+      maybeApplyFinishedSound({ requestId: "req_plain2", task, job: plain }),
+    ).resolves.toBeUndefined();
+    expect(landedFor(task.id)).toBeUndefined();
+  });
+});
+
+describe("thread header status", () => {
+  const base: HeaderState = {
+    terminal: null,
+    landed: null,
+    step: null,
+    live: true,
+    fallback: "Waiting for the agent",
+  };
+
+  it("reads the live step off the rail", () => {
+    expect(activeStepLabel(activityForLiveJob(job("in_progress")))).toBe("Agent working");
+    expect(activeStepLabel(activityForLivePending())).toBe("Sending the turn…");
+    expect(activeStepLabel(activityForLiveError("Agent unreachable"))).toBeNull();
+    expect(activeStepLabel(null)).toBeNull();
+  });
+
+  it("names the card's write state first", () => {
+    expect(headerStatusFor({ ...base, terminal: "completed", landed: "landed" })).toBe("Landed");
+    expect(headerStatusFor({ ...base, terminal: "completed", landed: "undone" })).toBe("Undone");
+    expect(headerStatusFor({ ...base, terminal: "completed", landed: "failed" })).toBe("Failed");
+  });
+
+  it("names the settled turn when nothing wrote", () => {
+    expect(headerStatusFor({ ...base, terminal: "failed" })).toBe("Failed");
+    expect(headerStatusFor({ ...base, terminal: "canceled" })).toBe("Stopped");
+    expect(headerStatusFor({ ...base, terminal: "moderated" })).toBe("Stopped");
+    expect(headerStatusFor({ ...base, terminal: "completed" })).toBe("Planned");
+  });
+
+  it("shows the live step while running, else the spinner or the fallback", () => {
+    expect(headerStatusFor({ ...base, step: "Sending the turn…" })).toBe("Sending the turn…");
+    expect(headerStatusFor({ ...base })).toBeNull();
+    expect(headerStatusFor({ ...base, live: false })).toBe("Waiting for the agent");
+    expect(headerStatusFor({ ...base, terminal: "in_progress", step: "Agent working" })).toBe(
+      "Agent working",
+    );
   });
 });

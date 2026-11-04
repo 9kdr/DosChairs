@@ -1,11 +1,19 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ArrowLeft, Undo2 } from "lucide-react";
+import { ArrowLeft, Loader2, Undo2 } from "lucide-react";
 import { ChatPrompt, type ChatDraft } from "@/components/chat-prompt";
 import { SmoothScrollTarget } from "@/components/smooth-scroll";
 import { Button } from "@/components/ui/button";
 import { displayStatusFor, type RunningTask } from "./RunningTasks";
 import { TaskActivityPanel } from "./TaskActivity";
-import { selectionForNote, useTaskThread, type TaskNote, type Turn } from "./taskThread";
+import {
+  activeStepLabel,
+  headerStatusFor,
+  landedFor,
+  selectionForNote,
+  useTaskThread,
+  type TaskNote,
+  type Turn,
+} from "./taskThread";
 import {
   canUndoTask,
   historyForTask,
@@ -74,7 +82,7 @@ export function TaskChat({
       return selection === null ? { ...note } : { ...note, ...selection };
     });
   }, [note]);
-  const { turns, activity } = useTaskThread(task, threadNote, resolveLocalReply);
+  const { turns, activity, terminal } = useTaskThread(task, threadNote, resolveLocalReply);
   const endRef = useRef<HTMLDivElement>(null);
   const threadRef = useRef<HTMLDivElement>(null);
   // The thread opens with the person's own words: the brief that started
@@ -82,7 +90,17 @@ export function TaskChat({
   const brief = task.plan?.brief.trim() ? task.plan.brief.trim() : null;
   const opening: Turn[] =
     brief === null ? [] : [{ id: `${task.id}-brief`, role: "user", text: brief }];
-  const status = displayStatusFor(task);
+  // The header follows the task state, from the same state the card
+  // uses: the settled turn plus the card's Resolve-write state. The
+  // card's own line stays as the demo fallback and the tooltip.
+  const card = displayStatusFor(task);
+  const header = headerStatusFor({
+    terminal,
+    landed: landedFor(task.id)?.state ?? null,
+    step: activeStepLabel(activity),
+    live: activity !== null,
+    fallback: card.short,
+  });
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ block: "end" });
@@ -104,9 +122,15 @@ export function TaskChat({
         <h2 className="min-w-0 truncate text-title font-medium">{task.name}</h2>
         <span
           className="ml-auto shrink-0 truncate text-xs text-muted-foreground"
-          title={status.detail ?? undefined}
+          title={card.detail ?? undefined}
         >
-          {LANE[task.lane]} · {status.short}
+          {LANE[task.lane]} ·{" "}
+          {header ?? (
+            <Loader2
+              className="inline size-3.5 animate-spin align-middle"
+              aria-label="Working"
+            />
+          )}
         </span>
       </header>
 
