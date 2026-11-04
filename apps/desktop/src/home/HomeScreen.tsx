@@ -119,8 +119,10 @@ function ProjectsPane({
   onOpenProject: (projectId: string) => void;
 }) {
   const reduceMotion = useReducedMotion();
-  const gridRef = useRef<HTMLUListElement>(null);
-  const gridWidth = useElementWidth(gridRef);
+  // Measured on the pane, which mounts with the skeleton: the grid itself
+  // mounts only once projects arrive, after the observer would attach.
+  const paneRef = useRef<HTMLDivElement>(null);
+  const gridWidth = useElementWidth(paneRef);
   const maxSize = maxGridSizeForWidth(gridWidth);
   // Preferred snap (persisted). Display may clamp below this on a narrow shell.
   const [preferredSize, setPreferredSize] = useState<GridSize>(() =>
@@ -184,6 +186,7 @@ function ProjectsPane({
 
   return (
     <motion.div
+      ref={paneRef}
       className="mx-auto flex w-full max-w-5xl flex-col gap-8"
       initial={reduceMotion ? false : { opacity: 0 }}
       animate={{ opacity: 1 }}
@@ -250,7 +253,6 @@ function ProjectsPane({
               </p>
             ) : null}
             <ProjectsGrid
-              gridRef={gridRef}
               projects={detected.projects}
               columns={columns}
               gapClass={layout.gapClass}
@@ -272,7 +274,6 @@ function ProjectsPane({
 }
 
 function ProjectsGrid({
-  gridRef,
   projects,
   columns,
   gapClass,
@@ -286,7 +287,6 @@ function ProjectsGrid({
   onOpenProject,
   cardRefs,
 }: {
-  gridRef: React.RefObject<HTMLUListElement | null>;
   projects: Project[];
   columns: number;
   gapClass: string;
@@ -302,7 +302,6 @@ function ProjectsGrid({
 }) {
   return (
         <ul
-          ref={gridRef}
           className={cn("grid", gapClass)}
           style={{
             gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))`,
