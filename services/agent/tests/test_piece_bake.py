@@ -136,8 +136,9 @@ def test_bake_key_changes_with_module_source(isolated) -> None:
     first.write_text("export default 1;")
     second = isolated / "b.tsx"
     second.write_text("export default 2;")
-    key_for = lambda entry: piece_bake._bake_key(
-        "liquid-boxes", 640, 360, 30, 0.1, {}, None, entry)
+    def key_for(entry):
+        return piece_bake._bake_key(
+            "liquid-boxes", 640, 360, 30, 0.1, {}, None, entry)
     assert key_for(first) != key_for(second)
 
 
