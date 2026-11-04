@@ -1,5 +1,5 @@
 import { ArrowUp, AudioLines, Bookmark, ChevronDown, Film, ImageIcon, KeyRound, Mic, Paperclip, Puzzle, Slash, Square, Waypoints, X } from "lucide-react";
-import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type {
   ClipboardEvent,
@@ -684,7 +684,12 @@ export function ChatPrompt({
     placeCaret(el, parts, pending ?? saved);
   }, [parts, open]);
 
-  useLayoutEffect(() => {
+  // Editor autosize. The content style width is the morph TARGET while
+  // the editor still animates toward it, so a fill that lands mid-morph
+  // (edit mode seeds the bar on mount) must re-sync as the rendered
+  // editor width settles — see the observer below. Width-only guard:
+  // height writes refire the observer but change no width, so it settles.
+  const syncHeight = useCallback(() => {
     const el = editorRef.current;
     if (!el) return;
     if (!open) {
@@ -697,34 +702,52 @@ export function ChatPrompt({
     const next = Math.min(Math.max(el.scrollHeight, LINE + 16), max);
     el.style.height = `${next}px`;
     el.style.overflowY = el.scrollHeight > max ? "auto" : "hidden";
-  }, [draft, open, wide]);
+  }, [open, wide]);
 
-  useLayoutEffect(() => {
+  const measure = useCallback(() => {
     const bar = barRef.current;
     const content = contentRef.current;
     if (!bar || !content) return;
+    const available = bar.parentElement?.clientWidth ?? 0;
+    const previousContentWidth = content.style.width;
+    content.style.width = "max-content";
+    const needed = Math.ceil(content.getBoundingClientRect().width);
+    const width = open ? available : Math.min(needed, available);
+    content.style.width = `${width}px`;
+    const height = Math.ceil(content.getBoundingClientRect().height);
+    content.style.width = previousContentWidth;
+    setBox((current) =>
+      current.width === width && current.height === height ? current : { width, height },
+    );
+  }, [open]);
 
-    const measure = () => {
-      const available = bar.parentElement?.clientWidth ?? 0;
-      const previousContentWidth = content.style.width;
-      content.style.width = "max-content";
-      const needed = Math.ceil(content.getBoundingClientRect().width);
-      const width = open ? available : Math.min(needed, available);
-      content.style.width = `${width}px`;
-      const height = Math.ceil(content.getBoundingClientRect().height);
-      content.style.width = previousContentWidth;
-      setBox((current) =>
-        current.width === width && current.height === height ? current : { width, height },
-      );
-    };
+  useLayoutEffect(() => {
+    syncHeight();
+  }, [draft, open, wide, syncHeight]);
 
+  useLayoutEffect(() => {
     measure();
-    const parent = bar.parentElement;
+    const parent = barRef.current?.parentElement;
     if (!parent) return;
     const observer = new ResizeObserver(measure);
     observer.observe(parent);
     return () => observer.disconnect();
-  }, [draft, files, open, wide]);
+  }, [draft, files, open, wide, measure]);
+
+  useLayoutEffect(() => {
+    const el = editorRef.current;
+    if (!el) return;
+    let lastWidth = el.getBoundingClientRect().width;
+    const observer = new ResizeObserver(() => {
+      const width = el.getBoundingClientRect().width;
+      if (width === lastWidth) return;
+      lastWidth = width;
+      syncHeight();
+      measure();
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [open, wide, syncHeight, measure]);
 
   useLayoutEffect(() => {
     if (!actionsOpen) return;
