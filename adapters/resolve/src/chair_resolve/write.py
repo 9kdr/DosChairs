@@ -6,8 +6,8 @@ pending proposed edit cannot change the cut through this path.
 
 Conventions follow the Studio stubs and shipped example 7 (AppendToTimeline
 endFrame is inclusive: frames 0..23 are 24 frames). Scripting cannot place
-subtitle or effect tracks, so the planner skips those and cites the
-capability manifest fallback. Speed and start timecode are not retimed.
+subtitle or effect tracks or retime clips, so the planner cites the
+capability manifest fallback. Start timecode is not retimed.
 """
 
 from __future__ import annotations
@@ -224,6 +224,15 @@ def _plan_clip(
             }
         )
         return None
+    if span != source_span:
+        fallback = manifest.fallbacks.get("speedChanges", "retime the clip in Studio by hand")
+        plan["skipped"].append(
+            {
+                "kind": "clip",
+                "id": clip_id,
+                "reason": f"{label}: {fallback}",
+            }
+        )
     for effect in clip.get("effects") or []:
         _plan_effect(plan, manifest, clip_id, effect)
     return {
@@ -231,7 +240,7 @@ def _plan_clip(
         "name": str(clip["name"]),
         "media_path": media.strip(),
         "start_frame": source_start,
-        "end_frame": source_start + source_span - 1,
+        "end_frame": source_start + span - 1,
         "track_type": kind,
         "track_index": index,
         "record_frame": record,

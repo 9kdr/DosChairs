@@ -34,10 +34,12 @@ MANIFEST = Manifest(
         nested_sequences=True,
         speed_changes=True,
     ),
-    # Write direction only: Studio scripting cannot place these tracks, so the
-    # planner skips them. Reading supports both, so the flags above stay True.
+    # Write direction only: Studio scripting cannot place these tracks or
+    # retime clips, so the planner skips or flags them. Reading supports them,
+    # so the flags above stay True.
     fallbacks={
         "subtitles": "import captions in Studio by hand",
         "adjustmentLayers": "add an adjustment clip in Studio by hand",
+        "speedChanges": "retime the clip in Studio by hand",
     },
 )
