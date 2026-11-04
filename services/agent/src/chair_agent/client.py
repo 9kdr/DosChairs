@@ -27,7 +27,10 @@ class Message(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     role: Literal["developer", "user", "assistant"]
-    content: str
+    # Plain text, or OpenAI-style content parts (text/image_url) so vision
+    # calls (effect briefs, render checks) can attach images. model_dump
+    # passes both shapes through to the chat API unchanged.
+    content: str | list[dict[str, Any]]
 
 
 class Completion(BaseModel):
