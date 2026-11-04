@@ -50,7 +50,12 @@ MANIFEST = Manifest(
         "subtitles": "import captions in Studio by hand",
         "adjustmentLayers": "add an adjustment clip in Studio by hand",
         "speedChanges": "retime the clip in Studio by hand",
-        "fusionMacros": "render the effect to a clip and place it by hand",
+        "fusionMacros": (
+            "tag the shader layer with a native look (params.look: film-grain, "
+            "dither, halftone, fast-noise, gradient, glow) or bake its web "
+            "render to a PNG sequence for the Loader path; otherwise render "
+            "the effect to a clip and place it by hand"
+        ),
         "templateScan": "no Fusion folder found: name the macro in the brief by hand",
         "ografTitles": "install with install_ograf, then drag from Effects > Titles > OGraf",
         "placeSfx": (

@@ -162,6 +162,19 @@ def test_macro_falls_back_for_shader() -> None:
     assert spec_to_macro(spec)["fallback"]["capability"] == "fusionMacro"
 
 
+def test_add_effect_round_trips_non_ascii_text(tmp_path: Path) -> None:
+    """Live bug: an em-dash in model text crashed comp write without utf-8."""
+    spec = _spec()
+    title = next(layer for layer in spec["layers"] if layer["id"] == "title")
+    title["params"]["string"] = " Jos — Chérie "
+    item = _FakeFusionItem()
+    op = add_effect(item, spec, cache_dir=tmp_path)
+    assert len(item.imported) == 1
+    text = Path(item.imported[0]).read_text(encoding="utf-8")
+    assert "Jos — Chérie" in text
+    assert op["comp_name"] == "Comp 2"
+
+
 def test_manifest_declares_fusion_macro_fallback() -> None:
     assert MANIFEST.capabilities.fusion_macros is True
     assert MANIFEST.fallbacks["fusionMacros"] != ""
@@ -197,6 +210,82 @@ def test_add_effect_imports_new_comp_and_undo_switches_back(tmp_path: Path) -> N
     assert op["prev_comp_name"] == "Comp 1"
     assert remove_effect(item, op) is True
     assert item.loaded == ["Comp 1"]
+
+
+def _look_spec(look: str, params: dict | None = None) -> dict:
+    spec = _spec()
+    layer: dict = {"id": "look", "type": "shader", "params": {"look": look}}
+    if params:
+        layer["params"].update(params)
+    spec["layers"].append(layer)
+    return spec
+
+
+def test_native_looks_map_to_fusion_tools() -> None:
+    cases = [
+        ("film-grain", {"amount": 0.7},
+         ["Grain_look = FilmGrain", "MasterStrength"], "native:FilmGrain"),
+        ("dither", {"levels": 4},
+         ["Dith_look = Custom", "NumberIn1", "mod(x,2)"], "native:Custom(dither)"),
+        ("halftone", {}, ["Halo_look = Custom", "cos(n2)"], "native:Custom(halftone)"),
+        ("fast-noise", {}, ["FNoise_look = FastNoise", "Detail"], "native:FastNoise"),
+        ("gradient", {"colors": ["#1a1d24", "#05070c"]},
+         ["GWash_look = Background", 'FuID { "Gradient", }'], "native:Background(gradient)"),
+        ("glow", {"gain": 1.5}, ["LGlow_look = SoftGlow", "Gain"], "native:SoftGlow"),
+    ]
+    for look, params, fragments, path in cases:
+        rendered = spec_to_comp(_look_spec(look, params))
+        assert "fallback" not in rendered, look
+        text = rendered["text"]
+        assert text.count("{") == text.count("}"), look
+        for fragment in fragments:
+            assert fragment in text, (look, fragment)
+        assert rendered["paths"] == {"look": path}, look
+
+
+def test_dither_levels_stay_keyframable() -> None:
+    spec = _look_spec("dither", {"levels": 4})
+    layer = next(layer for layer in spec["layers"] if layer["id"] == "look")
+    layer["curves"] = {"levels": {"keyframes": [
+        {"time": 0, "value": 4},
+        {"time": 1, "value": 2},
+    ]}}
+    text = spec_to_comp(spec)["text"]
+    assert [frame for frame, _ in _key_frames(text, "Dith_lookNumberIn1")] == [0, 30]
+
+
+def test_dither_rejects_fewer_than_two_levels() -> None:
+    assert check_spec(_look_spec("dither", {"levels": 1})) != []
+    spec = _look_spec("dither", {"levels": 4})
+    layer = next(layer for layer in spec["layers"] if layer["id"] == "look")
+    layer["curves"] = {"levels": {"keyframes": [{"time": 0, "value": 1}]}}
+    assert any(">= 2" in reason for reason in check_spec(spec))
+
+
+def test_baked_sequence_loads_through_loader(tmp_path: Path) -> None:
+    spec = _spec()
+    spec["layers"].append({"id": "wash", "type": "shader", "params": {}})
+    frame = tmp_path / "take_00000.png"
+    frame.write_bytes(b"\x89PNG\r\n\x1a\n")
+    sequences = {"wash": {"files": [str(frame)]}}
+    assert check_spec(spec) != []
+    assert check_spec(spec, sequences) == []
+    rendered = spec_to_comp(spec, sequences=sequences)
+    assert "fallback" not in rendered
+    assert f'Filename = "{frame}"' in rendered["text"]
+    assert "Length = 1" in rendered["text"]
+    assert rendered["paths"] == {"wash": "baked:Loader"}
+    item = _FakeFusionItem()
+    op = add_effect(item, spec, cache_dir=tmp_path, sequences=sequences)
+    assert op["paths"] == {"wash": "baked:Loader"}
+    assert len(item.imported) == 1
+
+
+def test_macro_falls_back_for_footage_processing_look() -> None:
+    assert spec_to_macro(_look_spec("dither"))["fallback"]["capability"] == "fusionMacro"
+    rendered = spec_to_macro(_look_spec("gradient", {"colors": ["#111111", "#000000"]}))
+    assert "fallback" not in rendered
+    assert "GWash_look = Background" in rendered["text"]
 
 
 def test_add_effect_falls_back_without_importing(tmp_path: Path) -> None:

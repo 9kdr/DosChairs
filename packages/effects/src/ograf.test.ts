@@ -75,6 +75,14 @@ describe("ograf spec export", () => {
       layers: [...base.layers, { id: "fx", type: "shader" as const, params: {} }],
     };
     expect(selectExportTarget(withShaderLayer)).toBe("ograf");
+    const withLookLayer = {
+      ...base,
+      layers: [
+        ...base.layers,
+        { id: "dith", type: "shader" as const, params: { look: "dither", levels: 4 } },
+      ],
+    };
+    expect(selectExportTarget(withLookLayer)).toBe("fusion-macro");
     const withImage = {
       ...base,
       layers: [...base.layers, { id: "pic", type: "image" as const, params: { src: "a.png" } }],

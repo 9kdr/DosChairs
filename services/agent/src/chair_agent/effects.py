@@ -32,12 +32,19 @@ SCHEMA_VERSION = "0.1.0"
 
 # Layers the Fusion exporter (#232) can express with native nodes. Custom
 # GLSL ships as a parameterized OGraf title instead (#234); anything else
-# only survives as a pre-rendered clip.
+# only survives as a pre-rendered clip. A shader layer tagged with a native
+# look (params.look, see NATIVE_SHADER_LOOKS) also stays native (#256).
 FUSION_MAPPABLE_LAYERS = frozenset({"shape", "text", "image"})
+
+NATIVE_SHADER_LOOKS = frozenset(
+    {"film-grain", "dither", "halftone", "fast-noise", "gradient", "glow"}
+)
 
 FUSION_NODES = (
     "Background, Text+, Rectangle/Ellipse (mask or Background shape), "
-    "Transform, Merge, Blur, SoftGlow, ColorCorrector, Loader"
+    "Transform, Merge, Blur, SoftGlow, ColorCorrector, Loader, FilmGrain, "
+    "Custom (ordered-dither/halftone expressions), FastNoise, "
+    "Background gradient mode"
 )
 
 RENDERABLE_LAYERS = (
@@ -182,20 +189,37 @@ def validate_effect_spec(data: Mapping[str, Any]) -> dict[str, Any]:
     return dict(data)
 
 
+def _shader_look(layer: Mapping[str, Any]) -> str | None:
+    """The native look a shader layer is tagged with, else None."""
+    params = layer.get("params")
+    look = params.get("look") if isinstance(params, Mapping) else None
+    return look if isinstance(look, str) and look in NATIVE_SHADER_LOOKS else None
+
+
 def pick_export_target(spec: Mapping[str, Any]) -> dict[str, Any]:
     """fusion-macro when every layer maps to the Fusion node set.
 
     Shader layers (custom GLSL) have no Fusion-node equivalent, but they do
-    not need a baked clip either: they ship as a parameterized OGraf title
-    whose controls land in the Inspector. The fallback says why in plain
-    words. Anything else unmapped still falls back to rendered-clip.
+    not need a baked clip either: a layer tagged with a native look
+    (params.look) stays a keyframable Fusion macro, and any other custom
+    shader ships as a parameterized OGraf title whose controls land in the
+    Inspector. The fallback says why in plain words. Anything else unmapped
+    still falls back to rendered-clip.
     """
     layers = spec.get("layers")
-    unmapped = sorted({
-        str(layer.get("type", "?"))
-        for layer in layers
-        if isinstance(layer, Mapping) and layer.get("type") not in FUSION_MAPPABLE_LAYERS
-    }) if isinstance(layers, list) else ["layers"]
+    unmapped: set[str] = set()
+    if isinstance(layers, list):
+        for layer in layers:
+            if not isinstance(layer, Mapping):
+                continue
+            if layer.get("type") in FUSION_MAPPABLE_LAYERS:
+                continue
+            if layer.get("type") == "shader" and _shader_look(layer) is not None:
+                continue
+            unmapped.add(str(layer.get("type", "?")))
+    else:
+        unmapped.add("layers")
+    unmapped = sorted(unmapped)
     has_shader = isinstance(spec.get("shader"), Mapping) or "shader" in unmapped
     if not unmapped and not has_shader:
         return {"target": "fusion-macro"}
@@ -272,7 +296,13 @@ def build_generate_messages(
         f"Renderable layer types: {RENDERABLE_LAYERS}.",
         f"Fusion macro node set the exporter supports: {FUSION_NODES}. "
         "Prefer shape/text/image layers so the effect stays an editable macro; "
-        "reach for a shader layer only when the look truly needs custom GLSL.",
+        "for film grain, ordered dither, halftone dots, animated noise, a "
+        "gradient wash, or a glow wash, use a shader layer tagged with "
+        "params.look (film-grain, dither, halftone, fast-noise, gradient, "
+        "glow) plus its look params (grain amount/size, dither levels, "
+        "halftone cell/angle, noise detail/contrast, gradient colors, glow "
+        "gain), which stays keyframable Fusion nodes; reach for untagged "
+        "custom GLSL only when the look truly needs it.",
         TASTE_GUIDE,
         "Published controls: expose the 1-3 things an editor would retitle or "
         "recolor (text string, main color), each targeting a real layer param.",

@@ -276,7 +276,7 @@ def load_effect_spec(entry: dict[str, Any]) -> dict[str, Any]:
     if not path.is_file():
         raise RuntimeError(f"Effect {entry.get('effect_id')!r} specRef is missing: {path}.")
     try:
-        spec = json.loads(path.read_text())
+        spec = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError) as exc:
         raise RuntimeError(
             f"Effect {entry.get('effect_id')!r} specRef is unreadable: {exc}."
@@ -291,7 +291,8 @@ def _resolve_effect_spec(entry: dict[str, Any]) -> dict[str, Any]:
 
 
 def _current_comp_name(item: Any, names: list[str]) -> str | None:
-    current = getattr(item, "GetCurrentFusionComp", lambda: None)()
+    current_fn = getattr(item, "GetCurrentFusionComp", None)
+    current = current_fn() if callable(current_fn) else None
     if current is not None:
         attrs = getattr(current, "GetAttrs", lambda: {})()
         if isinstance(attrs, dict) and attrs.get("COMPS_Name"):
@@ -306,6 +307,7 @@ def add_effect(
     cache_dir: Any = None,
     baked: dict[str, dict[str, list[dict[str, Any]]]] | None = None,
     media: dict[str, Any] | None = None,
+    sequences: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Import an effect spec onto a timeline item as a NEW Fusion comp version.
 
@@ -315,15 +317,17 @@ def add_effect(
     remove_effect to switch back (the undo the history needs).
     A spec the macro node set cannot express is NOT faked: the return is
     {"effect_id", "fallback": {...}} and nothing is imported.
+    sequences maps a shader layer id -> {"files": [png, ...]} for baked
+    web-render layers, loaded through a Loader node.
     """
-    rendered = spec_to_comp(spec, baked=baked, media=media)
+    rendered = spec_to_comp(spec, baked=baked, media=media, sequences=sequences)
     if "fallback" in rendered:
         return {"effect_id": spec.get("id"), "fallback": rendered["fallback"]}
     target = cache_dir if cache_dir is not None else chair_cache_dir()
     target = Path(target)
     target.mkdir(parents=True, exist_ok=True)
     comp_path = target / f"chair_{spec.get('id', 'effect')}.comp"
-    comp_path.write_text(rendered["text"])
+    comp_path.write_text(rendered["text"], encoding="utf-8")
     before = list(getattr(item, "GetFusionCompNameList", lambda: [])() or [])
     prev = _current_comp_name(item, before)
     imported = item.ImportFusionComp(str(comp_path))
@@ -337,6 +341,7 @@ def add_effect(
         "comp_path": str(comp_path),
         "comp_name": comp_name,
         "prev_comp_name": prev,
+        "paths": rendered.get("paths", {}),
         "undo": {"prev_comp_name": prev},
     }
 

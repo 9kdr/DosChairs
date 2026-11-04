@@ -23,14 +23,19 @@ Coordinate mapping (documented so the live smoke can confirm by eye):
 - Linear keys carry Flags = { Linear = true }; hold keys carry
   Flags = { StepIn = true } (best effort, confirmed by the smoke test).
 
-Anything this node set cannot express (a shader layer, an unknown layer
-type, an unknown fx kind) is NOT faked: spec_to_comp / spec_to_macro
-return {"fallback": {"capability": "fusionMacro", "reason": ...}} so the
-caller falls back to a rendered clip.
+Anything this node set cannot express is NOT faked. A shader layer
+names a native look via params["look"] (film-grain, dither, halftone,
+fast-noise, gradient, glow) and becomes real Fusion tools with keyframable
+controls. Any other shader layer needs a pre-baked PNG sequence passed as
+sequences={layer_id: {"files": [...]}} and loads it through a Loader; with
+neither, spec_to_comp / spec_to_macro return
+{"fallback": {"capability": "fusionMacro", "reason": ...}} so the caller
+falls back to a rendered clip.
 """
 
 from __future__ import annotations
 
+import math
 import os
 import sys
 from pathlib import Path
@@ -39,10 +44,18 @@ from typing import Any
 FALLBACK_CAPABILITY = "fusionMacro"
 FUSION_VERSION = "DaVinci Resolve Studio 21.1.0.0017"
 
-# Layer types with a native node mapping. "shader" and anything else falls back.
-NATIVE_LAYER_TYPES = frozenset({"shape", "text", "image"})
+# Layer types with a native node mapping. "shader" maps only when the
+# layer names a native look (see NATIVE_SHADER_LOOKS) or ships a baked
+# sequence; anything else falls back.
+NATIVE_LAYER_TYPES = frozenset({"shape", "text", "image", "shader"})
 SHAPE_KINDS = {"rect": "Rectangle", "ellipse": "Ellipse"}
 FX_KINDS = frozenset({"blur", "glow", "grade"})
+# Shader-layer looks with a native Fusion node mapping. The model tags one
+# via params["look"]; any other shader layer needs a baked PNG sequence
+# (sequences=...) or falls back. Input IDs were read live off Studio 21.1.
+NATIVE_SHADER_LOOKS = frozenset(
+    {"film-grain", "dither", "halftone", "fast-noise", "gradient", "glow"}
+)
 BLEND_MODES = {"normal": "Normal", "add": "Add", "multiply": "Multiply", "screen": "Screen"}
 GENERIC_FONTS = {
     "sans-serif": "DejaVu Sans",
@@ -75,8 +88,30 @@ def title_template_dir(root: Path | None = None) -> Path:
     return Path.home() / _OS_TITLE_PATHS[key]
 
 
-def check_spec(spec: dict[str, Any]) -> list[str]:
-    """Reasons the spec cannot become a Fusion macro. Empty means expressible."""
+def _sequence_files(
+    sequences: dict[str, Any] | None, layer_id: str
+) -> list[str] | None:
+    """PNG sequence files covering a shader layer, else None."""
+    if not sequences:
+        return None
+    entry = sequences.get(layer_id)
+    if not isinstance(entry, dict):
+        return None
+    files = entry.get("files")
+    if not isinstance(files, list) or not files:
+        return None
+    paths = [str(path) for path in files if str(path).strip()]
+    return paths or None
+
+
+def check_spec(
+    spec: dict[str, Any], sequences: dict[str, Any] | None = None
+) -> list[str]:
+    """Reasons the spec cannot become a Fusion macro. Empty means expressible.
+
+    A shader layer passes when it names a native look via params["look"]
+    or when sequences= covers it with a baked PNG sequence.
+    """
     reasons: list[str] = []
     if not isinstance(spec, dict):
         return ["effect spec must be an object"]
@@ -90,8 +125,20 @@ def check_spec(spec: dict[str, Any]) -> list[str]:
         lid = str(layer.get("id") or "?")
         ltype = layer.get("type")
         if ltype == "shader":
-            reasons.append(f"layer {lid!r}: a GLSL shader layer has no Fusion node mapping")
-        elif ltype not in NATIVE_LAYER_TYPES:
+            look = (layer.get("params") or {}).get("look")
+            if look in NATIVE_SHADER_LOOKS:
+                reasons.extend(_check_look(layer, str(look)))
+            elif _sequence_files(sequences, lid) is not None:
+                continue
+            else:
+                reasons.append(
+                    f"layer {lid!r}: a GLSL shader layer has no Fusion node "
+                    "mapping (tag params.look with film-grain, dither, "
+                    "halftone, fast-noise, gradient, or glow); bake the web "
+                    "render to a PNG sequence and pass it as sequences={...}"
+                )
+            continue
+        if ltype not in NATIVE_LAYER_TYPES:
             reasons.append(f"layer {lid!r}: unknown layer type {ltype!r}")
             continue
         params = layer.get("params") or {}
@@ -106,10 +153,48 @@ def check_spec(spec: dict[str, Any]) -> list[str]:
     return reasons
 
 
+def _curve_min(curve: Any) -> float | None:
+    """Smallest keyframe value in a curve, else None when there are no keys."""
+    if not isinstance(curve, dict):
+        return None
+    keys = curve.get("keyframes")
+    if not isinstance(keys, list) or not keys:
+        return None
+    values = [k["value"] for k in keys if isinstance(k, dict)]
+    numbers = [v for v in values if isinstance(v, (int, float)) and not isinstance(v, bool)]
+    return min(numbers) if numbers else None
+
+
+def _check_look(layer: dict[str, Any], look: str) -> list[str]:
+    """Validate one native-look shader layer's params. Empty means mappable."""
+    lid = str(layer.get("id") or "?")
+    params = layer.get("params")
+    if not isinstance(params, dict):
+        return [f"layer {lid!r}: look {look!r} needs a params object"]
+    if look == "dither":
+        levels = params.get("levels", 4)
+        if isinstance(levels, bool) or not isinstance(levels, (int, float)) or levels < 2:
+            return [f"layer {lid!r}: dither levels must be a number >= 2"]
+        floor = _curve_min((layer.get("curves") or {}).get("levels"))
+        if floor is not None and floor < 2:
+            return [f"layer {lid!r}: dither levels keys must stay >= 2"]
+    if look == "gradient":
+        colors = params.get("colors")
+        if not isinstance(colors, list) or len(colors) != 2:
+            return [f"layer {lid!r}: gradient needs params.colors as [top, bottom] hex"]
+        try:
+            _hex_to_rgb(str(colors[0]))
+            _hex_to_rgb(str(colors[1]))
+        except ValueError:
+            return [f"layer {lid!r}: gradient colors must be #rgb or #rrggbb"]
+    return []
+
+
 def spec_to_comp(
     spec: dict[str, Any],
     baked: dict[str, dict[str, list[dict[str, Any]]]] | None = None,
     media: dict[str, Any] | None = None,
+    sequences: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Render spec to ImportFusionComp text, or a fusionMacro fallback.
 
@@ -117,8 +202,12 @@ def spec_to_comp(
     of {"time", "value"} (rig sim output or reduced keys); it overrides the
     layer's own curves for those props. media optionally carries
     {"path", "name", "width", "height", "frames"} for the MediaIn Loader.
+    sequences maps a shader layer id -> {"files": [png, ...]}: the layer's
+    pre-baked web render, loaded through a Loader node.
+    On success the return carries "paths": layer id -> which node or Loader
+    the layer took, for the report.
     """
-    reasons = check_spec(spec)
+    reasons = check_spec(spec, sequences)
     if reasons:
         return {
             "fallback": {
@@ -126,9 +215,9 @@ def spec_to_comp(
                 "reason": "; ".join(reasons),
             }
         }
-    graph = _Graph(spec, baked or {})
+    graph = _Graph(spec, baked or {}, sequences or {})
     tools = graph.comp_tools(media)
-    return {"text": _composition(spec, tools)}
+    return {"text": _composition(spec, tools), "paths": dict(graph.paths)}
 
 
 def spec_to_macro(spec: dict[str, Any]) -> dict[str, Any]:
@@ -141,7 +230,21 @@ def spec_to_macro(spec: dict[str, Any]) -> dict[str, Any]:
                 "reason": "; ".join(reasons),
             }
         }
-    graph = _Graph(spec, {})
+    for layer in spec.get("layers") or []:
+        if not isinstance(layer, dict) or layer.get("type") != "shader":
+            continue
+        look = (layer.get("params") or {}).get("look")
+        if look in _Graph.NEEDS_FOOTAGE:
+            return {
+                "fallback": {
+                    "capability": FALLBACK_CAPABILITY,
+                    "reason": (
+                        f"layer {layer.get('id')!r}: look {look!r} processes "
+                        "footage, and a title template has no footage input"
+                    ),
+                }
+            }
+    graph = _Graph(spec, {}, {})
     tools = graph.macro_tools()
     published, skipped = _published_controls(spec, graph)
     body = _macro_operator(spec, tools, published)
@@ -158,7 +261,7 @@ def install_title_template(
     target = Path(dest_dir) if dest_dir is not None else title_template_dir()
     target.mkdir(parents=True, exist_ok=True)
     path = target / f"chair_{spec['id']}.setting"
-    path.write_text(rendered["text"])
+    path.write_text(rendered["text"], encoding="utf-8")
     return {"path": str(path)}
 
 
@@ -263,9 +366,12 @@ class _Graph:
         self,
         spec: dict[str, Any],
         baked: dict[str, dict[str, list[dict[str, Any]]]],
+        sequences: dict[str, Any] | None = None,
     ) -> None:
         self.spec = spec
         self.baked = baked
+        self.sequences = sequences or {}
+        self.paths: dict[str, str] = {}
         self.fps = float(spec["fps"])
         self.width = float(spec["width"])
         self.height = float(spec["height"])
@@ -298,6 +404,10 @@ class _Graph:
 
     # -- per-layer chain --------------------------------------------------
 
+    # Shader looks that process footage (not generate it) need a chain to
+    # read from; a title template has no footage input for its first layer.
+    NEEDS_FOOTAGE = frozenset({"film-grain", "dither", "halftone", "glow"})
+
     def layer_chain(self, layer: dict[str, Any], background: str | None) -> tuple[list[str], str]:
         """One layer's tools; output is a Merge over background, or the bare
         head when background is None (first layer of a title template)."""
@@ -307,6 +417,10 @@ class _Graph:
             blocks, head = self._shape(layer, params)
         elif ltype == "text":
             blocks, head = self._text(layer, params)
+        elif ltype == "shader":
+            if background is None:
+                return self._unwired_shader(layer, params)
+            blocks, head = self._shader(layer, params, background)
         else:
             blocks, head = self._image(layer, params)
         head = self._fx_chain(layer, params, blocks, head)
@@ -454,6 +568,310 @@ class _Graph:
             f"\t\t}},"
         )
         return [block], name
+
+    def _unwired_shader(
+        self, layer: dict[str, Any], params: dict[str, Any]
+    ) -> tuple[list[str], str]:
+        """A generator shader layer as a title template's first layer.
+
+        Processing looks never reach here: spec_to_macro falls back for
+        them because a template has no footage input to process.
+        """
+        look = params.get("look")
+        if look == "fast-noise":
+            return self._fast_noise(layer, params)
+        if look == "gradient":
+            return self._gradient_wash(layer, params)
+        raise RuntimeError(
+            f"Layer {layer.get('id')!r}: look {look!r} cannot start a title template."
+        )
+
+    def _shader(
+        self, layer: dict[str, Any], params: dict[str, Any], background: str
+    ) -> tuple[list[str], str]:
+        """One shader layer's native tools, or its baked-sequence Loader."""
+        look = params.get("look")
+        files = _sequence_files(self.sequences, str(layer["id"]))
+        if look == "film-grain":
+            return self._film_grain(layer, params, background)
+        if look == "dither":
+            return self._dither(layer, params, background)
+        if look == "halftone":
+            return self._halftone(layer, params, background)
+        if look == "fast-noise":
+            return self._fast_noise(layer, params)
+        if look == "gradient":
+            return self._gradient_wash(layer, params)
+        if look == "glow":
+            return self._look_glow(layer, params, background)
+        if files is not None:
+            return self._sequence_loader(layer, files)
+        raise RuntimeError(
+            f"Layer {layer.get('id')!r}: check_spec should have rejected this shader layer."
+        )
+
+    def _film_grain(
+        self, layer: dict[str, Any], params: dict[str, Any], background: str
+    ) -> tuple[list[str], str]:
+        """Footage grain: the FilmGrain tool. amount/size stay keyframable."""
+        name = _tool_id("Grain", layer["id"])
+        blocks: list[str] = []
+        amount = self._fx_input(
+            blocks, name, "MasterStrength", layer, "amount", float(params.get("amount", 0.5))
+        )
+        size_keys = self.curve(layer, "size")
+        size = float(params.get("size", 1))
+        if size_keys is None:
+            size_lines = [
+                f"\t\t\t\tMasterXSize = Input {{ Value = {_num(size)}, }},",
+                f"\t\t\t\tMasterYSize = Input {{ Value = {_num(size)}, }},",
+            ]
+        else:
+            blocks.append(_spline_block(f"{name}MasterXSize", _spline_keys(size_keys, self.fps)))
+            blocks.append(_spline_block(f"{name}MasterYSize", _spline_keys(size_keys, self.fps)))
+            size_lines = [
+                f"\t\t\t\tMasterXSize = Input {{\n"
+                f'\t\t\t\t\tSourceOp = "{name}MasterXSize",\n'
+                f'\t\t\t\t\tSource = "Value",\n'
+                f"\t\t\t\t}},",
+                f"\t\t\t\tMasterYSize = Input {{\n"
+                f'\t\t\t\t\tSourceOp = "{name}MasterYSize",\n'
+                f'\t\t\t\t\tSource = "Value",\n'
+                f"\t\t\t\t}},",
+            ]
+        mono = 1 if params.get("monochrome", False) else 0
+        seed = int(params.get("seed", 0))
+        blocks.append(
+            f"\t\t{name} = FilmGrain {{\n"
+            f"\t\t\tInputs = {{\n"
+            f"\t\t\t\tInput = Input {{\n"
+            f'\t\t\t\t\tSourceOp = "{background}",\n'
+            f'\t\t\t\t\tSource = "Output",\n'
+            f"\t\t\t\t}},\n"
+            f"{amount}\n" + "\n".join(size_lines) + "\n"
+            f"\t\t\t\tSeed = Input {{ Value = {seed}, }},\n"
+            f"\t\t\t\tMonochrome = Input {{ Value = {mono}, }},\n"
+            f"\t\t\t}},\n"
+            f"\t\t\tViewInfo = OperatorInfo {{ Pos = {self._place()}, }},\n"
+            f"\t\t}},"
+        )
+        self.paths[str(layer["id"])] = "native:FilmGrain"
+        return blocks, name
+
+    def _dither(
+        self, layer: dict[str, Any], params: dict[str, Any], background: str
+    ) -> tuple[list[str], str]:
+        """Ordered Bayer dither: a Custom tool quantizing each channel.
+
+        The 4x4 Bayer matrix is exact integer arithmetic (mod/floor only),
+        composed in Python because one channel expression is a single line.
+        levels (NumberIn1) stays keyframable; keys must stay >= 2.
+        """
+        name = _tool_id("Dith", layer["id"])
+        blocks: list[str] = []
+        levels = self._fx_input(
+            blocks, name, "NumberIn1", layer, "levels", float(params.get("levels", 4))
+        )
+        mx2, my2 = "mod(x,2)", "mod(y,2)"
+        b2 = f"({mx2}*(1-{my2})*2+(1-{mx2})*{my2}*3+{mx2}*{my2})"
+        qx, qy = "floor(mod(x,4)/2)", "floor(mod(y,4)/2)"
+        off = f"({qx}*(1-{qy})*2+(1-{qx})*{qy}*3+{qx}*{qy})"
+        threshold = f"((4*{b2}+{off})+0.5)/16"
+        blocks.append(
+            f"\t\t{name} = Custom {{\n"
+            f"\t\t\tInputs = {{\n"
+            f"\t\t\t\tNumberIn1 = Input {{ Value = 4, }},\n"
+            f'\t\t\t\tNameforNumber1 = Input {{ Value = "Levels", }},\n'
+            f"\t\t\t\tRedExpression = Input {{ "
+            f'Value = "floor(r1*(n1-1)+{threshold})/(n1-1)", }},\n'
+            f"\t\t\t\tGreenExpression = Input {{ "
+            f'Value = "floor(g1*(n1-1)+{threshold})/(n1-1)", }},\n'
+            f"\t\t\t\tBlueExpression = Input {{ "
+            f'Value = "floor(b1*(n1-1)+{threshold})/(n1-1)", }},\n'
+            f'\t\t\t\tAlphaExpression = Input {{ Value = "a1", }},\n'
+            f"\t\t\t\tImage1 = Input {{\n"
+            f'\t\t\t\t\tSourceOp = "{background}",\n'
+            f'\t\t\t\t\tSource = "Output",\n'
+            f"\t\t\t\t}},\n"
+            f"{levels}\n"
+            f"\t\t\t}},\n"
+            f"\t\t\tViewInfo = OperatorInfo {{ Pos = {self._place()}, }},\n"
+            f"\t\t}},"
+        )
+        self.paths[str(layer["id"])] = "native:Custom(dither)"
+        return blocks, name
+
+    def _halftone(
+        self, layer: dict[str, Any], params: dict[str, Any], background: str
+    ) -> tuple[list[str], str]:
+        """Round-dot halftone: a Custom tool screening each channel."""
+        name = _tool_id("Halo", layer["id"])
+        blocks: list[str] = []
+        cell = self._fx_input(
+            blocks, name, "NumberIn1", layer, "cell", float(params.get("cell", 12))
+        )
+        angle = self._fx_input(
+            blocks, name, "NumberIn2", layer, "angle", float(params.get("angle", 0.785398))
+        )
+        # Rotated cell coords and dot distance, inlined per channel so the
+        # only unverified mechanism is the `<` comparison itself.
+        u = "((x*cos(n2)+y*sin(n2))/n1)"
+        v = "((-x*sin(n2)+y*cos(n2))/n1)"
+        fu = f"({u}-floor({u}+0.5))"
+        fv = f"({v}-floor({v}+0.5))"
+        dot = f"({fu}*{fu}+{fv}*{fv})"
+        tone = "((r1+g1+b1)/3)"
+        blocks.append(
+            f"\t\t{name} = Custom {{\n"
+            f"\t\t\tInputs = {{\n"
+            f"\t\t\t\tNumberIn1 = Input {{ Value = 12, }},\n"
+            f"\t\t\t\tNumberIn2 = Input {{ Value = 0.785398, }},\n"
+            f'\t\t\t\tNameforNumber1 = Input {{ Value = "Cell", }},\n'
+            f'\t\t\t\tNameforNumber2 = Input {{ Value = "Angle", }},\n'
+            f"\t\t\t\tRedExpression = Input {{ "
+            f'Value = "r1*(1-({dot}<({tone}*0.5)))", }},\n'
+            f"\t\t\t\tGreenExpression = Input {{ "
+            f'Value = "g1*(1-({dot}<({tone}*0.5)))", }},\n'
+            f"\t\t\t\tBlueExpression = Input {{ "
+            f'Value = "b1*(1-({dot}<({tone}*0.5)))", }},\n'
+            f'\t\t\t\tAlphaExpression = Input {{ Value = "a1", }},\n'
+            f"\t\t\t\tImage1 = Input {{\n"
+            f'\t\t\t\t\tSourceOp = "{background}",\n'
+            f'\t\t\t\t\tSource = "Output",\n'
+            f"\t\t\t\t}},\n"
+            f"{cell}\n{angle}\n"
+            f"\t\t\t}},\n"
+            f"\t\t\tViewInfo = OperatorInfo {{ Pos = {self._place()}, }},\n"
+            f"\t\t}},"
+        )
+        self.paths[str(layer["id"])] = "native:Custom(halftone)"
+        return blocks, name
+
+    def _fast_noise(
+        self, layer: dict[str, Any], params: dict[str, Any]
+    ) -> tuple[list[str], str]:
+        """Stylized noise wash: the FastNoise generator, merged over the chain."""
+        name = _tool_id("FNoise", layer["id"])
+        blocks: list[str] = []
+        detail = self._fx_input(
+            blocks, name, "Detail", layer, "detail", float(params.get("detail", 5))
+        )
+        contrast = self._fx_input(
+            blocks, name, "Contrast", layer, "contrast", float(params.get("contrast", 1))
+        )
+        brightness = self._fx_input(
+            blocks, name, "Brightness", layer, "brightness",
+            float(params.get("brightness", 0.5)),
+        )
+        scale = float(params.get("scale", 3))
+        seethe = float(params.get("seetheRate", 0.5))
+        blocks.append(
+            f"\t\t{name} = FastNoise {{\n"
+            f"\t\t\tInputs = {{\n"
+            f"{detail}\n{contrast}\n{brightness}\n"
+            f"\t\t\t\tXScale = Input {{ Value = {_num(scale)}, }},\n"
+            f"\t\t\t\tYScale = Input {{ Value = {_num(scale)}, }},\n"
+            f"\t\t\t\tSeetheRate = Input {{ Value = {_num(seethe)}, }},\n"
+            f"\t\t\t\tColor1Red = Input {{ Value = 1, }},\n"
+            f"\t\t\t\tColor1Green = Input {{ Value = 1, }},\n"
+            f"\t\t\t\tColor1Blue = Input {{ Value = 1, }},\n"
+            f"\t\t\t\tColor2Red = Input {{ Value = 0, }},\n"
+            f"\t\t\t\tColor2Green = Input {{ Value = 0, }},\n"
+            f"\t\t\t\tColor2Blue = Input {{ Value = 0, }},\n"
+            f"\t\t\t\tWidth = Input {{ Value = {int(self.width)}, }},\n"
+            f"\t\t\t\tHeight = Input {{ Value = {int(self.height)}, }},\n"
+            f"\t\t\t\tUseFrameFormatSettings = Input {{ Value = 0, }},\n"
+            f"\t\t\t}},\n"
+            f"\t\t\tViewInfo = OperatorInfo {{ Pos = {self._place()}, }},\n"
+            f"\t\t}},"
+        )
+        self.paths[str(layer["id"])] = "native:FastNoise"
+        return blocks, name
+
+    def _gradient_wash(
+        self, layer: dict[str, Any], params: dict[str, Any]
+    ) -> tuple[list[str], str]:
+        """Gradient wash: a Background in Gradient mode, merged over the chain."""
+        name = _tool_id("GWash", layer["id"])
+        colors = params.get("colors", ["#1a1d24", "#05070c"])
+        top = _hex_to_rgb(str(colors[0]))
+        bottom = _hex_to_rgb(str(colors[1]))
+        angle = float(params.get("angle", 180)) * 3.14159265 / 180
+        dx, dy = math.cos(angle) / 2, math.sin(angle) / 2
+        blocks = [
+            f"\t\t{name} = Background {{\n"
+            f"\t\t\tInputs = {{\n"
+            f"\t\t\t\tWidth = Input {{ Value = {int(self.width)}, }},\n"
+            f"\t\t\t\tHeight = Input {{ Value = {int(self.height)}, }},\n"
+            f'\t\t\t\t["Gamut.SLogVersion"] = Input {{ Value = 0, }},\n'
+            f'\t\t\t\tType = Input {{ Value = FuID {{ "Gradient", }}, }},\n'
+            f"\t\t\t\tStart = Input {{ Value = {{ {_num(0.5 - dx)}, {_num(0.5 - dy)}, }}, }},\n"
+            f"\t\t\t\tEnd = Input {{ Value = {{ {_num(0.5 + dx)}, {_num(0.5 + dy)}, }}, }},\n"
+            f"\t\t\t\tGradient = Input {{\n"
+            f"\t\t\t\t\tValue = Gradient {{\n"
+            f"\t\t\t\t\t\tColors = {{\n"
+            f"\t\t\t\t\t\t\t[0] = {{ {_num(top[0])}, {_num(top[1])}, "
+            f"{_num(top[2])}, 1 }},\n"
+            f"\t\t\t\t\t\t\t[1] = {{ {_num(bottom[0])}, {_num(bottom[1])}, "
+            f"{_num(bottom[2])}, 1 }}\n"
+            f"\t\t\t\t\t\t}}\n"
+            f"\t\t\t\t\t}},\n"
+            f"\t\t\t\t}},\n"
+            f"\t\t\t}},\n"
+            f"\t\t\tViewInfo = OperatorInfo {{ Pos = {self._place()}, }},\n"
+            f"\t\t}},"
+        ]
+        self.paths[str(layer["id"])] = "native:Background(gradient)"
+        return blocks, name
+
+    def _look_glow(
+        self, layer: dict[str, Any], params: dict[str, Any], background: str
+    ) -> tuple[list[str], str]:
+        """Glow wash: SoftGlow straight on the chain."""
+        name = _tool_id("LGlow", layer["id"])
+        blocks: list[str] = []
+        gain = self._fx_input(
+            blocks, name, "Gain", layer, "gain", float(params.get("gain", 1))
+        )
+        threshold = self._fx_input(
+            blocks, name, "Threshold", layer, "threshold",
+            float(params.get("threshold", 0.5)),
+        )
+        blocks.append(
+            f"\t\t{name} = SoftGlow {{\n"
+            f"\t\t\tInputs = {{\n"
+            f"\t\t\t\tInput = Input {{\n"
+            f'\t\t\t\t\tSourceOp = "{background}",\n'
+            f'\t\t\t\t\tSource = "Output",\n'
+            f"\t\t\t\t}},\n"
+            f"{gain}\n{threshold}\n"
+            f"\t\t\t}},\n"
+            f"\t\t\tViewInfo = OperatorInfo {{ Pos = {self._place()}, }},\n"
+            f"\t\t}},"
+        )
+        self.paths[str(layer["id"])] = "native:SoftGlow"
+        return blocks, name
+
+    def _sequence_loader(
+        self, layer: dict[str, Any], files: list[str]
+    ) -> tuple[list[str], str]:
+        """Baked web render: a Loader over the PNG sequence, merged over the chain."""
+        name = _tool_id("Seq", layer["id"])
+        blocks = [
+            f"\t\t{name} = Loader {{\n"
+            f"\t\t\tClips = {{\n"
+            f"\t\t\t\tClip {{\n"
+            f'\t\t\t\t\tID = "Clip1",\n'
+            f"\t\t\t\t\tFilename = {_str(files[0])},\n"
+            f"\t\t\t\t\tLength = {len(files)},\n"
+            f"\t\t\t\t\tLengthSetManually = true,\n"
+            f"\t\t\t\t}}\n"
+            f"\t\t\t}},\n"
+            f"\t\t\tViewInfo = OperatorInfo {{ Pos = {self._place()}, }},\n"
+            f"\t\t}},"
+        ]
+        self.paths[str(layer["id"])] = "baked:Loader"
+        return blocks, name
 
     def _fx_chain(
         self,
@@ -957,4 +1375,37 @@ def _control_inputs(
             if entry.get("kind") == "glow":
                 return [(_tool_id("Glow", layer["id"]), "Gain", float(entry.get("gain", 1)))]
         return None
+    look = params.get("look")
+    if look == "film-grain" and ctype == "number":
+        if param == "amount":
+            return [(_tool_id("Grain", layer["id"]), "MasterStrength",
+                     float(params.get("amount", 0.5)))]
+        if param == "size":
+            default = float(params.get("size", 1))
+            return [(_tool_id("Grain", layer["id"]), "MasterXSize", default),
+                    (_tool_id("Grain", layer["id"]), "MasterYSize", default)]
+    if look == "dither" and param == "levels" and ctype == "number":
+        return [(_tool_id("Dith", layer["id"]), "NumberIn1",
+                 float(params.get("levels", 4)))]
+    if look == "halftone" and ctype == "number":
+        if param == "cell":
+            return [(_tool_id("Halo", layer["id"]), "NumberIn1",
+                     float(params.get("cell", 12)))]
+        if param == "angle":
+            return [(_tool_id("Halo", layer["id"]), "NumberIn2",
+                     float(params.get("angle", 0.785398)))]
+    if look == "fast-noise" and ctype == "number":
+        if param in ("detail", "contrast", "brightness"):
+            tool = _tool_id("FNoise", layer["id"])
+            source = {"detail": "Detail", "contrast": "Contrast",
+                      "brightness": "Brightness"}[param]
+            default = {"detail": 5, "contrast": 1, "brightness": 0.5}[param]
+            return [(tool, source, float(params.get(param, default)))]
+    if look == "glow" and ctype == "number":
+        if param == "gain":
+            return [(_tool_id("LGlow", layer["id"]), "Gain",
+                     float(params.get("gain", 1)))]
+        if param == "threshold":
+            return [(_tool_id("LGlow", layer["id"]), "Threshold",
+                     float(params.get("threshold", 0.5)))]
     return None

@@ -17,15 +17,31 @@ function isFiniteNumber(v: unknown): v is number {
   return typeof v === "number" && Number.isFinite(v);
 }
 
+/** Shader looks the Resolve adapter maps to native Fusion nodes. */
+const NATIVE_SHADER_LOOKS = new Set([
+  "film-grain",
+  "dither",
+  "halftone",
+  "fast-noise",
+  "gradient",
+  "glow",
+]);
+
 /**
  * Recommended export target, cheapest native option first: a shape/text-only
- * spec becomes a Fusion macro; a spec with a custom shader needs the web
- * title path (OGraf); image layers with external files fall back to a
- * rendered clip. A caller-set `spec.export.target` wins over this guess.
+ * spec becomes a Fusion macro, as does a shader layer tagged with a native
+ * look (params.look); a spec with a custom shader needs the web title path
+ * (OGraf); image layers with external files fall back to a rendered clip.
+ * A caller-set `spec.export.target` wins over this guess.
  */
 export function selectExportTarget(spec: EffectSpec): ExportTarget {
   const layers = spec.layers ?? [];
-  if (spec.shader || layers.some((l) => l.type === "shader")) return "ograf";
+  const shader = layers.some(
+    (l) =>
+      l.type === "shader" &&
+      !NATIVE_SHADER_LOOKS.has(String((l.params as Record<string, unknown> | undefined)?.["look"] ?? "")),
+  );
+  if (spec.shader || shader) return "ograf";
   if (layers.some((l) => l.type === "image")) return "rendered-clip";
   return "fusion-macro";
 }
