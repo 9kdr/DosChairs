@@ -544,7 +544,13 @@ export function ProjectShell({ projectId, projectName, editorId, onHome }: Proje
               aria-label="Project panel"
               className={`flex min-h-0 w-80 shrink-0 flex-col overflow-hidden rounded-card bg-card p-4 text-neutral-100 xl:w-96${narrowShowsPanel ? " @max-[760px]:w-full" : " @max-[760px]:hidden"}`}
             >
-              <SidePanel tab={sideTab} onTab={setSideTab} plan={planPane} shelf={shelfPane} />
+              {narrowShowsPanel ? (
+                <div className="min-h-0 flex-1 overflow-hidden">
+                  {sideTab === "plan" ? planPane : shelfPane}
+                </div>
+              ) : (
+                <SidePanel tab={sideTab} onTab={setSideTab} plan={planPane} shelf={shelfPane} />
+              )}
             </aside>
           ) : null}
         </div>

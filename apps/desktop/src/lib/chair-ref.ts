@@ -79,3 +79,52 @@ export function acceptsChairRef(transfer: Pick<ChairRefTransfer, "types">): bool
 export function readChairRefs(transfer: Pick<ChairRefTransfer, "getData">): ChairRef[] {
   return decodeChairRefs(transfer.getData(CHAIR_REF));
 }
+
+/** Drag tone for an outgoing shelf drag: media kind, folder, or piece. */
+export type ShelfDragTone = "video" | "image" | "audio" | "folder" | "piece";
+
+/** One row in an outgoing shelf drag. Folders ride as asset refs. */
+export type ShelfDragItem = {
+  id: string;
+  label: string;
+  tone: ShelfDragTone;
+  refKind: "asset" | "piece";
+};
+
+/**
+ * Group rule for a shelf drag: the held row alone, unless it sits inside a
+ * multi-select — then every selected row rides, each with its own ref kind.
+ */
+export function dragItemsFor(
+  chosen: readonly string[],
+  assets: readonly { id: string; name: string; kind: "video" | "image" | "audio" }[],
+  folders: readonly { id: string; name: string }[],
+  pieces: readonly { id: string; name: string }[],
+  id: string,
+  label: string,
+  tone: ShelfDragTone,
+): ShelfDragItem[] {
+  const single: ShelfDragItem = {
+    id,
+    label,
+    tone,
+    refKind: tone === "piece" ? "piece" : "asset",
+  };
+  if (!chosen.includes(id) || chosen.length < 2) return [single];
+  const group: ShelfDragItem[] = [];
+  for (const sid of chosen) {
+    const asset = assets.find((item) => item.id === sid);
+    if (asset) {
+      group.push({ id: sid, label: asset.name, tone: asset.kind, refKind: "asset" });
+      continue;
+    }
+    const folderItem = folders.find((item) => item.id === sid);
+    if (folderItem) {
+      group.push({ id: sid, label: folderItem.name, tone: "folder", refKind: "asset" });
+      continue;
+    }
+    const piece = pieces.find((item) => item.id === sid);
+    if (piece) group.push({ id: sid, label: piece.name, tone: "piece", refKind: "piece" });
+  }
+  return group.length > 0 ? group : [single];
+}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { dragItemsFor } from "./AssetShelf";
+import { dragItemsFor } from "./chair-ref";
 
 const assets = [
   { id: "a1", name: "A001_C004.mov", kind: "video" as const },
