@@ -72,29 +72,7 @@ export function ShelfPieces({ onCreate, className }: { onCreate: () => void; cla
         </Button>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
-        {pieces === null ? (
-          failure ? (
-            <div className="flex flex-col items-start gap-2 px-1 py-1">
-              <p className="text-sm leading-6 text-neutral-400">{failureText(failure)}</p>
-              <Button type="button" size="sm" variant="ghost" onClick={load}>
-                Check again
-              </Button>
-            </div>
-          ) : (
-            <p className="px-1 py-1 text-sm text-muted-foreground">Loading pieces…</p>
-          )
-        ) : pieces.length === 0 ? (
-          failure ? (
-            <div className="flex flex-col items-start gap-2 px-1 py-1">
-              <p className="text-sm leading-6 text-neutral-400">{failureText(failure)}</p>
-              <Button type="button" size="sm" variant="ghost" onClick={load}>
-                Check again
-              </Button>
-            </div>
-          ) : (
-            <p className="px-1 py-1 text-sm text-muted-foreground">No pieces yet.</p>
-          )
-        ) : (
+        {pieces !== null && pieces.length > 0 ? (
           <ul className="flex flex-col gap-1.5" aria-label="Pieces">
             {pieces.map((piece) => (
               <li
@@ -117,6 +95,17 @@ export function ShelfPieces({ onCreate, className }: { onCreate: () => void; cla
               </li>
             ))}
           </ul>
+        ) : failure ? (
+          <div className="flex flex-col items-start gap-2 px-1 py-1">
+            <p className="text-sm leading-6 text-neutral-400">{failureText(failure)}</p>
+            <Button type="button" size="sm" variant="ghost" onClick={load}>
+              Check again
+            </Button>
+          </div>
+        ) : (
+          <p className="px-1 py-1 text-sm text-muted-foreground">
+            {pieces === null ? "Loading pieces…" : "No pieces yet."}
+          </p>
         )}
       </div>
     </section>
