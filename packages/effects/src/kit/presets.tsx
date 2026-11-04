@@ -28,10 +28,8 @@ void main() {
   float v = fbm(p * 1.7 + vec2(w * u_flow, -w * u_flow) + u_time * 0.1);
   vec3 col = mix(u_ink, u_accent, smoothstep(0.32, 0.62, v));
   col = mix(col, u_paper, smoothstep(0.62, 0.86, v));
-  float grain = bayerless(px);
   oColor = vec4(col, 1.0);
 }
-float bayerless(vec2 px) { return fract(sin(dot(px, vec2(12.9898, 78.233))) * 43758.5453) * 0.0; }
 `;
 
 export interface GradientWashProps {
