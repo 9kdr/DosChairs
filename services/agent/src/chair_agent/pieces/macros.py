@@ -14,13 +14,27 @@ from typing import Any
 
 from chair_resolve import ScanResult, scan_fusion
 
-from chair_agent.pieces.catalog import PIECES
+from chair_agent.pieces.catalog import PIECES, piece_kind
 
 _LOCK = threading.Lock()
 _SCAN: ScanResult | None = None
 _LAST_ERROR: str | None = None
 
 MAX_REFERENCES = 12
+
+# Scan kinds that move over time sit on the motion shelf, live shader
+# titles with effects; everything else (titles, plain macros) is a macro.
+_MACRO_SHELF: dict[str, str] = {
+    "transition": "motion",
+    "generator": "motion",
+    "effect": "effect",
+    "ograf": "effect",
+}
+
+
+def shelf_kind(scan_kind: str) -> str:
+    """Shelf kind for a scanned macro; unknown kinds land on macro."""
+    return _MACRO_SHELF.get(scan_kind, "macro")
 
 
 def get_scan(*, rescan: bool = False) -> ScanResult:
@@ -59,7 +73,8 @@ def _catalog_entries() -> list[dict[str, Any]]:
         {
             "id": piece.id,
             "name": piece.title,
-            "kind": piece.effect,
+            "kind": piece_kind(piece.effect),
+            "effect": piece.effect,
             "origin": "catalog",
             "source": "catalog",
             "summary": piece.summary,
@@ -87,7 +102,8 @@ def _macro_entries(scan: ScanResult) -> list[dict[str, Any]]:
             {
                 "id": piece.id,
                 "name": piece.name,
-                "kind": piece.kind,
+                "kind": shelf_kind(piece.kind),
+                "macro_kind": piece.kind,
                 "origin": "macro",
                 "source": piece.source,
                 "summary": f"Resolve {piece.kind} {where}, {len(controls)} published controls.",
@@ -102,7 +118,12 @@ def _macro_entries(scan: ScanResult) -> list[dict[str, Any]]:
 def _score(entry: dict[str, Any], tokens: Sequence[str]) -> int:
     name = entry["name"].lower()
     rest = " ".join(
-        [entry["kind"], entry["summary"], *(control["name"] for control in entry["controls"])]
+        [
+            entry["kind"],
+            str(entry.get("macro_kind") or entry.get("effect") or ""),
+            entry["summary"],
+            *(control["name"] for control in entry["controls"]),
+        ]
     ).lower()
     return sum(3 if token in name else 1 if token in rest else 0 for token in tokens)
 
@@ -154,7 +175,8 @@ def references_note(references: Any) -> str:
             continue
         controls = "; ".join(_describe(c) for c in piece["controls"][:12])
         controls = controls or "no published controls"
-        lines.append(f"- @{piece['name']} ({piece['kind']}, {piece['source']}): {controls}.")
+        flavor = str(piece.get("macro_kind") or piece.get("effect") or piece["kind"])
+        lines.append(f"- @{piece['name']} ({flavor}, {piece['source']}): {controls}.")
     if not lines:
         return ""
     return (

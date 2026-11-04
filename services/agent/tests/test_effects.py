@@ -46,7 +46,7 @@ def isolated(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     effects._EFFECTS.clear()
     effects._STATUS.update({
         "generated": 0, "verify_passes": 0, "verify_fails": 0,
-        "last_latency_ms": None, "last_error": None,
+        "repairs": 0, "last_latency_ms": None, "last_error": None,
     })
     return tmp_path
 
@@ -104,25 +104,31 @@ def test_generate_valid_spec_targets_fusion_macro(isolated) -> None:
     assert effects.get_effect(record.id).spec["name"] == "Rising title"
 
 
-def test_generate_repairs_once_then_fails_clearly(isolated) -> None:
+def test_generate_repairs_twice_then_fails_clearly(isolated) -> None:
     bad = _spec()
     del bad["layers"]
-    client = FakeClient(execute=[json.dumps(bad), json.dumps(_spec())])
+    client = FakeClient(execute=[json.dumps(bad), json.dumps(bad), json.dumps(_spec())])
     record = effects.generate_effect(
         "title", width=1280, height=720, fps=30, duration_sec=2.0, client=client,
     )
-    assert client.execute_calls == 2
+    assert client.execute_calls == 3
     assert "repaired on retry" in record.notes
     assert record.spec["layers"]
+    assert effects.status_snapshot()["repairs"] == 2
+    # The second repair sees both validator errors, verbatim.
+    developer = next(m.content for m in client.last_messages if m.role == "developer")
+    assert developer.count("'layers' is a required property") == 2
 
-    always_bad = FakeClient(execute=[json.dumps(bad), json.dumps(bad)])
-    with pytest.raises(InvalidEffect, match="failed validation twice"):
+    always_bad = FakeClient(execute=[json.dumps(bad)] * 3)
+    with pytest.raises(InvalidEffect, match="failed validation 3 times"):
         effects.generate_effect(
             "title", width=1280, height=720, fps=30, duration_sec=2.0,
             client=always_bad,
         )
+    assert always_bad.execute_calls == 3
     assert effects.status_snapshot()["generated"] == 1
-    assert "twice" in (effects.status_snapshot()["last_error"] or "")
+    assert "3 times" in (effects.status_snapshot()["last_error"] or "")
+    assert effects.status_snapshot()["repairs"] == 4
 
 
 def test_generate_repairs_malformed_json_once(isolated) -> None:
@@ -141,13 +147,13 @@ def test_generate_repairs_malformed_json_once(isolated) -> None:
     user = next(m.content for m in client.last_messages if m.role == "user")
     assert user == broken
 
-    still_broken = FakeClient(execute=[broken, broken])
+    still_broken = FakeClient(execute=[broken] * 3)
     with pytest.raises(InvalidEffect, match="did not return JSON"):
         effects.generate_effect(
             "title", width=1280, height=720, fps=30, duration_sec=2.0,
             client=still_broken,
         )
-    assert still_broken.execute_calls == 2
+    assert still_broken.execute_calls == 3
 
 
 def test_generate_shader_layers_ship_as_ograf_titles(isolated) -> None:

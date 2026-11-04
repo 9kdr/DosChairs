@@ -304,6 +304,33 @@ class JobController:
         self._notify(request_id)
         return self.get(request_id)
 
+    def summary(self) -> dict[str, Any]:
+        """Pipeline numbers for the health endpoint: counts by state, last error."""
+        with self._lock:
+            jobs = list(self._jobs.values())
+        counts: dict[str, int] = {}
+        for job in jobs:
+            counts[job.status] = counts.get(job.status, 0) + 1
+        last_error: str | None = None
+        latest = None
+        for job in jobs:
+            if (
+                job.status in ("failed", "moderated")
+                and job.error
+                and job.finished_at is not None
+                and (latest is None or job.finished_at > latest)
+            ):
+                latest = job.finished_at
+                last_error = job.error
+        return {
+            "queued": counts.get("queued", 0),
+            "in_progress": counts.get("in_progress", 0),
+            "completed": counts.get("completed", 0),
+            "failed": counts.get("failed", 0) + counts.get("moderated", 0),
+            "canceled": counts.get("canceled", 0),
+            "last_error": last_error,
+        }
+
     def latest_proposal(self, project_id: str, timeline: Mapping[str, Any]) -> Job | None:
         """Latest completed proposal linked to this project, if any.
 

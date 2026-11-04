@@ -47,15 +47,22 @@ RENDERABLE_LAYERS = (
 )
 
 TASTE_GUIDE = (
-    "Motion-design taste guide: ease in and out with handles, never linear "
-    "slides (linear reads as broken); overshoot and settle instead of easing "
-    "to a dead stop; stagger layered entrances by 2-4 frames so the eye has "
-    "an order to follow; keep type readable the whole way through (no tiny "
-    "text, no long strings at speed); use glow with restraint (one SoftGlow "
-    "peak, never stacked); keep contrast high enough to read over footage."
+    "Motion-design taste guide, in the spirit of modern web studios (Unicorn "
+    "Studio): shader-gradient washes, dithering and halftone texture, film "
+    "grain, one restrained glow peak, liquid distortion saved for "
+    "transitions. Ease in and out with handles, never linear slides (linear "
+    "reads as broken); overshoot and settle instead of easing to a dead "
+    "stop; stagger layered entrances by 2-4 frames so the eye has an order "
+    "to follow; keep type readable the whole way through (no tiny text, no "
+    "long strings at speed); keep contrast high enough to read over "
+    "footage. Stay inside the renderable layer types and the Fusion node "
+    "set above: reach the web look with shape/text/image layers plus Blur, "
+    "SoftGlow, and ColorCorrector, and use a shader layer only when the "
+    "look truly needs custom GLSL."
 )
 
 MAX_VERIFY_ROUNDS = 2
+MAX_GENERATE_REPAIRS = 2
 
 
 class InvalidEffect(ValueError):
@@ -97,6 +104,7 @@ _STATUS: dict[str, Any] = {
     "generated": 0,
     "verify_passes": 0,
     "verify_fails": 0,
+    "repairs": 0,
     "last_latency_ms": None,
     "last_error": None,
 }
@@ -114,6 +122,11 @@ def _note_generated(latency_ms: float, error: str | None = None) -> None:
             _STATUS["generated"] += 1
         _STATUS["last_latency_ms"] = latency_ms
         _STATUS["last_error"] = error
+
+
+def _note_repair() -> None:
+    with _STATUS_LOCK:
+        _STATUS["repairs"] += 1
 
 
 def _note_verdict(passed: bool, latency_ms: float, error: str | None = None) -> None:
@@ -440,26 +453,33 @@ def generate_effect(
         notes += " A reference image guided the look."
     try:
         completion = active.execute(messages)
-        draft: dict[str, Any] | None = None
-        try:
-            draft = _parse_spec_completion(completion.text)
-            spec = validate_effect_spec(draft)
-        except InvalidEffect as first_error:
-            bad: Mapping[str, Any] | str = (
-                draft if draft is not None else completion.text
-            )
-            repair = active.execute(
-                build_repair_messages(bad, [str(first_error)])
-            )
-            draft = _parse_spec_completion(repair.text)
+        text = completion.text
+        parsed: dict[str, Any] | None = None
+        malformed = False
+        errors: list[str] = []
+        repairs = 0
+        while True:
             try:
-                spec = validate_effect_spec(draft)
-            except InvalidEffect as second_error:
-                raise InvalidEffect(
-                    "model output failed validation twice; last error: "
-                    f"{second_error}"
-                ) from second_error
-            if isinstance(bad, str):
+                parsed = _parse_spec_completion(text)
+                spec = validate_effect_spec(parsed)
+                break
+            except InvalidEffect as error:
+                errors.append(str(error))
+                if repairs >= MAX_GENERATE_REPAIRS:
+                    raise InvalidEffect(
+                        "model output failed validation "
+                        f"{MAX_GENERATE_REPAIRS + 1} times; last error: {error}"
+                    ) from error
+                repairs += 1
+                _note_repair()
+                bad: Mapping[str, Any] | str = parsed if parsed is not None else text
+                malformed = malformed or isinstance(bad, str)
+                # The validator's own words go back in, verbatim.
+                repair = active.execute(build_repair_messages(bad, list(errors)))
+                text = repair.text
+                parsed = None
+        if repairs:
+            if malformed:
                 notes += " First draft was malformed JSON; repaired on retry."
             else:
                 notes += " First draft failed validation; repaired on retry."

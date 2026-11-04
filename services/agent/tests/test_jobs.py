@@ -368,3 +368,29 @@ def test_submit_rejects_webhook_url_without_secret(tmp_path: Path) -> None:
     with pytest.raises(JobInvalid) as excinfo:
         controller.submit("transcribe", webhook_url="https://example.test/hook")
     assert excinfo.value.code == "webhook_requires_secret"
+
+
+def test_summary_counts_states_and_reports_last_error(tmp_path: Path) -> None:
+    controller = _controller(tmp_path)
+    assert controller.summary() == {
+        "queued": 0, "in_progress": 0, "completed": 0,
+        "failed": 0, "canceled": 0, "last_error": None,
+    }
+    dropped = controller.submit("edit", {"brief": "never mind"})
+    controller.cancel(dropped.request_id)
+    done = controller.submit("edit", {"brief": "cut the silence"})
+    controller.claim_next()
+    controller.finish_completed(done.request_id)
+    bad = controller.submit("edit", {"brief": "cut the silence"})
+    controller.claim_next()
+    controller.finish_failed(bad.request_id, "boom")
+    moderated = controller.submit("edit", {"brief": "cut the silence"})
+    controller.claim_next()
+    controller.finish_moderated(moderated.request_id, "blocked")
+    controller.submit("edit", {"brief": "waiting"})
+    summary = controller.summary()
+    assert summary["queued"] == 1
+    assert summary["completed"] == 1
+    assert summary["failed"] == 2
+    assert summary["canceled"] == 1
+    assert summary["last_error"] == "blocked"

@@ -199,6 +199,30 @@ def build_planner_messages(instruction: str, hits: Sequence[PieceHit]) -> list[M
             f"- {piece.id} [{piece.effect} via {piece.endpoint}]; "
             f"needs {refs}; defaults {defaults}: {piece.summary}"
         )
+    lines.append(
+        "First restate the editor's plan in one line, then expand it into "
+        "ordered steps, each delegating to one piece above."
+    )
+    lines.append(
+        "Worked examples (brief -> steps): "
+        "'rainy neon key art' -> muse_image hero-key-art (aspect 16:9, style "
+        "cinematic), then place it on the cut; "
+        "'blur the background' -> sam3_mask subject-matte (promptKind text, "
+        "trackMode tracked) on its own matte track; "
+        "'warm trustworthy interview' -> grade warm-interview (intensity "
+        "medium, source preset), name the preset; "
+        "'huge words on every beat' -> motion_graphics kinetic-title "
+        "(template title-card), cuts land on beats."
+    )
+    lines.append(
+        "Taste, restrained and editorial, never flashy. "
+        "Sound: risers into cuts, tape stops out of scenes, reverb and "
+        "reverse-reverb tails across transitions, music matched to key and "
+        "energy, always ducked under dialogue. "
+        "Motion: momentum in, overshoot and settle (never a dead stop or a "
+        "linear slide), a small bounce or tilt for emphasis, staggered "
+        "entrances, one idea per beat."
+    )
     lines.append("Propose a validated plan per effect. Omit nothing the pieces need.")
     developer = Message(role="developer", content="\n".join(lines))
     return [developer, Message(role="user", content=instruction)]
@@ -221,7 +245,26 @@ def build_brief_planner_messages(brief: str) -> list[Message]:
         "  ]\n"
         "}\n"
         "Steps may ONLY use tools from this registry:\n"
-        f"{tool_lines}"
+        f"{tool_lines}\n"
+        "Step 1 always restates the editor's plan: its goal starts with "
+        "'Restate: ' and uses the tool that reads what the job needs "
+        "(measure_audio for sound, get_frame for picture), then the later "
+        "steps delegate the work.\n"
+        "Worked examples (brief -> steps): "
+        "'cut the dead air' -> measure_audio finds silent spans, editor_op "
+        "cuts them, render_preview checks the cut; "
+        "'warm interview grade' -> get_frame reads the look, grade applies "
+        "the preset, render_preview checks skin tones; "
+        "'punch in on the product' -> sam3_mask isolates it, editor_op "
+        "punches in, render_preview checks the edges; "
+        "'titles on every beat' -> transcribe finds the words, "
+        "motion_graphics builds the cards, render_preview checks the beats.\n"
+        "Taste, restrained and editorial, never flashy. "
+        "Sound: risers into cuts, tape stops out of scenes, reverb and "
+        "reverse-reverb tails across transitions, music matched to key and "
+        "energy, always ducked under dialogue. "
+        "Motion: momentum in, overshoot and settle, a small bounce or tilt "
+        "for emphasis, staggered entrances, one idea per beat."
     )
     return [Message(role="developer", content=developer), Message(role="user", content=brief)]
 

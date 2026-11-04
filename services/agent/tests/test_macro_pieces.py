@@ -50,12 +50,30 @@ def test_list_merges_catalog_pieces_and_macros_with_controls() -> None:
     origins = {entry["origin"] for entry in body["pieces"]}
     assert origins == {"catalog", "macro"} and body["total"] == 15
     hit = macros.list_pieces("lower third")["pieces"][0]
-    assert hit["id"] == LOWER and hit["kind"] == "title" and hit["source"] == "user"
+    assert hit["id"] == LOWER and hit["kind"] == "macro" and hit["source"] == "user"
+    assert hit["macro_kind"] == "title"
     names = [control["name"] for control in hit["controls"]]
     assert names == ["Name", "Bar Color", "Size", "Flip", "Align"]
     catalog = macros.list_pieces("warm interview")["pieces"][0]
     assert catalog["origin"] == "catalog"
+    assert catalog["kind"] == "effect" and catalog["effect"] == "grade"
     assert catalog["controls"][0]["type"] == "choice"
+
+
+def test_every_piece_carries_a_shelf_kind() -> None:
+    body = macros.list_pieces(limit=100)
+    kinds = {entry["kind"] for entry in body["pieces"]}
+    assert kinds <= {"macro", "effect", "motion", "sound"}
+    by_id = {entry["id"]: entry for entry in body["pieces"]}
+    assert by_id["kinetic-title"]["kind"] == "motion"
+    assert by_id["hero-key-art"]["kind"] == "effect"
+    assert macros.shelf_kind("transition") == "motion"
+    assert macros.shelf_kind("generator") == "motion"
+    assert macros.shelf_kind("effect") == "effect"
+    assert macros.shelf_kind("ograf") == "effect"
+    assert macros.shelf_kind("title") == "macro"
+    assert macros.shelf_kind("macro") == "macro"
+    assert macros.shelf_kind("whatever-new") == "macro"
 
 
 def test_query_with_no_match_is_empty_and_limit_holds() -> None:
