@@ -156,7 +156,7 @@ export function HistoryCard({
         <span className="shrink-0 text-xs whitespace-nowrap tabular-nums text-muted-foreground">
           {entries.length === 1 ? "1 entry" : `${entries.length} entries`}
         </span>
-        <InfoHint text="Every apply lands on a copy." />
+        <InfoHint>Every apply lands on a copy.</InfoHint>
         {onUndoLast && entries.length > 0 ? (
           <Button
             type="button"
