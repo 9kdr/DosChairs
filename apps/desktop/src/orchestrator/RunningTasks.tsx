@@ -3,6 +3,7 @@ import type { DragEvent, KeyboardEvent, MouseEvent, PointerEvent } from "react";
 import {
   ArrowUpRight,
   Check,
+  ChevronDown,
   HistoryIcon,
   Loader2,
   Redo2,
@@ -18,6 +19,7 @@ import { SleepyChair } from "@/components/sleepy-chair/sleepy-chair";
 import { InfoHint } from "@/components/info-hint";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
+import { loadJson, saveJson } from "@/lib/storage";
 import { clockTime, historyForTask, opLabel, type HistoryEntry } from "../project/store";
 import { activityForTask } from "./TaskActivity";
 import type { Suggestion } from "./suggestions";
@@ -146,6 +148,8 @@ export interface RunningTasksProps {
   onUndoResolve?: (task: RunningTask) => void;
   /** Redo an undone write: the stored apply goes again as a new copy. */
   onRedoResolve?: (task: RunningTask) => void;
+  /** Keys the Recent group's collapsed state, one per project. */
+  projectId?: string;
   /** Open the full History page, from the Recent group's link. */
   onOpenHistory?: () => void;
   /** A suggestion chip was picked: retry its task, or fill the bar. */
@@ -629,6 +633,7 @@ function TaskTile({
  */
 export function RunningTasks({
   className,
+  projectId,
   tasks = [],
   recentTasks = [],
   history = [],
@@ -644,6 +649,14 @@ export function RunningTasks({
   onSuggest,
 }: RunningTasksProps) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const recentKey = `chair.tasks.recentCollapsed.${projectId ?? "default"}`;
+  const [recentCollapsed, setRecentCollapsed] = useState(() => loadJson(recentKey) === true);
+  useEffect(() => setRecentCollapsed(loadJson(recentKey) === true), [recentKey]);
+  const toggleRecent = () => {
+    const next = !recentCollapsed;
+    setRecentCollapsed(next);
+    saveJson(recentKey, next);
+  };
   const working = useMemo(
     () => [...tasks].sort((a, b) => (a.startedAt ?? 0) - (b.startedAt ?? 0)),
     [tasks],
@@ -757,8 +770,24 @@ export function RunningTasks({
           ) : null}
           {recent.length > 0 ? (
             <section aria-label="Recent" className="min-w-0">
-              {groupLabel("Recent", recent.length)}
-              <div className={cn("grid gap-2", gridFor(recent.length))}>
+              <button
+                type="button"
+                aria-expanded={!recentCollapsed}
+                aria-controls="recent-tasks"
+                onClick={toggleRecent}
+                className="-ml-1 mb-2 flex items-center gap-1.5 rounded-md px-1 py-0.5 text-meta font-medium text-muted-foreground outline-none transition-colors hover:text-neutral-100 focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <ChevronDown
+                  aria-hidden="true"
+                  className={cn("size-3.5 transition-transform", recentCollapsed && "-rotate-90")}
+                />
+                Recent
+                <span className="tabular-nums text-neutral-600">{recent.length}</span>
+              </button>
+              <div
+                id="recent-tasks"
+                className={cn(recentCollapsed ? "hidden" : "grid gap-2", !recentCollapsed && gridFor(recent.length))}
+              >
                 {recent.map((task, index) => tile(task, 101 + index, true))}
               </div>
             </section>

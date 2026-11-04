@@ -173,22 +173,6 @@ export function Shelf({
   if (editing) {
     return (
       <div className={cn("flex h-full min-h-0 min-w-0 flex-col gap-3", className)}>
-        <div className="flex shrink-0 items-center gap-2">
-          <Button
-            type="button"
-            size="sm"
-            variant="ghost"
-            aria-label="Back to pieces"
-            onClick={() => setEditing(null)}
-          >
-            <ChevronLeftIcon />
-            Pieces
-          </Button>
-          <h2 className="min-w-0 truncate text-sm font-medium text-neutral-100">
-            {editing.name}
-          </h2>
-          <span className="shrink-0 text-xs text-muted-foreground">Effect</span>
-        </div>
         <EffectMaker
           clips={clips}
           onApply={onApplyPiece ?? (() => null)}
@@ -197,6 +181,8 @@ export function Shelf({
           refusal={pieceRefusal}
           landings={landings}
           onRecordLanding={onRecordLanding}
+          piece={{ id: editing.id, name: editing.name }}
+          onBack={() => setEditing(null)}
         />
       </div>
     );

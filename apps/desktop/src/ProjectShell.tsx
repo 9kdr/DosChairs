@@ -300,6 +300,7 @@ export function ProjectShell({ projectId, projectName, editorId, onHome }: Proje
   };
   const tasksList = (
     <RunningTasks
+      projectId={projectId}
       history={project.history}
       // Chips live in the empty card; once tasks exist they sit above the bar.
       suggestions={hasTasks ? [] : suggestions}
@@ -489,18 +490,6 @@ export function ProjectShell({ projectId, projectName, editorId, onHome }: Proje
             </div>
           ) : page === "maker" ? (
             <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-2 py-2 overscroll-contain">
-              <div className="mx-auto flex w-full max-w-4xl shrink-0">
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="ghost"
-                  aria-label="Back to tasks"
-                  onClick={() => setPage("board")}
-                >
-                  <ArrowLeft />
-                  Back
-                </Button>
-              </div>
               <div className="mx-auto min-h-0 w-full max-w-4xl flex-1">
                 <EffectMaker
                   clips={effectClips}
@@ -510,6 +499,7 @@ export function ProjectShell({ projectId, projectName, editorId, onHome }: Proje
                   refusal={project.refusal?.reason ?? null}
                   landings={project.landings}
                   onRecordLanding={project.recordLanding}
+                  onBack={() => setPage("board")}
                 />
               </div>
             </div>
