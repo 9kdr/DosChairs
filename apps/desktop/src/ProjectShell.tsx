@@ -129,7 +129,7 @@ function SidePanel({
             aria-label="Close panel"
             onClick={onClose}
             autoFocus
-            className="shrink-0 self-start text-muted-foreground"
+            className="shrink-0 self-start"
           >
             <X />
           </Button>
