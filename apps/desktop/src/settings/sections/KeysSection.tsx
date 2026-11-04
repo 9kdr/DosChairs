@@ -3,6 +3,7 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
+import { modelLabel } from "@/lib/model-label";
 import type { AgentHealth } from "@/lib/services/types";
 import { cn } from "@/lib/utils";
 import type { AddProviderResult } from "../add-provider";
@@ -459,7 +460,7 @@ function ModelsBlock({
                 )}
               >
                 <span className="min-w-0 flex-1 truncate text-xs text-neutral-300">
-                  {name}
+                  {modelLabel(name, provider.label)}
                 </span>
                 <Switch
                   checked={!off}
@@ -480,7 +481,7 @@ function ModelsBlock({
                 )}
               >
                 <span className="min-w-0 flex-1 truncate text-xs text-neutral-300">
-                  {name}
+                  {modelLabel(name, provider.label)}
                 </span>
                 <Switch
                   checked={!off}

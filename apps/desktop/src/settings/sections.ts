@@ -1,4 +1,4 @@
-/** Settings sections for the segmented control. Pure data. */
+/** Settings sections for the header tabs. Pure data. */
 
 export type SectionId = "keys" | "editors" | "preferences";
 
