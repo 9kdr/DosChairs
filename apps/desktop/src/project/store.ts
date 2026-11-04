@@ -11,10 +11,8 @@ export type { HistoryEntry } from "@chair/timeline-ir";
 /**
  * The project store: one open timeline plus its edits. Opening a
  * project loads the timeline mirror plus the latest proposal through
- * the review endpoint. In Auto mode agent edits apply on arrival
- * through the same accept pipeline as a manual accept, so history
- * entries and inverses stay identical; in Ask-first mode edits wait
- * as pending until the person accepts or rejects each one. Every
+ * the review endpoint. Agent edits apply on arrival, so history
+ * entries and inverses stay identical for every apply. Every
  * apply — agent or person, forward or undo — appends a history entry
  * with the item's inverse, and undo applies its inverses at once.
  * Nothing here writes source media: applies land on copies (a new
@@ -22,8 +20,6 @@ export type { HistoryEntry } from "@chair/timeline-ir";
  * — the app's copy of the cut — follows every apply and undo so the
  * next inverse snapshots the state it needs.
  */
-
-export type Decision = "accepted" | "rejected";
 
 /** "Add Clip": the human label for an op, shared by every history view. */
 export function opLabel(op: string): string {
@@ -39,24 +35,6 @@ export function clockTime(iso: string): string {
   // taste-skill-ignore: clock fields are zero-padded by definition.
   const pad = (n: number) => `${n}`.padStart(2, "0");
   return `${pad(date.getHours())}:${pad(date.getMinutes())}`;
-}
-
-/**
- * Review one item: flip its status and leave everything else alone.
- * Unknown ids are a no-op. The timeline is never touched.
- */
-export function reviewItem(
-  changeset: Changeset,
-  id: string,
-  decision: ChangesetItem["status"],
-): Changeset {
-  let found = false;
-  const items = changeset.items.map((item): ChangesetItem => {
-    if (item.id !== id) return item;
-    found = true;
-    return item.status === decision ? item : { ...item, status: decision };
-  });
-  return found ? { ...changeset, items } : changeset;
 }
 
 /** Fallbacks until live agent output (#61) names the task and the editor. */
@@ -146,7 +124,7 @@ export function undoSummaryForTask(
   );
 }
 
-/** A refused accept or undo, with the reason, for the board to explain. */
+/** A refused apply or undo, with the reason, for the board to explain. */
 export type Refusal = {
   itemId?: string;
   reason: string;
@@ -156,7 +134,7 @@ export type Refusal = {
  * Move the local mirror with what applied. The mirror is the app's copy
  * of the cut, not the source, so it follows every apply and undo — and
  * the next inverse snapshots the post-apply state it needs. Items the
- * applier cannot place skip; the accept path already failed closed on
+ * applier cannot place skip; the apply already failed closed on
  * anything without a way back.
  */
 export function advanceMirror(mirror: Timeline, entries: HistoryEntry[]): Timeline {
@@ -182,26 +160,18 @@ export function advanceMirror(mirror: Timeline, entries: HistoryEntry[]): Timeli
  */
 export type ReviewPhase = "loading" | "ready" | "empty" | "error";
 
-export type ApplyMode = "auto" | "ask";
-
 export type ProjectStore = {
   phase: ReviewPhase;
   timeline: Timeline | null;
   changeset: Changeset | null;
   history: HistoryEntry[];
-  pendingCount: number;
-  /** How edits land: applied on arrival (auto) or held for review (ask). */
-  applyMode: ApplyMode;
   error: string | null;
   /** The last refused apply or undo, cleared by the next attempt. */
   refusal: Refusal | null;
-  acceptItem: (id: string) => void;
-  rejectItem: (id: string) => void;
-  acceptAll: () => void;
   /**
-   * Apply one person-made edit (Effect Maker) through the accept pipeline:
-   * same history entry and inverse as a proposal item. Returns its item id
-   * on success, or null with `refusal` set when it cannot be undone.
+   * Apply one person-made edit (Effect Maker): the same history entry
+   * and inverse as any applied item. Returns its item id on success,
+   * or null with `refusal` set when it cannot be undone.
    */
   applyItem: (item: ChangesetItem) => string | null;
   /** Rewind one entry plus its tail, applying the inverses at once. */
@@ -219,12 +189,7 @@ export type ProjectStore = {
  * through the review endpoint. The shell passes the gallery name
  * along with the id; the mirror names the cut once it loads.
  */
-export function useProject(
-  projectId: string,
-  projectName: string,
-  options: { applyMode?: ApplyMode } = {},
-): ProjectStore {
-  const applyMode = options.applyMode ?? "auto";
+export function useProject(projectId: string, projectName: string): ProjectStore {
   const [timeline, setTimeline] = useState<Timeline | null>(null);
   const [changeset, setChangeset] = useState<Changeset | null>(null);
   const [job, setJob] = useState<ReviewJob | null>(null);
@@ -286,8 +251,8 @@ export function useProject(
     };
   }, [projectId, nonce]);
 
-  // Keep the mirror plus the person's decisions on disk so both survive
-  // a restart (#132). Every accept and reject flows through here.
+  // Keep the mirror plus the applied decisions on disk so both survive
+  // a restart (#132). Every apply and undo flows through here.
   useEffect(() => {
     if (timeline === null || (phase !== "ready" && phase !== "empty")) return;
     writeReviewSnapshot(projectId, {
@@ -300,9 +265,9 @@ export function useProject(
   const taskId = job ? job.request_id : STAND_IN_TASK_ID;
 
   /**
-   * Apply every invertible pending item in one list through the accept
-   * pipeline: the same history entries and inverses a manual accept
-   * builds. Refuse the rest by name instead of applying without a way back.
+   * Apply every invertible pending item in one list: the same history
+   * entries and inverses every apply builds. Refuse the rest by name
+   * instead of applying without a way back.
    */
   const acceptPendingIn = (
     list: Changeset,
@@ -356,45 +321,6 @@ export function useProject(
     appendEntries(entries);
   };
 
-  /** The person applies by hand: their entries read actor user. */
-  const acceptItem = (id: string) => {
-    if (!changeset || !timeline) return;
-    const target = changeset.items.find((entry) => entry.id === id);
-    if (!target || target.status !== "pending") return;
-    const checked = tryHistoryEntry(
-      changeset,
-      target,
-      timeline,
-      STAND_IN_ACCEPTED_BY,
-      new Date().toISOString(),
-      taskId,
-      "user",
-    );
-    if (!checked.ok) {
-      setRefusal({ itemId: id, reason: checked.reason });
-      return;
-    }
-    setChangeset(reviewItem(changeset, id, "accepted"));
-    recordEntries([checked.entry]);
-    setRefusal(null);
-  };
-
-  const acceptAll = () => {
-    if (!changeset || !timeline) return;
-    const { next, entries, refusal: blocked } = acceptPendingIn(
-      changeset,
-      timeline,
-      new Date().toISOString(),
-      STAND_IN_ACCEPTED_BY,
-      "user",
-    );
-    if (entries.length > 0) {
-      setChangeset(next);
-      recordEntries(entries);
-    }
-    setRefusal(blocked);
-  };
-
   const applyItem = (item: ChangesetItem): string | null => {
     if (!timeline) {
       setRefusal({ itemId: item.id, reason: "No cut is loaded to apply onto." });
@@ -422,12 +348,6 @@ export function useProject(
     recordEntries([checked.entry]);
     setRefusal(null);
     return item.id;
-  };
-
-  const rejectItem = (id: string) => {
-    if (!changeset?.items.some((entry) => entry.id === id)) return;
-    setChangeset(reviewItem(changeset, id, "rejected"));
-    setRefusal((current) => (current?.itemId === id ? null : current));
   };
 
   /**
@@ -460,11 +380,9 @@ export function useProject(
     undoToHere(last.itemId);
   };
 
-  // Auto mode: agent edits apply on arrival through the same accept
-  // pipeline as a manual accept, so history entries and inverses stay
-  // identical. Each proposal applies once; Ask-first mode never enters.
+  // Agent edits apply on arrival, so history entries and inverses
+  // stay identical for every apply. Each proposal applies once.
   useEffect(() => {
-    if (applyMode !== "auto") return;
     if (!changeset || !timeline) return;
     if (autoApplied.current.ids.has(changeset.id)) return;
     autoApplied.current.ids.add(changeset.id);
@@ -494,15 +412,8 @@ export function useProject(
     history,
     landings,
     recordLanding,
-    pendingCount: changeset
-      ? changeset.items.filter((item) => item.status === "pending").length
-      : 0,
-    applyMode,
     error,
     refusal,
-    acceptItem,
-    rejectItem,
-    acceptAll,
     applyItem,
     undoToHere,
     undoLast,

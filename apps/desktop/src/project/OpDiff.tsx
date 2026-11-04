@@ -313,8 +313,8 @@ function panelsForOp(item: ChangesetItem): { before: ReactNode; after: ReactNode
 /**
  * The inline fallback line for an item the adapter could not place
  * directly, or null when it placed the item as proposed. The reason
- * is the agent's plain-words substitute; callers render it before
- * accept so no fallback stays silent. History entries carry the same
+ * is the agent's plain-words substitute; callers render it beside the
+ * entry so no fallback stays silent. History entries carry the same
  * shape, so this reads both.
  */
 export function fallbackNotice(item: { fallback?: ChangesetFallback }): string | null {

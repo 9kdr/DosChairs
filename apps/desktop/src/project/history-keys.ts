@@ -3,8 +3,9 @@
  * history card. j/k and the arrows move between entries, u (and
  * Ctrl/Cmd+Z) undoes the last entry, Shift+U undoes to the focused
  * entry, Enter expands the details, and ? opens the shortcut overlay.
- * In Ask-first mode a/r decide the focused proposal item; in Auto mode
- * there is nothing to decide, so the history owns the keys alone.
+ * There is nothing to decide — edits land on arrival — so the a/r
+ * mapping below stays only until HistoryCard's dead branch goes; the
+ * overlay no longer lists them.
  */
 
 export type HistoryKeyAction =
@@ -119,7 +120,5 @@ export const HISTORY_SHORTCUTS: HistoryShortcut[] = [
   { keys: ["u", "Ctrl/⌘ Z"], label: "Undo the last entry" },
   { keys: ["Shift U"], label: "Undo to the focused entry" },
   { keys: ["Enter"], label: "Expand the focused entry" },
-  { keys: ["a"], label: "Accept the focused proposal (Ask-first mode)" },
-  { keys: ["r"], label: "Reject the focused proposal (Ask-first mode)" },
   { keys: ["?"], label: "Show all shortcuts" },
 ];
