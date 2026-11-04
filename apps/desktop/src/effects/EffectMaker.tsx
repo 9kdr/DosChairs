@@ -474,7 +474,7 @@ export function EffectMaker({
   }, [controls, rig]);
 
   return (
-    <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 overflow-hidden xl:grid-cols-[minmax(15rem,18rem)_minmax(0,1fr)_minmax(15rem,18rem)]">
+    <div className="grid min-h-0 flex-none grid-cols-1 gap-3 overflow-hidden xl:flex-1 xl:grid-cols-[minmax(15rem,18rem)_minmax(0,1fr)_minmax(15rem,18rem)]">
       {/* Brief and Muse Spark's rounds */}
       <div className="flex min-h-0 flex-col gap-3 overflow-y-auto">
         <section aria-label="Brief" className={cn(CARD, "flex shrink-0 flex-col gap-3 p-4")}>
@@ -553,7 +553,7 @@ export function EffectMaker({
               />
             </div>
             <div className="flex gap-2">
-              <Button type="button" size="sm" className="flex-1" disabled={!prompt.trim() || busy} onClick={() => void generate()}>
+              <Button type="button" size="sm" variant="outline" className="flex-1" disabled={!prompt.trim() || busy} onClick={() => void generate()}>
                 {busy ? <Spinner /> : <WandSparklesIcon />}
                 {busy ? `Drafting… ${elapsed}s` : "Generate"}
               </Button>
@@ -562,15 +562,13 @@ export function EffectMaker({
                   Stop
                 </Button>
               ) : (
-                <Button type="button" size="sm" variant="outline" onClick={() => useSample()}>
+                <Button type="button" size="sm" variant="ghost" onClick={() => useSample()}>
                   Sample
                 </Button>
               )}
             </div>
           </div>
-        </section>
-
-        <section aria-label="Muse Spark activity" className={cn(CARD, "flex min-h-32 flex-1 flex-col gap-2 p-4")}>
+          <div aria-label="Muse Spark activity" className="flex flex-col gap-2 border-t border-white/[0.06] px-1 pt-3">
           <PanelTitle icon={SparklesIcon} title="Muse Spark">
             {busy ? <Badge variant="warning" size="sm">Working</Badge> : null}
           </PanelTitle>
@@ -591,6 +589,7 @@ export function EffectMaker({
               ))}
             </ol>
           )}
+          </div>
         </section>
       </div>
 
@@ -627,9 +626,9 @@ export function EffectMaker({
           </Button>
         </div>
         {live ? (
-          <PreviewStage ref={previewRef} spec={live} controls={controls} className="min-h-0 flex-1" />
+          <PreviewStage ref={previewRef} spec={live} controls={controls} className="w-full flex-none xl:flex-1" />
         ) : (
-          <div className="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden rounded-[20px] bg-[#101010] ring-1 ring-white/10">
+          <div className="relative flex aspect-video min-h-56 w-full flex-none items-center justify-center overflow-hidden rounded-2xl border border-dashed border-white/12 xl:aspect-auto xl:flex-1">
             <div className="flex max-w-72 flex-col items-center gap-2 px-4 text-center">
               <span className="flex size-12 items-center justify-center rounded-2xl bg-white/[0.05] ring-1 ring-white/10">
                 {busy ? <Spinner className="size-5 text-amber-300" /> : <SparklesIcon className="size-5 text-neutral-300" aria-hidden="true" />}
@@ -656,11 +655,6 @@ export function EffectMaker({
                 <span className="text-neutral-300">{info.fallback ? "Fallback: " : "Why this target: "}</span>
                 {info.reason}
               </p>
-              {live ? (
-                <span className="shrink-0 pt-0.5 tabular-nums text-neutral-600">
-                  {live.width}×{live.height} · {live.fps} fps
-                </span>
-              ) : null}
             </div>
           ) : (
             <p className="text-xs leading-5 text-neutral-500">

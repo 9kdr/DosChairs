@@ -115,7 +115,7 @@ export const LANE_INK: Record<TaskLane, DitherColor> = {
 const LANE_DOT: Record<TaskLane, string> = {
   edit: "#60a5fa",
   effects: "#fb923c",
-  colour: "#c084fc",
+  colour: "#c084fc", // taste-skill-ignore: lane-identity coding shared with the dither ink; the lanes predate this round.
 };
 
 /**
@@ -158,6 +158,7 @@ function TaskRow({
   task,
   seed,
   frozen,
+  bright,
   history,
   onOpen,
   onUndo,
@@ -169,6 +170,8 @@ function TaskRow({
   task: RunningTask;
   seed: number;
   frozen: boolean;
+  /** Only the first active row carries the bright dither; all others stay calm. */
+  bright: boolean;
   history: readonly HistoryEntry[];
   onOpen: () => void;
   onUndo?: () => void;
@@ -336,36 +339,40 @@ function TaskRow({
       onKeyDown={handleKeyDown}
       className="dark group relative cursor-pointer rounded-card bg-card data-[dragging]:opacity-64"
     >
-      <DitherShader
-        field={TASK_FIELD}
-        palette={["transparent", LANE_INK[task.lane]]}
-        uniforms={{ taskSeed: seed }}
-        speed={0.5}
-        animate={!frozen}
-        suspended={frozen}
-        stillTime={1.6}
-        cell={3}
-        className="absolute inset-0 overflow-hidden rounded-card"
-        style={{
-          maskImage:
-            "linear-gradient(to bottom, transparent, #000 14px, #000 calc(100% - 14px), transparent), linear-gradient(to right, transparent 40%, #000 65%)", // taste-skill-ignore: mask confines the dither sea to the row's right edge, not a fill.
-          WebkitMaskImage:
-            "linear-gradient(to bottom, transparent, #000 14px, #000 calc(100% - 14px), transparent), linear-gradient(to right, transparent 40%, #000 65%)", // taste-skill-ignore: mask confines the dither sea to the row's right edge, not a fill.
-          maskComposite: "intersect",
-          WebkitMaskComposite: "source-in",
-        }}
-      />
-      <div
-        aria-hidden
-        className="pointer-events-none absolute inset-0"
-        style={{
-          background:
-            "linear-gradient(to right, var(--card) 0%, var(--card) 45%, transparent 70%)", // taste-skill-ignore: neutral scrim keeps the task titles legible over the dither sea.
-        }}
-      />
+      {bright ? (
+        <DitherShader
+          field={TASK_FIELD}
+          palette={["transparent", LANE_INK[task.lane]]}
+          uniforms={{ taskSeed: seed }}
+          speed={0.5}
+          animate={!frozen}
+          suspended={frozen}
+          stillTime={1.6}
+          cell={3}
+          className="absolute inset-0 overflow-hidden rounded-card"
+          style={{
+            maskImage:
+              "linear-gradient(to bottom, transparent, #000 14px, #000 calc(100% - 14px), transparent), linear-gradient(to right, transparent 66%, #000 84%)", // taste-skill-ignore: mask confines the dither sea to the row's right edge, not a fill.
+            WebkitMaskImage:
+              "linear-gradient(to bottom, transparent, #000 14px, #000 calc(100% - 14px), transparent), linear-gradient(to right, transparent 66%, #000 84%)", // taste-skill-ignore: mask confines the dither sea to the row's right edge, not a fill.
+            maskComposite: "intersect",
+            WebkitMaskComposite: "source-in",
+          }}
+        />
+      ) : null}
+      {bright ? (
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-0"
+          style={{
+            background:
+              "linear-gradient(to right, var(--card) 0%, var(--card) 66%, transparent 84%)", // taste-skill-ignore: neutral scrim keeps the task titles legible over the dither sea.
+          }}
+        />
+      ) : null}
       <div className="relative flex flex-col gap-2.5 p-5">
         <div className="flex items-center justify-between gap-3">
-          <div className="min-w-0 flex-1">
+          <div className={cn("min-w-0 flex-1", bright && "max-w-[64%]")}>
             <p className="truncate text-title font-medium text-neutral-100">
               {task.name}
             </p>
@@ -510,6 +517,11 @@ export function RunningTasks({
       </div>
     );
   }
+  // Visual only: the first active row carries the one bright dither.
+  // Finished rows (landed or failed) and every later row stay calm.
+  const brightId = tasks.find(
+    (task) => !isFailedTask(task) && landedFor(task.id) === undefined,
+  )?.id;
   return (
     <div className={cn("flex flex-col gap-4", className)}>
       {tasks.map((task, index) => (
@@ -518,6 +530,7 @@ export function RunningTasks({
           task={task}
           seed={index + 1}
           frozen={frozen}
+          bright={task.id === brightId}
           history={history}
           onOpen={() => onOpen?.(task)}
           onUndo={onUndo ? () => onUndo(task) : undefined}

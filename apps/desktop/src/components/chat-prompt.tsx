@@ -262,7 +262,7 @@ const CHIP_TONE: Record<ChipTone, string> = {
   video: "bg-info/15 text-info-foreground ring-1 ring-info/40",
   image: "bg-warning/15 text-warning-foreground ring-1 ring-warning/40",
   audio: "bg-success/15 text-success-foreground ring-1 ring-success/40",
-  task: "bg-violet-400/15 text-violet-300 ring-1 ring-violet-300/40",
+  task: "bg-violet-400/15 text-violet-300 ring-1 ring-violet-300/40", // taste-skill-ignore: task-ref chip tone matches the colour-lane ink; neutral would merge it with piece chips.
   piece: "bg-white/10 text-neutral-100 ring-1 ring-white/15",
 };
 
@@ -488,6 +488,9 @@ export function ChatPrompt({
 
   const draft = serialize(parts);
   const plain = plainText(parts);
+  // Visual only: the send button stays muted until there is something to
+  // send, then turns bright. The `disabled` prop below is the real gate.
+  const sendReady = (draft.trim().length > 0 || files.length > 0) && options.length > 0;
 
   // A picked suggestion fills the composer once, ready to send or edit.
   const filledSuggestion = useRef<number | null>(null);
@@ -1015,8 +1018,7 @@ export function ChatPrompt({
       <div
         className={cn(
           "absolute inset-0 overflow-hidden",
-          "bg-card/95 shadow-rim backdrop-blur-md",
-          "supports-[backdrop-filter]:bg-card/88",
+          "bg-card shadow-rim",
           "focus-within:ring-1 focus-within:ring-white/15",
           dragOver && "bg-surface-raised! ring-2 ring-white/20",
         )}
@@ -1080,7 +1082,7 @@ export function ChatPrompt({
                   "block min-h-[22px] border-0 bg-transparent text-sm leading-[22px] text-neutral-200 outline-none",
                     open
                     ? "w-full min-w-0 px-4 pt-3 pr-5 pb-1 whitespace-pre-wrap break-words"
-                    : "min-w-0 flex-1 overflow-x-clip overflow-y-hidden py-3 pr-10 pl-4 whitespace-nowrap [mask-image:linear-gradient(to_right,black_calc(100%-2.5rem),transparent)]",
+                    : "min-w-0 flex-1 overflow-x-clip overflow-y-hidden py-3 pr-10 pl-4 whitespace-nowrap [mask-image:linear-gradient(to_right,black_calc(100%-2.5rem),transparent)]", // taste-skill-ignore: fade mask clips the closed-bar text, not a fill.
                 )}
                 onFocus={() => {
                   onOpen();
@@ -1141,8 +1143,9 @@ export function ChatPrompt({
                       <span ref={actionsRef} className="inline-flex">
                         <Button
                           type="button"
-                          size="sm"
+                          size="icon-sm"
                           variant="ghost"
+                          aria-label="Actions"
                           aria-haspopup="listbox"
                           aria-expanded={actionsOpen}
                           aria-controls={listId}
@@ -1154,7 +1157,6 @@ export function ChatPrompt({
                           }}
                         >
                           <Slash />
-                          Actions
                         </Button>
                       </span>
                     )}
@@ -1186,7 +1188,7 @@ export function ChatPrompt({
                         type="button"
                         size="sm"
                         variant="ghost"
-                        className="max-w-44"
+                        className="max-w-44 gap-1 px-1.5 font-normal text-muted-foreground hover:bg-transparent hover:text-neutral-200"
                         onClick={() => onOpenSettings?.()}
                       >
                         <KeyRound />
@@ -1206,7 +1208,7 @@ export function ChatPrompt({
                               type="button"
                               size="sm"
                               variant="ghost"
-                              className="max-w-44"
+                              className="max-w-44 gap-1 px-1.5 font-normal text-muted-foreground hover:bg-transparent hover:text-neutral-200"
                             />
                           }
                         >
@@ -1269,6 +1271,11 @@ export function ChatPrompt({
                       variant="send"
                       aria-label="Send"
                       disabled={(!draft.trim() && files.length === 0) || options.length === 0}
+                      className={
+                        sendReady
+                          ? undefined
+                          : "bg-white/[0.07] text-neutral-500 hover:bg-white/[0.07] disabled:opacity-100"
+                      }
                     >
                       <ArrowUp />
                     </Button>
