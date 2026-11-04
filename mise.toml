@@ -118,3 +118,7 @@ ls -la /tmp/chair-ograf-sample
 [tasks.codegen]
 description = "Regenerate types from JSON schemas"
 run = "pnpm codegen"
+
+[tasks.demo-check]
+description = "Demo check: the three filmed flows against the agent and Resolve (live needs Resolve plus a model key; --dry-run for CI)"
+run = "uv run python scripts/demo-check/run.py"

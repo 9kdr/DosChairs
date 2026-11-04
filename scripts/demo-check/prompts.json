@@ -1,0 +1,5 @@
+{
+  "effect": "Add a dither fade to black on the last two seconds of this clip",
+  "rig": "Make the cursor swing in with momentum, overshoot, settle, then bounce on the click",
+  "sound": "Riser into the cut at 5 seconds, tape stop at the end, duck the music under dialogue"
+}
