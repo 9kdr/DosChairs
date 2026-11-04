@@ -88,6 +88,22 @@ export function EmptyMedia({
   );
 }
 
+export function EmptyArt({
+  className,
+  ...props
+}: React.ComponentProps<"div">): React.ReactElement {
+  return (
+    <div
+      className={cn(
+        "flex h-16 w-24 shrink-0 items-center justify-center overflow-hidden rounded-control bg-card",
+        className,
+      )}
+      data-slot="empty-art"
+      {...props}
+    />
+  );
+}
+
 export function EmptyTitle({
   className,
   ...props
