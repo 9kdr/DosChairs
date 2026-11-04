@@ -125,17 +125,18 @@ def test_generate_repairs_once_then_fails_clearly(isolated) -> None:
     assert "twice" in (effects.status_snapshot()["last_error"] or "")
 
 
-def test_generate_shader_layers_fall_back_to_rendered_clip(isolated) -> None:
+def test_generate_shader_layers_ship_as_ograf_titles(isolated) -> None:
     spec = _spec(layers=[{"id": "glow", "type": "shader", "params": {}}],
                 shader={"source": "void main(){}"})
     record = effects.generate_effect(
         "glowy shader wash", width=1920, height=1080, fps=30, duration_sec=2.0,
         client=FakeClient(execute=[json.dumps(spec)]),
     )
-    assert record.spec["export"]["target"] == "rendered-clip"
+    assert record.spec["export"]["target"] == "ograf"
     fallback = record.spec["export"]["fallback"]
     assert fallback["capability"] == "native Fusion nodes"
     assert "shader" in fallback["reason"]
+    assert "OGraf" in fallback["reason"]
 
 
 def test_verify_pass_fail_revise_and_round_limit(isolated) -> None:

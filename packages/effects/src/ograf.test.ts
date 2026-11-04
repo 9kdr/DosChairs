@@ -183,4 +183,71 @@ describe("ograf spec export", () => {
     const second = await exportOGraf(loadSpec());
     expect(second.manifest).toEqual(first.manifest);
   }, 120000);
+
+  it("exports a shader spec with bound controls as Inspector props", async () => {
+    const spec: EffectSpec = {
+      schemaVersion: "0.1.0",
+      id: "liquid-dither",
+      name: "Liquid Dither Flow",
+      durationSec: 4,
+      fps: 30,
+      width: 1920,
+      height: 1080,
+      layers: [{ id: "liquid-bg", type: "shader", params: { entry: "liquidMain" } }],
+      controls: [
+        {
+          id: "color-a",
+          label: "Color A",
+          type: "color",
+          default: "#0A1E8C",
+          target: { layerId: "liquid-bg", param: "colorA" },
+        },
+        {
+          id: "dither-size",
+          label: "Dither Size",
+          type: "number",
+          default: 4,
+          min: 1,
+          max: 8,
+          target: { layerId: "liquid-bg", param: "ditherSize" },
+        },
+      ],
+      shader: {
+        source: [
+          "#version 300 es",
+          "precision highp float;",
+          "out vec4 fragColor;",
+          "uniform float u_time;",
+          "void main(){ fragColor = vec4(0.5 + 0.5 * sin(u_time), 0.0, 0.0, 1.0); }",
+        ].join("\n"),
+        uniforms: [
+          { name: "u_colorA", controlId: "color-a" },
+          { name: "u_ditherSize", controlId: "dither-size" },
+        ],
+      },
+    };
+    const bundle = await exportOGraf(spec);
+    expect(bundle.id).toBe("chair-liquid-dither");
+    const schema = bundle.manifest["schema"] as { properties: Record<string, Record<string, unknown>> };
+    // Colors become Fusion color pickers, numbers become ranged sliders.
+    expect(schema.properties["color-a"]).toMatchObject({
+      type: "string",
+      gddType: "color-rrggbb",
+      default: "#0a1e8c",
+    });
+    expect(schema.properties["dither-size"]).toMatchObject({
+      type: "number",
+      minimum: 1,
+      maximum: 8,
+      default: 4,
+    });
+    expect(bundle.js).toContain("goToTime");
+    expect(bundle.js).toContain("flushSync");
+    const ajv = ografAjv();
+    const validate = ajv.getSchema(
+      "https://ograf.ebu.io/v1/specification/json-schemas/graphics/schema.json",
+    );
+    expect(validate).toBeDefined();
+    expect(validate!(bundle.manifest)).toBe(true);
+  }, 120000);
 });

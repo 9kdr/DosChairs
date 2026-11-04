@@ -1,10 +1,11 @@
 /**
- * Dev script: export the sample effect spec and the hand-written React
- * example as OGraf titles into a folder Mel can drop into Resolve's
+ * Dev script: export sample effect specs and the hand-written React example
+ * as OGraf titles into a folder Mel can drop into Resolve's
  * `.../Fusion/Templates/Edit/Titles/OGraf/` scan folder.
  *
- * Run via `mise run export-ograf-sample` (compiles this file with the
- * workspace tsc, then runs it). Not part of any package build.
+ * Run via `mise run export-ograf-sample` (bundles with esbuild, then runs).
+ * Not part of any package build. The live Muse Spark shader spec is read
+ * from /tmp and skipped with a warning when it is not there.
  */
 import { mkdir, writeFile } from "node:fs/promises";
 import { readFileSync } from "node:fs";
@@ -73,6 +74,26 @@ async function main(): Promise<void> {
       }),
     )),
   );
+
+  // 3. The live Muse Spark shader spec: real stress case, one shader layer
+  // with five bound controls. Lands in its own folder, ready to install.
+  try {
+    const live = JSON.parse(
+      readFileSync("/tmp/chair-effect-live/web.effect.json", "utf8"),
+    ) as EffectSpec;
+    const liquidDir = join(out, "liquid-dither");
+    await mkdir(liquidDir, { recursive: true });
+    written.push(
+      ...(await writeBundle(
+        liquidDir,
+        await exportOGraf(live, {
+          entry: join(root, "packages/effects/src/spec-view.tsx"),
+        }),
+      )),
+    );
+  } catch {
+    console.warn("skipping liquid-dither: /tmp/chair-effect-live/web.effect.json not found");
+  }
 
   for (const file of written) console.log(file);
 }

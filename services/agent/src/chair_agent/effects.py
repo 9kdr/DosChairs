@@ -8,8 +8,9 @@ specs are pending proposals until the editor accepts them.
 
 Pipeline: generate (model draft + schema validate + one repair retry, then
 a clear error) -> export target pick (fusion-macro when every layer maps to
-the Fusion node set, rendered-clip otherwise) -> verify (verifier vision
-compares the preview frame against the reference/intent, max 2 rounds).
+the Fusion node set, ograf for live web shaders, rendered-clip otherwise)
+-> verify (verifier vision compares the preview frame against the
+reference/intent, max 2 rounds).
 """
 
 import base64
@@ -29,8 +30,9 @@ from chair_agent.client import Message, ModelClient
 
 SCHEMA_VERSION = "0.1.0"
 
-# Layers the Fusion exporter (#232) can express with native nodes. Anything
-# else (custom GLSL) only survives as a pre-rendered clip.
+# Layers the Fusion exporter (#232) can express with native nodes. Custom
+# GLSL ships as a parameterized OGraf title instead (#234); anything else
+# only survives as a pre-rendered clip.
 FUSION_MAPPABLE_LAYERS = frozenset({"shape", "text", "image"})
 
 FUSION_NODES = (
@@ -41,7 +43,7 @@ FUSION_NODES = (
 RENDERABLE_LAYERS = (
     "shape (rect, ellipse), text (string, font, size, fill), "
     "image (src, Loader in Fusion), shader (custom GLSL ES 3.00 fragment, "
-    "preview-only: forces a rendered-clip export)"
+    "ships as a parameterized OGraf title with Inspector controls)"
 )
 
 TASTE_GUIDE = (
@@ -170,9 +172,10 @@ def validate_effect_spec(data: Mapping[str, Any]) -> dict[str, Any]:
 def pick_export_target(spec: Mapping[str, Any]) -> dict[str, Any]:
     """fusion-macro when every layer maps to the Fusion node set.
 
-    Shader layers (custom GLSL) have no Fusion-node equivalent, so the spec
-    can only ship as a pre-rendered alpha clip; the fallback says why in
-    plain words.
+    Shader layers (custom GLSL) have no Fusion-node equivalent, but they do
+    not need a baked clip either: they ship as a parameterized OGraf title
+    whose controls land in the Inspector. The fallback says why in plain
+    words. Anything else unmapped still falls back to rendered-clip.
     """
     layers = spec.get("layers")
     unmapped = sorted({
@@ -183,7 +186,20 @@ def pick_export_target(spec: Mapping[str, Any]) -> dict[str, Any]:
     has_shader = isinstance(spec.get("shader"), Mapping) or "shader" in unmapped
     if not unmapped and not has_shader:
         return {"target": "fusion-macro"}
-    kinds = ", ".join(unmapped) if unmapped else "custom GLSL shader"
+    if has_shader:
+        return {
+            "target": "ograf",
+            "fallback": {
+                "capability": "native Fusion nodes",
+                "reason": (
+                    "This effect is a live web shader (custom GLSL), which no "
+                    f"Fusion node in ({FUSION_NODES}) can express, so it ships "
+                    "as a parameterized OGraf title with its controls in the "
+                    "Inspector instead of a pre-rendered clip."
+                ),
+            },
+        }
+    kinds = ", ".join(unmapped)
     return {
         "target": "rendered-clip",
         "fallback": {

@@ -12,6 +12,7 @@ import React from "react";
 import { resolveFrame } from "./curves.js";
 import { simulateRig } from "./rig.js";
 import { drawResolvedLayers, drawShaderFallback } from "./canvas2d.js";
+import { paintShader } from "./gl.js";
 import type { DrawImage } from "./canvas2d.js";
 import type { EffectSpec, RigFrame } from "./types.js";
 
@@ -95,10 +96,29 @@ function primeCaches(spec: EffectSpec): void {
   }
 }
 
-function paint(canvas: HTMLCanvasElement, payload: SpecPayload, rigTable: RigFrame[] | null): void {
+/**
+ * Paint one frame. Shader layers go to a WebGL2 canvas under the 2D canvas;
+ * shape/text/image layers paint on top. When WebGL2 is missing or the shader
+ * fails to compile, the 2D pass draws the labelled fallback box instead.
+ */
+function paint(
+  canvas: HTMLCanvasElement,
+  glCanvas: HTMLCanvasElement | null,
+  payload: SpecPayload,
+  rigTable: RigFrame[] | null,
+): void {
   const ctx = canvas.getContext("2d");
   if (!ctx) return;
   const { spec, t, controls } = payload;
+  let glOk = false;
+  if (glCanvas) {
+    try {
+      const gl = glCanvas.getContext("webgl2", { alpha: true, premultipliedAlpha: false });
+      if (gl) glOk = paintShader(gl, spec, t, controls);
+    } catch {
+      glOk = false;
+    }
+  }
   const layers = resolveFrame(spec, t, controls);
   const { shaderLayers } = drawResolvedLayers(ctx, spec.width, spec.height, layers, {
     width: spec.width,
@@ -108,8 +128,7 @@ function paint(canvas: HTMLCanvasElement, payload: SpecPayload, rigTable: RigFra
     rigTarget: specRigTarget(spec),
     t,
   });
-  if (shaderLayers > 0) {
-    // This view is Canvas2D-only: shader layers are reported, not guessed.
+  if (shaderLayers > 0 && !glOk) {
     drawShaderFallback(ctx, spec.width, spec.height, shaderLayers);
   }
 }
@@ -124,22 +143,36 @@ export function EffectSpecView(props: EffectSpecViewProps): React.ReactElement |
       return null;
     }
   }, [payload?.spec]);
+  const glCanvasRef = React.useRef<HTMLCanvasElement | null>(null);
   const paintRef = React.useCallback(
     (node: HTMLCanvasElement | null) => {
       if (node && payload) {
         primeCaches(payload.spec);
-        paint(node, payload, rigTable);
+        paint(node, glCanvasRef.current, payload, rigTable);
       }
     },
     [payload, rigTable],
   );
   if (!payload) return null;
-  return React.createElement("canvas", {
+  const canvas2d = React.createElement("canvas", {
     ref: paintRef,
     width: payload.spec.width,
     height: payload.spec.height,
-    style: { width: "100%", height: "100%", display: "block" },
+    style: { width: "100%", height: "100%", display: "block", position: "absolute", inset: 0 },
   });
+  const hasShader = payload.spec.layers.some((l) => l.type === "shader" && l.visible !== false);
+  if (!hasShader) return canvas2d;
+  return React.createElement(
+    "div",
+    { style: { position: "relative", width: "100%", height: "100%" } },
+    React.createElement("canvas", {
+      ref: glCanvasRef,
+      width: payload.spec.width,
+      height: payload.spec.height,
+      style: { width: "100%", height: "100%", display: "block", position: "absolute", inset: 0 },
+    }),
+    canvas2d,
+  );
 }
 
 export default EffectSpecView;
