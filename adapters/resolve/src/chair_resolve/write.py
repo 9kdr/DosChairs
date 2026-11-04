@@ -306,6 +306,7 @@ def add_effect(
     cache_dir: Any = None,
     baked: dict[str, dict[str, list[dict[str, Any]]]] | None = None,
     media: dict[str, Any] | None = None,
+    sequences: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Import an effect spec onto a timeline item as a NEW Fusion comp version.
 
@@ -315,8 +316,10 @@ def add_effect(
     remove_effect to switch back (the undo the history needs).
     A spec the macro node set cannot express is NOT faked: the return is
     {"effect_id", "fallback": {...}} and nothing is imported.
+    sequences maps a shader layer id -> {"files": [png, ...]} for baked
+    web-render layers, loaded through a Loader node.
     """
-    rendered = spec_to_comp(spec, baked=baked, media=media)
+    rendered = spec_to_comp(spec, baked=baked, media=media, sequences=sequences)
     if "fallback" in rendered:
         return {"effect_id": spec.get("id"), "fallback": rendered["fallback"]}
     target = cache_dir if cache_dir is not None else chair_cache_dir()
@@ -337,6 +340,7 @@ def add_effect(
         "comp_path": str(comp_path),
         "comp_name": comp_name,
         "prev_comp_name": prev,
+        "paths": rendered.get("paths", {}),
         "undo": {"prev_comp_name": prev},
     }
 
