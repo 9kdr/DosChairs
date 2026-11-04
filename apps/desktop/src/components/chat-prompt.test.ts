@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { orchestratorOptions, resolveOrchestrator } from "./chat-prompt";
+import { orchestratorLabel, orchestratorOptions, resolveOrchestrator } from "./chat-prompt";
 import type { ProviderId } from "../settings/providers";
 
 const NO_KEYS: Record<ProviderId, string | null> = {
@@ -111,5 +111,21 @@ describe("orchestrator picker", () => {
     expect(resolveOrchestrator("muse-spark-1 (Meta)", orchestratorOptions(NO_KEYS))).toBe(null);
     expect(resolveOrchestrator(null, options)).toBe("muse-wonder-1.0 (Meta)");
     expect(resolveOrchestrator(null, [])).toBe(null);
+  });
+
+  it("shows a short label with no provider suffix, unknown ids pass through", () => {
+    expect(orchestratorLabel("muse-spark-1 (Meta)")).toBe("Muse Spark");
+    expect(orchestratorLabel("muse-wonder-1.0 (Meta)")).toBe("Muse Wonder");
+    expect(orchestratorLabel("gpt-x (OpenAI)")).toBe("gpt-x");
+  });
+
+  it("prefers the agent planner when nothing is saved, a saved choice still wins", () => {
+    const options = orchestratorOptions({ ...NO_KEYS, meta: "key" });
+    expect(resolveOrchestrator(null, options, "muse-spark-1")).toBe("muse-spark-1 (Meta)");
+    expect(resolveOrchestrator(null, options, "gpt-x")).toBe("muse-wonder-1.0 (Meta)");
+    expect(resolveOrchestrator(null, options, null)).toBe("muse-wonder-1.0 (Meta)");
+    expect(resolveOrchestrator("muse-wonder-1.0 (Meta)", options, "muse-spark-1")).toBe(
+      "muse-wonder-1.0 (Meta)",
+    );
   });
 });

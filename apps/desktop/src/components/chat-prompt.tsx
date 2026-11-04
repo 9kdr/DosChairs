@@ -52,12 +52,29 @@ export function orchestratorOptions(
   );
 }
 
-/** The stored pick when it is still offered, else the first available model, or null. */
+/**
+ * Short trigger label for a picker option: the human model name, no
+ * provider suffix. Unknown ids pass through unchanged.
+ */
+export function orchestratorLabel(option: string): string {
+  const id = option.replace(/ \([^()]*\)$/, "");
+  const family = /^muse-([a-z]+)/.exec(id)?.[1];
+  if (family == null) return id;
+  return `Muse ${family.charAt(0).toUpperCase()}${family.slice(1)}`;
+}
+
+/** The stored pick when still offered, else the agent's planner model when offered, else the first available model, or null. */
 export function resolveOrchestrator(
   stored: string | null,
   options: readonly string[],
+  planner?: string | null,
 ): string | null {
   if (stored != null && options.includes(stored)) return stored;
+  const planned =
+    planner == null
+      ? undefined
+      : options.find((opt) => opt === planner || opt.startsWith(`${planner} (`));
+  if (planned != null && !planned.endsWith("(Anthropic)")) return planned;
   const firstSupported = options.find((opt) => !opt.endsWith("(Anthropic)"));
   return firstSupported ?? options[0] ?? null;
 }
@@ -404,10 +421,11 @@ export function ChatPrompt({
       agentHealth?.keys_configured,
     ],
   );
+  const plannerModel = agentHealth?.models?.planner ?? null;
   useEffect(() => {
     if (!loaded) return;
-    setModel(resolveOrchestrator(settings.orchestrator, options));
-  }, [loaded, settings.orchestrator, options]);
+    setModel(resolveOrchestrator(settings.orchestrator, options, plannerModel));
+  }, [loaded, settings.orchestrator, options, plannerModel]);
   const pickModel = (value: string | null) => {
     if (value == null || !options.includes(value)) return;
     setModel(value);
@@ -1172,7 +1190,7 @@ export function ChatPrompt({
                           }
                         >
                           <span className="truncate max-[480px]:hidden">
-                            {model ?? "Select model"}
+                            {model == null ? "Select model" : orchestratorLabel(model)}
                           </span>
                           <ChevronDown />
                         </MenuTrigger>
