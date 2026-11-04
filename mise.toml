@@ -74,10 +74,11 @@ description = "Print the two commands for agent and sidecar"
 run = "echo 'Run in two shells: mise run dev:agent  and  mise run dev:sidecar'"
 
 [tasks.check]
-description = "Typecheck, schema check, Python lint"
+description = "Typecheck, schema check, module determinism, Python lint"
 run = """
 pnpm typecheck
 pnpm test:schemas
+pnpm --filter @chair/effects test:modules
 uv run ruff check services adapters
 """
 

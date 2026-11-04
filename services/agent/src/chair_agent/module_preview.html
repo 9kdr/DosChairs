@@ -1,0 +1,44 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>__TITLE__</title>
+<style>html,body{margin:0;background:#1b1b1b}#stage{position:relative;width:__W__px;height:__H__px;overflow:hidden}
+#bar{position:fixed;left:12px;bottom:12px;color:#ddd;font:12px sans-serif;background:#000a;padding:6px 10px;border-radius:6px}</style>
+<div id="stage"></div>
+<div id="bar"><input id="scrub" type="range" min="0" max="__DUR__" step="0.01" value="0"> <span id="tlabel"></span></div>
+<pre id="result" style="display:none"></pre>
+<script type="module">
+import OgrafTitle from '__JS__';
+const q = new URLSearchParams(location.search);
+customElements.define('chair-effect', OgrafTitle);
+const el = document.createElement('chair-effect');
+el.style.cssText = 'position:absolute;inset:0';
+document.getElementById('stage').appendChild(el);
+const schedule = q.get('schedule') ? JSON.parse(q.get('schedule')) : [];
+const events = [{ timestamp: 0, action: { type: 'playAction', params: {} } }, ...schedule];
+const data = q.get('props') ? JSON.parse(q.get('props')) : {};
+await el.load({ data, renderType: 'non-realtime', renderCharacteristics: { resolution: { width: __W__, height: __H__ }, frameRate: __FPS__ } });
+await el.setActionsSchedule({ schedule: events });
+await el.playAction({ delta: 1 });
+const hash = (s) => { let h = 2166136261; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return (h >>> 0).toString(16); };
+const fingerprint = () => {
+  const root = el.shadowRoot;
+  let acc = root.innerHTML;
+  for (const c of root.querySelectorAll('canvas')) acc += c.toDataURL();
+  return hash(acc);
+};
+const seek = async (t) => { await el.goToTime({ timestamp: Math.round(t * 1000) }); };
+const show = (t) => { document.getElementById('tlabel').textContent = t.toFixed(2) + 's'; };
+const t0 = parseFloat(q.get('t') ?? '0');
+await seek(t0); show(t0);
+if (q.get('check')) {
+  const [a, b] = q.get('check').split(',').map(parseFloat);
+  await seek(a); const first = fingerprint();
+  await seek(b); const away = fingerprint();
+  await seek(a); const back = fingerprint();
+  await seek(t0);
+  document.getElementById('result').textContent = JSON.stringify({ a, b, first, away, back, identical: first === back, differs: first !== away });
+}
+if (q.has('shot')) document.getElementById('bar').style.display = 'none';
+document.getElementById('scrub').addEventListener('input', async (e) => { const t = parseFloat(e.target.value); await seek(t); show(t); });
+document.title = 'ready';
+</script>

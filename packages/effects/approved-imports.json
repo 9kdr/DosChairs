@@ -1,0 +1,62 @@
+{
+  "version": 1,
+  "note": "The one list of imports an effect module may use. The bundler allows only these names and the model prompt is built from this file. Everything is bundled: nothing is fetched at render time.",
+  "imports": [
+    {
+      "name": "react",
+      "summary": "React 19. Use plain function components and hooks (useRef, useLayoutEffect, useMemo). Never useEffect/useState for animation: a frame is a pure function of props and t.",
+      "api": ["import React from 'react'"]
+    },
+    {
+      "name": "react/jsx-runtime",
+      "summary": "Automatic JSX runtime (implicit).",
+      "api": [],
+      "hidden": true
+    },
+    {
+      "name": "react/jsx-dev-runtime",
+      "summary": "Automatic JSX runtime (implicit).",
+      "api": [],
+      "hidden": true
+    },
+    {
+      "name": "three",
+      "summary": "three.js 0.180 for 3D scenes. Build or update the scene from props and t inside a useLayoutEffect on every render, call renderer.render once, never start an animation loop. Keep one WebGLRenderer in a ref (preserveDrawingBuffer: true, alpha: true). Mirror the frame inputs on the canvas as data-frame={JSON.stringify(...)} so the determinism check can compare frames.",
+      "api": ["import * as THREE from 'three'"],
+      "prefix": true
+    },
+    {
+      "name": "open-bot-avatar",
+      "summary": "MIT. Small object characters with eyes; time-pure. renderAvatarSvg(def, {color, eyeColor, time, motion, gaze, size, depth, view, reducedMotion}) returns an SVG string for dangerouslySetInnerHTML. motion is 'idle'|'thinking'|'happy'; gaze is {x, y, weight?} with x,y in -1..1 (x right, y down). examples lists built-in definitions; getExample(id) returns one. Do not import open-bot-avatar/dom (it mounts and animates on its own clock).",
+      "api": [
+        "import { renderAvatarSvg, avatarFrame, getExample, examples, validateAvatar } from 'open-bot-avatar'",
+        "renderAvatarSvg(def: AvatarDefinition, opts?: { color?: string; eyeColor?: string; time?: number; motion?: 'idle'|'thinking'|'happy'; gaze?: { x: number; y: number; weight?: number }; size?: number; depth?: number; view?: { yaw: number; pitch: number }; reducedMotion?: boolean }): string",
+        "getExample(id: string): AvatarDefinition | undefined"
+      ]
+    },
+    {
+      "name": "@chair/effects",
+      "summary": "Chair helpers: types, easing, seeded noise, ordered dither and halftone (CPU and GLSL), fixed-step physics driven by history(), a WebGL2 ShaderPass, and color helpers. Browser-safe, synchronous, deterministic.",
+      "api": [
+        "import { ... } from '@chair/effects'",
+        "type History = (name: string, t: number) => number | string | boolean | undefined   // a prop's value at any time t (seconds)",
+        "type EffectProps<P> = { t: number; frame: number; fps: number; width: number; height: number; history: History; data?: unknown } & P",
+        "num(history, name, t, fallback = 0): number   // numeric history read, never NaN",
+        "clamp(v, lo = 0, hi = 1); lerp(a, b, u); remap(v, a, b, c, d) (clamped); smoothstep(a, b, v)",
+        "easeOutCubic(u); easeInCubic(u); easeInOutCubic(u); easeOutBack(u, overshoot?); easeOutElastic(u)   // u in 0..1",
+        "mulberry32(seed): () => number   // seeded PRNG in [0,1)",
+        "hash2(x, y, seed?): number; valueNoise2(x, y, seed?): number; fbm2(x, y, octaves?, seed?): number   // all in [0,1)",
+        "bayerThreshold(x, y, size: 4|8 = 8): number; orderedDither(tone, x, y, size?): 0|1; halftone(tone, x, y, cell, angle?): 0|1",
+        "GLSL_NOISE: string   // GLSL ES 3.00: hash21(vec2), vnoise(vec2), fbm(vec2) (5 octaves)",
+        "GLSL_BAYER: string   // GLSL ES 3.00: bayer4(vec2), bayer8(vec2) in (0,1), halftone(float tone, vec2 pixel, float cell, float angle)",
+        "springStep(state: {x, v}, target, dt, {stiffness?, damping?, mass?}): void",
+        "simulateSpring(target: (tau) => number, t, opts?): {x, v}   // fixed 240 Hz step from time 0 to t",
+        "followProp(history, name, t, opts?): {x, v}   // spring chasing a keyframed numeric prop",
+        "simulateFollower(history, xName, yName, t, opts?): { x, y, vx, vy, tilt, scaleAlong, scaleAcross, heading }   // expressive-mouse rig: overshoot, swing/tilt, squash-and-stretch",
+        "verletChain(anchor: (tau) => {x, y}, count, t, {segment?, gravity?, damping?, iterations?}): {x, y}[]   // hanging rope; one letter per point for text physics",
+        "<ShaderPass frag={glsl} uniforms={{ u_time: t, u_color: '#ff6a00', u_res: [width, height] }} width={width} height={height} />   // fullscreen WebGL2 pass. frag is GLSL ES 3.00 and receives `in vec2 vUv` (0..1). Uniforms may be number, boolean, #rrggbb string (vec3), or number[2..4].",
+        "hexToRgb01(hex): [r, g, b]; hexToRgba(hex, alpha?): string; mixHex(a, b, u): string"
+      ]
+    }
+  ]
+}
