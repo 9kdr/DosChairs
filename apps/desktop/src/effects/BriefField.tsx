@@ -17,11 +17,12 @@ type Listing = { query: string; pieces: PieceInfo[]; failed: boolean };
 
 function KindLine({ piece }: { piece: PieceInfo }) {
   const count = piece.controls.length;
-  const own = piece.source === "user" ? "yours · " : "";
   return (
-    <span className="shrink-0 whitespace-nowrap text-xs text-neutral-500">
-      {own}
-      {piece.kind.replace("_", " ")} · {count} {count === 1 ? "control" : "controls"}
+    <span className="flex shrink-0 items-center gap-1.5 whitespace-nowrap text-xs text-neutral-500">
+      {piece.source === "user" ? (
+        <span className="size-1.5 rounded-full bg-amber-300" aria-hidden="true" />
+      ) : null}
+      {piece.kind.replace("_", " ")} · {count}
     </span>
   );
 }
@@ -141,7 +142,7 @@ export function BriefField({
         </AutocompleteEmpty>
         <AutocompleteList className="w-(--anchor-width)">
           {(piece: PieceInfo) => (
-            <AutocompleteItem key={piece.id} value={piece} className="justify-between gap-3">
+            <AutocompleteItem key={piece.id} value={piece} className="justify-between gap-3" title={piece.summary}>
               <span className="min-w-0 truncate">{piece.name}</span>
               <KindLine piece={piece} />
             </AutocompleteItem>
