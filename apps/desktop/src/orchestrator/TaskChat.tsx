@@ -5,7 +5,7 @@ import { SmoothScrollTarget } from "@/components/smooth-scroll";
 import { Button } from "@/components/ui/button";
 import type { RunningTask } from "./RunningTasks";
 import { TaskActivityPanel } from "./TaskActivity";
-import { selectionForNote, useTaskThread, type TaskNote } from "./taskThread";
+import { selectionForNote, useTaskThread, type TaskNote, type Turn } from "./taskThread";
 import {
   canUndoTask,
   historyForTask,
@@ -74,6 +74,11 @@ export function TaskChat({
   const { turns, activity } = useTaskThread(task, threadNote, resolveLocalReply);
   const endRef = useRef<HTMLDivElement>(null);
   const threadRef = useRef<HTMLDivElement>(null);
+  // The thread opens with the person's own words: the brief that started
+  // the task. Rendered, not stored, so reopening never duplicates it.
+  const brief = task.plan?.brief.trim() ? task.plan.brief.trim() : null;
+  const opening: Turn[] =
+    brief === null ? [] : [{ id: `${task.id}-brief`, role: "user", text: brief }];
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ block: "end" });
@@ -86,11 +91,11 @@ export function TaskChat({
           type="button"
           size="sm"
           variant="ghost"
-          aria-label="Back to the desk"
+          aria-label="Back to tasks"
           onClick={onClose}
         >
           <ArrowLeft />
-          Desk
+          Back
         </Button>
         <h2 className="min-w-0 truncate text-sm font-semibold tracking-wide">{task.name}</h2>
         <span className="rounded-full bg-white/8 px-2 py-0.5 text-xs text-neutral-300">
@@ -106,7 +111,7 @@ export function TaskChat({
         >
           <SmoothScrollTarget target={threadRef} lerp={0.075} />
           <ol className="mx-auto flex w-full max-w-3xl flex-col gap-6 py-4">
-            {turns.map((turn) =>
+            {[...opening, ...turns].map((turn) =>
               turn.role === "user" ? (
                 <li key={turn.id} className="flex justify-end">
                   <p className="max-w-[80%] rounded-2xl bg-[#1a1a1a] px-4 py-3 text-sm leading-6 text-neutral-100 shadow-raised ring-1 ring-white/8">
