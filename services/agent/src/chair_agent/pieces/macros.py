@@ -128,25 +128,80 @@ def _score(entry: dict[str, Any], tokens: Sequence[str]) -> int:
     return sum(3 if token in name else 1 if token in rest else 0 for token in tokens)
 
 
+def _board_list_entries(tokens: Sequence[str]) -> list[dict[str, Any]]:
+    """Style-board items as list entries, matched against the query tokens."""
+    from chair_agent import plans as plan_store
+
+    entries = []
+    for item in plan_store.iter_board_items():
+        name = item["title"] or item["id"]
+        haystack = " ".join(
+            [item["id"], name, item["kind"], item["notes"], *item["tags"]]
+        ).lower()
+        if tokens and not all(token in haystack for token in tokens):
+            continue
+        entries.append(
+            {
+                "id": f"board:{item['id']}",
+                "name": name,
+                "kind": item["kind"],
+                "origin": "board",
+                "source": item["project_id"],
+                "summary": item["notes"] or "",
+                "controls": [],
+            }
+        )
+    return entries
+
+
 def list_pieces(query: str = "", *, limit: int = 50, rescan: bool = False) -> dict[str, Any]:
     """Catalogue pieces and Resolve macros together, filtered and ranked by query."""
-    entries = _catalog_entries() + _macro_entries(get_scan(rescan=rescan))
     tokens = [token for token in query.lower().split() if token]
+    entries = _catalog_entries() + _macro_entries(get_scan(rescan=rescan))
     # The editor's own macros first, then the built-in catalogue, then Resolve's stock set.
     order = {"user": 0, "catalog": 1, "system": 2}
     scored = sorted(
         ((entry, _score(entry, tokens)) for entry in entries),
-        key=lambda item: (-item[1], order[item[0]["source"]]),
+        key=lambda item: (-item[1], order.get(item[0]["source"], 1)),
     )
     entries = [entry for entry, score in scored if score > 0 or not tokens]
+    # Board items match on their own id/title/tags instead of the piece
+    # scorer. They ride first: they are the editor's own picks.
+    entries = _board_list_entries(tokens) + entries
     return {"pieces": entries[: max(1, limit)], "total": len(entries)}
 
 
+def _board_entry(key: str) -> dict[str, Any] | None:
+    """A style-board item as a piece entry, for `board:<id>` and `@title` refs."""
+    from chair_agent import plans as plan_store
+
+    item = plan_store.find_board_item(key)
+    if item is None:
+        return None
+    digest = item.get("digest") or {}
+    return {
+        "id": f"board:{item['id']}",
+        "name": item["title"] or item["id"],
+        "kind": item["kind"],
+        "origin": "board",
+        "source": item["project_id"],
+        "summary": item["notes"] or "",
+        "controls": [],
+        "tags": item["tags"],
+        "image": item["image"],
+        "url": item["url"],
+        "digest": digest,
+    }
+
+
 def find_piece(piece_id: str) -> dict[str, Any] | None:
+    key = (piece_id or "").strip()
+    if key.startswith("board:") or key.startswith("@"):
+        return _board_entry(key)
     for entry in _catalog_entries() + _macro_entries(get_scan()):
         if entry["id"] == piece_id:
             return entry
-    return None
+    return _board_entry(key)
 
 
 def _describe(control: dict[str, Any]) -> str:
@@ -158,6 +213,27 @@ def _describe(control: dict[str, Any]) -> str:
     if control.get("choices"):
         text += f", one of {', '.join(control['choices'])}"
     return text + ")"
+
+
+def _board_note(piece: dict[str, Any]) -> str:
+    """Prompt text for a style-board ref: digest first, image as the reference."""
+    digest = piece.get("digest") or {}
+    bits = []
+    if digest.get("mood"):
+        bits.append(str(digest["mood"]))
+    if digest.get("palette"):
+        bits.append("palette " + ", ".join(digest["palette"][:5]))
+    if digest.get("motionWords"):
+        bits.append("motion: " + ", ".join(digest["motionWords"][:6]))
+    if digest.get("keywords"):
+        bits.append("keywords: " + ", ".join(digest["keywords"][:8]))
+    look = "; ".join(bits) or "no digest yet"
+    image = piece.get("image") or piece.get("url") or "no image attached"
+    notes = piece.get("summary") or "no notes"
+    return (
+        f"- @{piece['name']} (style board, {piece['kind']}): {look}. "
+        f"Reference image: {image}. Notes: {notes}."
+    )
 
 
 def references_note(references: Any) -> str:
@@ -172,6 +248,9 @@ def references_note(references: Any) -> str:
         label = str(ref.get("label") or ref["id"])[:80]
         if piece is None:
             lines.append(f"- @{label}: no longer in the library; ask what it should look like.")
+            continue
+        if piece.get("origin") == "board":
+            lines.append(_board_note(piece))
             continue
         controls = "; ".join(_describe(c) for c in piece["controls"][:12])
         controls = controls or "no published controls"

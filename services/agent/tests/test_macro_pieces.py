@@ -16,8 +16,10 @@ LOWER = "macro:user:title:templates-edit-titles-my-lower-third"
 
 
 @pytest.fixture(autouse=True)
-def fusion(monkeypatch: pytest.MonkeyPatch):
+def fusion(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     monkeypatch.setenv("CHAIR_FUSION_DIRS", f"{FIXTURES / 'user'}:{FIXTURES / 'system'}")
+    # Board items ride along in listings; keep them out of these assertions.
+    monkeypatch.setenv("CHAIR_AGENT_STATE_DIR", str(tmp_path / "state"))
     monkeypatch.setattr(macros, "_SCAN", None)
     monkeypatch.setattr(macros, "_LAST_ERROR", None)
 

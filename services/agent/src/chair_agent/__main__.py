@@ -78,6 +78,16 @@ class Handler(BaseHTTPRequestHandler):
             except ReviewUnavailable as error:
                 self._send(503, _error(error.code, str(error)))
             return
+        plan_route = _plan_path(self.path)
+        if plan_route is not None and plan_route[1] == "":
+            from chair_agent import plans as plan_store
+
+            try:
+                self._send(200, plan_store.plan_payload(
+                    plan_store.load_plan(plan_route[0])))
+            except plan_store.PlanError as error:
+                self._send(400, _error("invalid_plan", str(error)))
+            return
         request_id = _job_path(self.path)
         if request_id is None:
             self.send_error(404)
@@ -90,9 +100,31 @@ class Handler(BaseHTTPRequestHandler):
     def do_OPTIONS(self) -> None:
         self.send_response(204)
         self.send_header("access-control-allow-origin", "*")
-        self.send_header("access-control-allow-methods", "GET, POST, OPTIONS")
+        self.send_header("access-control-allow-methods", "GET, POST, PUT, OPTIONS")
         self.send_header("access-control-allow-headers", "content-type, idempotency-key")
         self.end_headers()
+
+    def do_PUT(self) -> None:
+        plan_route = _plan_path(self.path)
+        if plan_route is None or plan_route[1] != "":
+            self.send_error(404)
+            return
+        from chair_agent import plans as plan_store
+
+        try:
+            body = self._body()
+        except ValueError:
+            self._send(400, _error("invalid_json", "request body must be JSON"))
+            return
+        front = body.get("front", body)
+        try:
+            plan = plan_store.save_front(plan_route[0], front)
+            if isinstance(body.get("status"), str):
+                plan = plan_store.set_status(plan_route[0], body["status"])
+        except plan_store.PlanError as error:
+            self._send(400, _error("invalid_plan", str(error)))
+            return
+        self._send(200, plan_store.plan_payload(plan))
 
     def do_POST(self) -> None:
         if self.path == "/keys":
@@ -203,6 +235,29 @@ class Handler(BaseHTTPRequestHandler):
                 self._send(503, _error(error.code, str(error)))
             else:
                 self._send(200, {"project_id": project_id, "asset": asset})
+            return
+        plan_route = _plan_path(urlsplit(self.path).path)
+        if plan_route is not None and plan_route[1] in ("generate", "digest"):
+            from chair_agent import plans as plan_store
+
+            try:
+                body = self._body()
+            except ValueError:
+                self._send(400, _error("invalid_json", "request body must be JSON"))
+                return
+            try:
+                if plan_route[1] == "generate":
+                    plan = plan_store.generate_back(plan_route[0])
+                else:
+                    item_id = body.get("itemId", "")
+                    if not isinstance(item_id, str) or not item_id.strip():
+                        raise plan_store.PlanError(
+                            "digest needs an 'itemId' string")
+                    plan = plan_store.digest_item(plan_route[0], item_id.strip())
+            except plan_store.PlanError as error:
+                self._send(400, _error("invalid_plan", str(error)))
+                return
+            self._send(200, plan_store.plan_payload(plan))
             return
         request_id = _cancel_path(self.path)
         if request_id is None:
@@ -336,6 +391,18 @@ def _assets_path(path: str) -> str | None:
     if len(parts) == 3 and parts[0] == "projects" and parts[1] and parts[2] == "assets":
         return unquote(parts[1])
     return None
+
+
+def _plan_path(path: str) -> tuple[str, str] | None:
+    """Split /projects/:id/plan[/generate|/digest]; None when not a plan path."""
+    parts = urlsplit(path).path.strip("/").split("/")
+    if len(parts) < 3 or parts[0] != "projects" or not parts[1] or parts[2] != "plan":
+        return None
+    if len(parts) == 3:
+        return (unquote(parts[1]), "")
+    if len(parts) == 4 and parts[3] in ("generate", "digest"):
+        return (unquote(parts[1]), parts[3])
+    return ("", "")
 
 
 def _import_bytes(data: Any) -> bytes:

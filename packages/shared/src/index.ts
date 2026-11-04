@@ -5,6 +5,7 @@ export const schemaIds = [
   "plan-motion.schema.json",
   "plan-muse-image.schema.json",
   "plan-sam-mask.schema.json",
+  "project-plan.schema.json",
   "story-plan.schema.json",
   "style-profile.schema.json",
   "timeline.schema.json",
