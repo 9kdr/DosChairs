@@ -40,6 +40,30 @@ export function ProjectCardActions({
   );
 }
 
+/**
+ * Dark duotone pairs for the thumbnail wash. All stay near the app
+ * background so the grid reads as one surface, not a rainbow.
+ */
+const THUMB_GRADIENTS: ReadonlyArray<readonly [string, string]> = [
+  ["#26343f", "#12171d"],
+  ["#33304a", "#15131f"],
+  ["#27443a", "#111915"],
+  ["#443a28", "#1a1510"],
+  ["#432b32", "#1a1114"],
+  ["#2b3a44", "#10161b"],
+];
+
+/** Stable gradient for a project id: a short hash picks one pair. */
+export function thumbGradient(id: string): string {
+  let hash = 0;
+  for (let index = 0; index < id.length; index += 1) {
+    hash = (hash * 31 + id.charCodeAt(index)) >>> 0;
+  }
+  const [from, to] =
+    THUMB_GRADIENTS[hash % THUMB_GRADIENTS.length] ?? THUMB_GRADIENTS[0]!;
+  return `linear-gradient(135deg, ${from} 0%, ${to} 100%)`;
+}
+
 /** Visual project tile with quiet overflow menu and context menu. */
 export function ProjectCard({
   project,
@@ -65,10 +89,18 @@ export function ProjectCard({
       >
         <div
           className={cn(
-            "relative aspect-[16/10] overflow-hidden rounded-xl bg-neutral-800/80",
+            "relative aspect-[16/10] overflow-hidden rounded-xl",
             "ring-1 ring-white/[0.06]",
           )}
+          style={{ backgroundImage: thumbGradient(project.id) }}
         >
+          <div className="absolute inset-0 grid place-items-center">
+            <EditorLogo
+              id={editorId}
+              title={editorShort(editorId)}
+              className="h-10 w-10 opacity-70 drop-shadow-[0_2px_8px_rgb(0_0_0/0.5)]"
+            />
+          </div>
           <div
             aria-hidden="true"
             className="absolute inset-0 bg-[radial-gradient(120%_80%_at_50%_0%,rgb(255_255_255/0.06),transparent_55%)]"
