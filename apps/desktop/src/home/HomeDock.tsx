@@ -2,7 +2,6 @@ import {
   BlocksIcon,
   HomeIcon,
   SettingsIcon,
-  StoreIcon,
   UserRoundIcon,
 } from "lucide-react";
 import type { ReactNode } from "react";
@@ -16,6 +15,7 @@ import {
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
+// "marketplace" stays in the type for the later feature; the dock hides it for now.
 export type HomeTab = "projects" | "pieces" | "marketplace";
 
 type HomeDockProps = {
@@ -58,14 +58,6 @@ export function HomeDock({ tab, onTab, onAccount, onSettings }: HomeDockProps) {
           >
             <BlocksIcon />
           </DockButton>
-          <DockButton
-            label="Marketplace"
-            active={tab === "marketplace"}
-            onClick={() => onTab("marketplace")}
-          >
-            <StoreIcon />
-          </DockButton>
-
           <span
             aria-hidden="true"
             className="mx-1 h-5 border-l border-white/[0.08] border-r border-black/50"
