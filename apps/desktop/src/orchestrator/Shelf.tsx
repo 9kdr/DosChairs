@@ -52,7 +52,7 @@ export function Shelf({
   const [kind, setKind] = useState<ShelfKind>("all");
   return (
     <div className={cn("flex h-full min-h-0 min-w-0 flex-col gap-3", className)}>
-      <div className="flex shrink-0 items-center gap-2">
+      <div className="flex shrink-0 flex-wrap items-center gap-2">
         <Tabs
           value={kind}
           onValueChange={(value) => setKind(value as ShelfKind)}

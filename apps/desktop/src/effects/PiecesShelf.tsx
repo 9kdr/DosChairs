@@ -185,7 +185,7 @@ export function PiecesShelf({
             <TabsList
               variant="underline"
               size="sm"
-              className="max-w-full overflow-x-auto"
+              className="max-w-full justify-start overflow-x-auto"
             >
               {KIND_FILTERS.map((item) => (
                 <TabsTab key={item.id} value={item.id} className="shrink-0">
