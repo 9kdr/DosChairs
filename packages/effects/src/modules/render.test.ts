@@ -7,7 +7,7 @@ import { mkdtempSync, writeFileSync, chmodSync, mkdirSync, readFileSync } from "
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi, afterEach } from "vitest";
-import { findBakeChromium, pngSize, renderFrames } from "./render.js";
+import { pngSize, renderFrames } from "./render.js";
 import { findChromium } from "./verify.js";
 
 const DISC_FRAG = `#version 300 es
@@ -63,7 +63,7 @@ describe("pngSize", () => {
   });
 });
 
-describe("findBakeChromium", () => {
+describe("findChromium ordering (the bake needs full chromium: the shell rejects remote debugging)", () => {
   afterEach(() => {
     vi.unstubAllEnvs();
   });
@@ -80,7 +80,7 @@ describe("findBakeChromium", () => {
     chmodSync(shell, 0o755);
     vi.stubEnv("PLAYWRIGHT_BROWSERS_PATH", cache);
     vi.stubEnv("CHAIR_CHROMIUM", "");
-    expect(findBakeChromium()).toBe(full);
+    expect(findChromium()).toBe(full);
   });
 
   it("honors CHAIR_CHROMIUM first", () => {
@@ -89,7 +89,7 @@ describe("findBakeChromium", () => {
     writeFileSync(custom, "x");
     chmodSync(custom, 0o755);
     vi.stubEnv("CHAIR_CHROMIUM", custom);
-    expect(findBakeChromium()).toBe(custom);
+    expect(findChromium()).toBe(custom);
   });
 });
 
@@ -101,10 +101,11 @@ describe("renderFrames", () => {
   });
 
   it.runIf(findChromium() !== null)("bakes two identical frames of a static disc", async () => {
-    // 480 wide: headless never ticks rAF in a narrower window.
+    // 480 wide: headless never ticks rAF in a narrower window. Two workers
+    // to cover the parallel path: one frame each.
     const outDir = mkdtempSync(join(tmpdir(), "chair-bake-test-"));
     const outcome = await renderFrames(fixture("disc"), {
-      width: 480, height: 270, fps: 10, durationSec: 0.2, outDir,
+      width: 480, height: 270, fps: 10, durationSec: 0.2, outDir, jobs: 2,
     });
     expect(outcome.frames).toBe(2);
     expect(outcome.files).toHaveLength(2);

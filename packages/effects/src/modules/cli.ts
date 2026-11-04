@@ -42,7 +42,7 @@ async function main(): Promise<void> {
     const data = (raw ? JSON.parse(raw) : {}) as {
       width?: number; height?: number; fps?: number; durationSec?: number;
       props?: Record<string, unknown>; keyframes?: Record<string, [number, unknown][]>;
-      chromium?: string;
+      chromium?: string; jobs?: number;
     };
     const outcome = await renderFrames(entry, {
       width: data.width ?? 0,
@@ -53,6 +53,7 @@ async function main(): Promise<void> {
       keyframes: data.keyframes,
       outDir,
       chromium: typeof data.chromium === "string" ? data.chromium : undefined,
+      jobs: typeof data.jobs === "number" ? data.jobs : undefined,
     });
     process.stdout.write(`${JSON.stringify(outcome)}\n`);
     return;

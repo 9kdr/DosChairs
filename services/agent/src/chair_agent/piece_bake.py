@@ -36,6 +36,8 @@ _STATUS: dict[str, Any] = {
     "bakes": 0,
     "frames": 0,
     "last_bake_ms": None,
+    "last_frames": None,
+    "last_renderer": None,
     "last_error": None,
 }
 
@@ -58,15 +60,21 @@ def reset_status() -> None:
     with _STATUS_LOCK:
         _STATUS.update({
             "bakes": 0, "frames": 0,
-            "last_bake_ms": None, "last_error": None,
+            "last_bake_ms": None, "last_frames": None,
+            "last_renderer": None, "last_error": None,
         })
 
 
-def _note_bake(frames: int, bake_ms: float, error: str | None = None) -> None:
+def _note_bake(
+    frames: int, bake_ms: float, error: str | None = None,
+    renderer: str | None = None,
+) -> None:
     with _STATUS_LOCK:
         if error is None:
             _STATUS["bakes"] += 1
             _STATUS["frames"] += frames
+            _STATUS["last_frames"] = frames
+            _STATUS["last_renderer"] = renderer
         _STATUS["last_bake_ms"] = bake_ms
         _STATUS["last_error"] = error
 
@@ -210,6 +218,7 @@ def bake_module(
     duration_sec: float,
     props: Mapping[str, Any] | None = None,
     keyframes: Mapping[str, Any] | None = None,
+    jobs: int | None = None,
 ) -> dict[str, Any]:
     """Render a module to PNGs under the bake cache; reuse a cached bake."""
     from chair_agent import modules
@@ -234,7 +243,7 @@ def bake_module(
     data = json.dumps({
         "width": width, "height": height, "fps": fps,
         "durationSec": duration_sec, "props": dict(props or {}),
-        "keyframes": keyframes,
+        "keyframes": keyframes, "jobs": jobs,
     })
     started = time.perf_counter()
     try:
@@ -263,7 +272,8 @@ def bake_module(
     if not isinstance(outcome, dict) or not outcome.get("files"):
         raise BakeError(f"bake of {module_id} produced no frames")
     bake_ms = round((time.perf_counter() - started) * 1000, 1)
-    _note_bake(len(outcome["files"]), bake_ms)
+    _note_bake(len(outcome["files"]), bake_ms,
+               renderer=outcome.get("renderer"))
     outcome["ms"] = bake_ms
     outcome["cached"] = False
     return outcome
