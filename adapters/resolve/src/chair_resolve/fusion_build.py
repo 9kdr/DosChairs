@@ -15,19 +15,21 @@ from __future__ import annotations
 
 from typing import Any
 
-LAYOUT_DX = 180
-# Flow rows: the spine (media + merges) runs left to right at y=0, each
-# node kind gets its own lane, and every tool gets its own column so no
-# two nodes can overlap.
+LAYOUT_DX = 2
+# Flow rows in FlowView grid units (measured live: 1 x-unit is 110
+# Pos-pixels, 1 y-unit is 33, off the (55, 16) origin; a node fills
+# exactly 1x1). The spine (media + merges) runs left to right at y=0,
+# each node kind gets its own lane, and every tool gets its own column
+# with a column to spare, so no two nodes can overlap.
 LANE_Y = {
     "spine": 0,
     "merge": 0,
-    "source": -140,
-    "look": -140,
-    "mask": -280,
-    "transform": 140,
-    "xpath": 210,
-    "fx": 280,
+    "source": -4,
+    "look": -4,
+    "mask": -8,
+    "transform": 4,
+    "xpath": 6,
+    "fx": 8,
 }
 
 
@@ -286,6 +288,7 @@ def arrange(
     flow = getattr(frame, "FlowView", None) if frame is not None else None
     if flow is None or not callable(getattr(flow, "SetPos", None)):
         return False
+    can_read = callable(getattr(flow, "GetPos", None))
     ok = True
     for name, (x, y) in positions.items():
         tool = tools.get(name)
@@ -294,6 +297,14 @@ def arrange(
             continue
         try:
             flow.SetPos(tool, x, y)
+            if can_read and abs(float(flow.GetPos(tool)) - x) > 1e-6:
+                ok = False
         except Exception:
             ok = False
+    frame_all = getattr(flow, "FrameAll", None)
+    if callable(frame_all):
+        try:
+            frame_all()
+        except Exception:
+            pass
     return ok

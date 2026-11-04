@@ -321,3 +321,17 @@ def test_arrange_needs_a_frame() -> None:
     assert arrange(object(), item2, "Comp 9", tools, {"MediaIn1": (0, 0)}, None) is True
     assert item2.loaded == ["Comp 9"]
     assert comp.flow.positions == {"MediaIn1": (0, 0)}
+    assert comp.flow.framed is True
+
+
+def test_arrange_reports_unlanded_positions() -> None:
+    FakeFlow = _FAKES["FakeFlow"]
+
+    class _LyingFlow(FakeFlow):
+        def GetPos(self, tool):
+            return 999.0
+
+    comp = FakeComp()
+    comp.flow = _LyingFlow()
+    tools = {"MediaIn1": comp.FindTool("MediaIn1")}
+    assert arrange(comp, FakeItem(), "Comp 1", tools, {"MediaIn1": (0, 0)}, None) is False

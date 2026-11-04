@@ -92,9 +92,16 @@ class FakeTool:
 class FakeFlow:
     def __init__(self) -> None:
         self.positions: dict[str, tuple[int, int]] = {}
+        self.framed = False
 
     def SetPos(self, tool: FakeTool, x: int, y: int) -> None:
         self.positions[tool.GetAttrs()["TOOLS_Name"]] = (x, y)
+
+    def GetPos(self, tool: FakeTool) -> float:
+        return float(self.positions[tool.GetAttrs()["TOOLS_Name"]][0])
+
+    def FrameAll(self) -> None:
+        self.framed = True
 
 
 class FakeFrame:
