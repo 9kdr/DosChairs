@@ -31,7 +31,6 @@ export const props = {
   thickness: { type: "number", min: 2, max: 16, default: 7, title: "Stroke" },
   glow: { type: "number", min: 0, max: 1, default: 0.7, title: "Glow" },
   accent: { type: "color", default: "#ff6a00", title: "Accent" },
-  paper: { type: "color", default: "#101018", title: "Paper" },
 } satisfies Record<string, PropSpec>;
 
 type Props = EffectProps<{
@@ -40,7 +39,6 @@ type Props = EffectProps<{
   thickness: number;
   glow: number;
   accent: string;
-  paper: string;
 }>;
 
 const CIRCLE = "M50 8 A42 42 0 1 1 49.9 8 Z";
@@ -89,14 +87,9 @@ export default function MorphIcon(p: Props): React.ReactElement {
 
   return (
     <div
-      style={{
-        position: "absolute",
-        inset: 0,
-        // Transparent by default (the standard switch); the paper plate only
-        // shows when the user turns the switch off.
-        background: history("transparentBg", t) === false ? c("paper", "#101018") : "transparent",
-      }}
-      data-paper={c("paper", "#101018")}
+      // Always transparent here; the kit paints the standard background
+      // behind it when the user turns the switch off.
+      style={{ position: "absolute", inset: 0, background: "transparent" }}
       data-seg={`${segment}:${u.toFixed(3)}`}
       data-d-len={d.length}
       data-style={`${size.toFixed(0)}:${thickness.toFixed(1)}:${glow.toFixed(2)}`}

@@ -305,10 +305,6 @@
           "type": "color"
         },
         {
-          "id": "paper",
-          "type": "color"
-        },
-        {
           "id": "transparentBg",
           "type": "boolean"
         },
