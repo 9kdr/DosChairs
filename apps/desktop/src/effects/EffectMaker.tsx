@@ -11,10 +11,7 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ChatPrompt, type ChatDraft } from "@/components/chat-prompt";
-import { InfoHint } from "@/components/info-hint";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { SegmentedControl, SegmentedControlItem } from "@/components/ui/segmented-control";
 import {
   Select,
   SelectItem,
@@ -32,7 +29,7 @@ import {
   briefWithType,
   defaultControls,
   effectItem,
-  exportInfo,
+  isTimeSensitive,
   rigOf,
   rigTargetId,
   typeOfSpec,
@@ -163,7 +160,6 @@ export function EffectMaker({
   const [autoSeq, setAutoSeq] = useState(0);
   const previewRef = useRef<PreviewHandle>(null);
   const abortRef = useRef<AbortController | null>(null);
-  const typeGroupRef = useRef<HTMLDivElement>(null);
   const landingRef = useRef<PieceLanding | null>(null);
   landingRef.current = landing;
   const busyRef = useRef(false);
@@ -183,13 +179,15 @@ export function EffectMaker({
 
   const bake = useMemo(() => (spec ? bakeRig(spec, rig) : null), [spec, rig]);
   const live = bake?.spec ?? null;
-  const info = live ? exportInfo(live) : null;
   const clip = clips.find((entry) => entry.id === (clipId ?? clips[0]?.id)) ?? null;
   const targetId = live ? rigTargetId(live) : null;
   const name = live?.name ?? piece?.name ?? "New piece";
 
   const load = (next: EffectSpec) => {
     setSpec(next);
+    // The header control shows what landed: a draft that comes back as
+    // a title flips the type on its own. The user can always override.
+    setPieceType(typeOfSpec(next));
     setRig(rigOf(next));
     setControls(defaultControls(next));
     setApplied(null);
@@ -316,15 +314,6 @@ export function EffectMaker({
       draft.text,
       draft.refs.map(({ id, label }) => ({ id, label })),
     );
-  };
-
-  const moveType = (direction: 1 | -1) => {
-    const at = PIECE_TYPES.findIndex((entry) => entry.id === pieceType);
-    const next = PIECE_TYPES[(at + direction + PIECE_TYPES.length) % PIECE_TYPES.length]!;
-    setPieceType(next.id);
-    requestAnimationFrame(() => {
-      typeGroupRef.current?.querySelector<HTMLButtonElement>(`[data-type="${next.id}"]`)?.focus();
-    });
   };
 
   /**
@@ -458,54 +447,34 @@ export function EffectMaker({
 
   return (
     <div className="mx-auto flex min-h-0 w-full max-w-4xl flex-1 flex-col gap-3">
-      <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto overscroll-contain">
-        {onBack ? (
-          <div className="flex shrink-0 items-center gap-2">
+      <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto overscroll-contain lg:grid lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] lg:content-start lg:items-start">
+        <div className="flex shrink-0 items-center gap-2 lg:col-span-2">
+          {onBack ? (
             <Button type="button" size="sm" variant="ghost" onClick={onBack} aria-label="Back">
               <ChevronLeftIcon />
               Back
             </Button>
-            <h2 className="min-w-0 truncate text-title text-neutral-100">{name}</h2>
-          </div>
-        ) : null}
-
-        <div className="flex shrink-0 items-center gap-3">
-          <span className="text-meta text-neutral-400">Type</span>
-          <div ref={typeGroupRef} className="contents">
-          <SegmentedControl
-            role="radiogroup"
-            aria-label="Piece type"
-            onKeyDown={(event) => {
-              if (event.key === "ArrowRight" || event.key === "ArrowDown") {
-                event.preventDefault();
-                moveType(1);
-              } else if (event.key === "ArrowLeft" || event.key === "ArrowUp") {
-                event.preventDefault();
-                moveType(-1);
-              }
-            }}
+          ) : null}
+          <h2 className="min-w-0 truncate text-title text-neutral-100">{name}</h2>
+          <Select
+            items={PIECE_TYPES.map((entry) => ({ label: entry.label, value: entry.id }))}
+            value={pieceType}
+            onValueChange={(value) => setPieceType(value as PieceType)}
           >
-            {PIECE_TYPES.map((entry) => {
-              const checked = pieceType === entry.id;
-              return (
-                <SegmentedControlItem
-                  key={entry.id}
-                  data-type={entry.id}
-                  role="radio"
-                  aria-checked={checked}
-                  data-checked={checked || undefined}
-                  tabIndex={checked ? 0 : -1}
-                  onClick={() => setPieceType(entry.id)}
-                >
+            <SelectTrigger size="sm" className="w-32 min-w-0 shrink-0" aria-label="Piece type">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectPopup>
+              {PIECE_TYPES.map((entry) => (
+                <SelectItem key={entry.id} value={entry.id}>
                   {entry.label}
-                </SegmentedControlItem>
-              );
-            })}
-          </SegmentedControl>
-          </div>
+                </SelectItem>
+              ))}
+            </SelectPopup>
+          </Select>
         </div>
 
-        <section aria-label="Preview" className={cn(CARD, "flex shrink-0 flex-col gap-3 p-4")}>
+        <section aria-label="Preview" className={cn(CARD, "flex min-w-0 flex-col gap-3 p-4")}>
           <div className="flex shrink-0 flex-wrap items-center gap-2 px-1">
             {clips.length > 0 && clip ? (
               <Select
@@ -534,7 +503,13 @@ export function EffectMaker({
           </div>
 
           {live ? (
-            <PreviewStage ref={previewRef} spec={live} controls={controls} className="w-full flex-none" />
+            <PreviewStage
+              ref={previewRef}
+              spec={live}
+              controls={controls}
+              timeSensitive={isTimeSensitive(live)}
+              className="w-full flex-none"
+            />
           ) : (
             <div className="flex min-h-56 w-full flex-none flex-col items-center justify-center gap-2 overflow-hidden rounded-2xl border border-dashed border-white/12 px-4 py-8 text-center">
               <span className="flex size-12 items-center justify-center rounded-2xl bg-white/[0.05] ring-1 ring-white/10">
@@ -556,21 +531,6 @@ export function EffectMaker({
           )}
 
           <div className="flex shrink-0 flex-col gap-2.5 px-1">
-            {info ? (
-              <div className="flex items-start gap-2.5 text-xs leading-5">
-                <Badge variant={info.fallback ? "warning" : "success"} size="sm" className="mt-0.5">
-                  {info.label}
-                </Badge>
-                {info.fallback ? (
-                  <p className="min-w-0 flex-1 text-neutral-400">
-                    <span className="text-neutral-300">Fallback: </span>
-                    {info.reason}
-                  </p>
-                ) : (
-                  <InfoHint>Why this target: {info.reason}</InfoHint>
-                )}
-              </div>
-            ) : null}
             <div aria-live="polite" className="flex flex-col gap-2">
               {applied ? (
                 <p className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-xl bg-emerald-400/[0.07] px-3 py-2 text-xs text-emerald-200/90 ring-1 ring-emerald-400/20 ring-inset">
@@ -623,13 +583,17 @@ export function EffectMaker({
         <VariablesPanel
           spec={spec}
           rig={rig}
+          typeLabel={PIECE_TYPES.find((entry) => entry.id === pieceType)?.label ?? "Effect"}
           onPatch={patchControl}
           onRigChange={(patch) => setRig((current) => (current ? { ...current, ...patch } : current))}
           onRigReset={() => spec && setRig(rigOf(spec))}
         />
 
         {failed || status || note ? (
-          <div aria-live="polite" className="flex shrink-0 items-start gap-2 px-1 text-xs leading-5">
+          <div
+            aria-live="polite"
+            className="flex shrink-0 items-start gap-2 px-1 text-xs leading-5 lg:col-span-2"
+          >
             {failed ? (
               <>
                 <AlertCircleIcon className="size-3.5 shrink-0 translate-y-0.5 text-red-400" aria-hidden="true" />

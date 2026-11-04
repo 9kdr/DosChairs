@@ -128,12 +128,14 @@ function VariableWidget({
 export function VariablesPanel({
   spec,
   rig,
+  typeLabel,
   onPatch,
   onRigChange,
   onRigReset,
 }: {
   spec: EffectSpec | null;
   rig: Rig | null;
+  typeLabel: string;
   onPatch: (id: string, value: ControlValue) => void;
   onRigChange: (patch: Partial<Rig>) => void;
   onRigReset: () => void;
@@ -141,8 +143,14 @@ export function VariablesPanel({
   if (!spec) return null;
   const controls = spec.controls ?? [];
   return (
-    <section aria-label="Variables" className={cn(CARD, "flex shrink-0 flex-col gap-3 p-4")}>
-      <PanelTitle icon={SlidersHorizontalIcon} title="Variables">
+    <section
+      aria-label="Variables"
+      className={cn(
+        CARD,
+        "flex min-w-0 flex-col gap-3 p-4 lg:max-h-[70vh] lg:overflow-y-auto lg:overscroll-contain",
+      )}
+    >
+      <PanelTitle icon={SlidersHorizontalIcon} title={`${typeLabel} controls`}>
         <span className="text-xs tabular-nums text-neutral-500">
           {controls.length} in Resolve
         </span>

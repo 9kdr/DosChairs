@@ -59,6 +59,52 @@ export function typeOfSpec(spec: EffectSpec): PieceType {
   return "effect";
 }
 
+const EPS = 1e-6;
+
+function channelMoves(keys: Keyframe[]): boolean {
+  let min = Infinity;
+  let max = -Infinity;
+  for (const key of keys) {
+    min = Math.min(min, key.value);
+    max = Math.max(max, key.value);
+  }
+  return max - min > EPS;
+}
+
+/** The motion converges instead of cycling: its tail rests at one value. */
+function channelSettles(keys: Keyframe[]): boolean {
+  const tail = keys.slice(-Math.max(2, Math.ceil(keys.length / 4)));
+  let min = Infinity;
+  let max = -Infinity;
+  for (const key of tail) {
+    min = Math.min(min, key.value);
+    max = Math.max(max, key.value);
+  }
+  return max - min <= EPS;
+}
+
+/**
+ * True when the piece plays once with a start and an end, so the
+ * preview earns a transport: a rig with overshoot that settles, a
+ * channel whose ends differ, or an in/out that rests at its end
+ * value. Static and looping looks (grades, dither, glow) read false.
+ */
+export function isTimeSensitive(spec: EffectSpec): boolean {
+  const rig = rigOf(spec);
+  if (rig && rig.overshoot !== false) return true;
+  for (const layer of spec.layers) {
+    for (const curve of Object.values(layer.curves ?? {})) {
+      const keys = curve.keyframes;
+      if (keys.length < 2 || !channelMoves(keys)) continue;
+      const first = keys[0]!.value;
+      const last = keys[keys.length - 1]!.value;
+      if (Math.abs(first - last) > EPS) return true;
+      if (channelSettles(keys)) return true;
+    }
+  }
+  return false;
+}
+
 /** Frame the brief with the picked type so the drafting model drafts to it. */
 export function briefWithType(type: PieceType, brief: string): string {
   const label = PIECE_TYPES.find((entry) => entry.id === type)?.label ?? "Effect";

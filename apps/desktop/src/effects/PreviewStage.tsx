@@ -17,17 +17,22 @@ const CHECKER = {
 } as const;
 
 /**
- * Live WebGL preview with play, pause and a scrub bar. The clock lives
- * here so a running preview re-renders only this stage, not the panel.
+ * Live WebGL preview. A piece that plays once with a start and an end
+ * gets a transport (play, scrub, timecode) looping a short demo; a
+ * static or looping look just renders, frozen under reduced motion.
+ * The clock lives here so a running preview re-renders only this
+ * stage, not the panel.
  */
 export function PreviewStage({
   spec,
   controls,
+  timeSensitive,
   ref,
   className,
 }: {
   spec: EffectSpec;
   controls: ControlValues;
+  timeSensitive: boolean;
   ref?: Ref<PreviewHandle>;
   className?: string;
 }) {
@@ -127,35 +132,37 @@ export function PreviewStage({
         </div>
       </div>
 
-      <div className="flex shrink-0 items-center gap-3 px-1">
-        <Button
-          type="button"
-          size="icon-sm"
-          variant="outline"
-          aria-label={playing ? "Pause preview" : atEnd ? "Replay preview" : "Play preview"}
-          onClick={() => {
-            if (!playing && atEnd) setTime(0);
-            setPlaying((current) => !current);
-          }}
-        >
-          {playing ? <PauseIcon /> : atEnd ? <RotateCcwIcon /> : <PlayIcon />}
-        </Button>
-        <Slider
-          aria-label="Scrub preview"
-          min={0}
-          max={spec.durationSec}
-          step={1 / spec.fps}
-          value={Math.min(time, spec.durationSec)}
-          onValueChange={(value) => {
-            setPlaying(false);
-            setTime(Array.isArray(value) ? (value[0] ?? 0) : value);
-          }}
-          getAriaLabel={() => "Scrub preview"}
-        />
-        <span className="w-28 shrink-0 text-right text-xs tabular-nums text-neutral-400">
-          {stamp(time)} <span className="text-neutral-600">/ {stamp(spec.durationSec)}</span>
-        </span>
-      </div>
+      {timeSensitive ? (
+        <div className="flex shrink-0 items-center gap-3 px-1">
+          <Button
+            type="button"
+            size="icon-sm"
+            variant="outline"
+            aria-label={playing ? "Pause preview" : atEnd ? "Replay preview" : "Play preview"}
+            onClick={() => {
+              if (!playing && atEnd) setTime(0);
+              setPlaying((current) => !current);
+            }}
+          >
+            {playing ? <PauseIcon /> : atEnd ? <RotateCcwIcon /> : <PlayIcon />}
+          </Button>
+          <Slider
+            aria-label="Scrub preview"
+            min={0}
+            max={spec.durationSec}
+            step={1 / spec.fps}
+            value={Math.min(time, spec.durationSec)}
+            onValueChange={(value) => {
+              setPlaying(false);
+              setTime(Array.isArray(value) ? (value[0] ?? 0) : value);
+            }}
+            getAriaLabel={() => "Scrub preview"}
+          />
+          <span className="w-28 shrink-0 text-right text-xs tabular-nums text-neutral-400">
+            {stamp(time)} <span className="text-neutral-600">/ {stamp(spec.durationSec)}</span>
+          </span>
+        </div>
+      ) : null}
     </div>
   );
 }

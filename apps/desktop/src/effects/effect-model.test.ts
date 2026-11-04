@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { EffectSpec } from "@chair/effects";
 import { applyChangesetItem, emptyTimeline, invertItem, type Timeline } from "@chair/timeline-ir";
 import { advanceMirror, tryHistoryEntry } from "../project/store";
-import { PIECE_TYPES, bakedPayload, bakeRig, briefWithType, defaultControls, effectItem, exportInfo, rigOf, rigTargetId, stamp, typeOfSpec, updateControl } from "./effect-model";
+import { PIECE_TYPES, bakedPayload, bakeRig, briefWithType, defaultControls, effectItem, exportInfo, isTimeSensitive, rigOf, rigTargetId, stamp, typeOfSpec, updateControl } from "./effect-model";
 import { sampleEffect } from "./effects-api";
 
 describe("sample effect", () => {
@@ -54,6 +54,46 @@ describe("bakeRig", () => {
     for (const prop of ["x", "y", "rotation", "scale", "scaley"]) {
       expect(curves[prop]?.keyframes.length, prop).toBeGreaterThan(1);
     }
+  });
+});
+
+describe("isTimeSensitive", () => {
+  it("marks settling animation timed and static or looping looks not", () => {
+    // The bouncing title: overshoot that settles, ends that differ.
+    expect(isTimeSensitive(sampleEffect())).toBe(true);
+    // A static grade: no rig, no animated channels.
+    const still: EffectSpec = { ...sampleEffect(), rig: undefined };
+    for (const layer of still.layers) layer.curves = {};
+    expect(isTimeSensitive(still)).toBe(false);
+    // An in/out that rests at its end value still plays once.
+    const inout: EffectSpec = { ...sampleEffect(), rig: undefined };
+    for (const layer of inout.layers) layer.curves = {};
+    inout.layers[0]!.curves = {
+      opacity: {
+        keyframes: [
+          { time: 0, value: 0 },
+          { time: 1, value: 1 },
+          { time: 2, value: 0 },
+          { time: 3, value: 0 },
+        ],
+      },
+    };
+    expect(isTimeSensitive(inout)).toBe(true);
+    // A looping pulse never rests, so it gets no transport.
+    const loop: EffectSpec = { ...sampleEffect(), rig: undefined };
+    for (const layer of loop.layers) layer.curves = {};
+    loop.layers[0]!.curves = {
+      glow: {
+        keyframes: [
+          { time: 0, value: 0 },
+          { time: 1, value: 1 },
+          { time: 2, value: 0 },
+          { time: 3, value: 1 },
+          { time: 4, value: 0 },
+        ],
+      },
+    };
+    expect(isTimeSensitive(loop)).toBe(false);
   });
 });
 
