@@ -51,6 +51,9 @@ class Handler(BaseHTTPRequestHandler):
         if urlsplit(self.path).path == "/sounds":
             self._send(200, _sounds_body(self.path))
             return
+        if urlsplit(self.path).path == "/pieces/macros":
+            self._send(200, _pieces_body(self.path))
+            return
         if urlsplit(self.path).path == "/projects":
             self._send(200, detect_projects())
             return
@@ -278,6 +281,7 @@ def _cancel_path(path: str) -> str | None:
 
 def _health() -> dict[str, Any]:
     from chair_agent import effects, sounds
+    from chair_agent.pieces import macros
 
     keys_status = keys_configured()
     return {
@@ -290,7 +294,23 @@ def _health() -> dict[str, Any]:
         "keys": keys_status,
         "sounds": sounds.status_snapshot(),
         "effects": effects.status_snapshot(),
+        "macros": macros.status_snapshot(),
     }
+
+
+def _pieces_body(path: str) -> dict[str, Any]:
+    from chair_agent.pieces import macros
+
+    query = dict(urllib.parse.parse_qsl(urlsplit(path).query))
+    try:
+        limit = int(query.get("limit", "50"))
+    except ValueError:
+        limit = 50
+    body = macros.list_pieces(
+        query.get("q", ""), limit=limit, rescan=query.get("rescan") == "1"
+    )
+    body["counts"] = macros.status_snapshot()["counts"]
+    return body
 
 
 def _sounds_body(path: str) -> dict[str, Any]:
@@ -418,6 +438,7 @@ def _effects_generate_body(body: dict[str, Any]) -> dict[str, Any]:
         rig=body.get("rig") if isinstance(body.get("rig"), dict) else None,
         reference_image=body.get("referenceImage")
         if isinstance(body.get("referenceImage"), str) else None,
+        references=body.get("references") if isinstance(body.get("references"), list) else None,
     )
     dumped = record.model_dump(mode="json")
     return {"id": dumped["id"], "spec": dumped["spec"], "notes": dumped["notes"]}
@@ -479,6 +500,9 @@ def main() -> None:
         target=run_worker, args=(Handler.controller, HANDLERS), daemon=True
     )
     worker.start()
+    from chair_agent.pieces import macros
+
+    threading.Thread(target=macros.get_scan, daemon=True).start()  # warm the macro scan
     server = ThreadingHTTPServer((host, port), Handler)
     print(f"chair-agent listening on http://{host}:{port}")
     server.serve_forever()

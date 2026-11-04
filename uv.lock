@@ -90,6 +90,7 @@ name = "chair-agent"
 version = "0.1.0"
 source = { editable = "services/agent" }
 dependencies = [
+    { name = "chair-adapter-resolve" },
     { name = "httpx" },
     { name = "jsonschema" },
     { name = "pydantic" },
@@ -97,6 +98,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
+    { name = "chair-adapter-resolve", editable = "adapters/resolve" },
     { name = "httpx", specifier = ">=0.28" },
     { name = "jsonschema", specifier = ">=4.23" },
     { name = "pydantic", specifier = ">=2.10" },

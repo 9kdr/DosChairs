@@ -225,6 +225,7 @@ def build_generate_messages(
     duration_sec: float,
     rig: Mapping[str, Any] | None = None,
     reference_image: str | None = None,
+    references: Sequence[Mapping[str, Any]] | None = None,
 ) -> list[Message]:
     """Prompt carrying the schema, the sample fixture, and the taste guide."""
     if not prompt.strip():
@@ -259,6 +260,12 @@ def build_generate_messages(
             "A reference image is attached: match its layout, palette, and "
             "mood, but keep text legible and motion eased, not linear."
         )
+    if references:
+        from chair_agent.pieces.macros import references_note
+
+        note = references_note(list(references))
+        if note:
+            developer_lines.append(note)
     image_part = _image_part(reference_image or "")
     user_content: str | list[dict[str, Any]] = prompt.strip()
     if image_part is not None:
@@ -385,6 +392,7 @@ def generate_effect(
     duration_sec: float,
     rig: Mapping[str, Any] | None = None,
     reference_image: str | None = None,
+    references: Sequence[Mapping[str, Any]] | None = None,
     client: ModelClient | None = None,
     env: Mapping[str, str] | None = None,
 ) -> EffectRecord:
@@ -397,6 +405,7 @@ def generate_effect(
     messages = build_generate_messages(
         prompt, width=width, height=height, fps=fps,
         duration_sec=duration_sec, rig=rig, reference_image=reference_image,
+        references=references,
     )
     started = time.perf_counter()
     notes = "Drafted by Muse Spark from the brief."

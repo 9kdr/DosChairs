@@ -7,7 +7,11 @@ dependencies = [
   "httpx>=0.28",
   "pydantic>=2.10",
   "jsonschema>=4.23",
+  "chair-adapter-resolve",
 ]
+
+[tool.uv.sources]
+chair-adapter-resolve = { workspace = true }
 
 [project.scripts]
 chair-agent = "chair_agent.__main__:main"
