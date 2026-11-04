@@ -1,13 +1,16 @@
 /**
- * The plan's Board tab: a list of style and campaign references that read as
- * content (a big image with a title) and edit inline on click. Drop an image
- * or paste a link to add a card. The collapsed Agent view below the tabs
- * lists the back-plan tasks with a stale badge.
+ * The plan's Board tab: quiet reference cards (a thumbnail with one title
+ * line and one meta line) that edit inline on click. Drop an image or paste
+ * a link to add a card. The collapsed task list below the tabs shows the
+ * work this plan runs from.
  */
 import { useRef, useState } from "react";
 import { ImagePlus, Link2, Plus, X } from "lucide-react";
+import { motion, useReducedMotion } from "motion/react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { DitherArt } from "@/components/dither-art";
+import { Empty, EmptyArt } from "@/components/ui/empty";
 import { Input } from "@/components/ui/input";
 import {
   Menu,
@@ -16,6 +19,7 @@ import {
   MenuRadioItem,
   MenuTrigger,
 } from "@/components/ui/menu";
+import { ditherMaskStyle } from "@/lib/dither";
 import { cn } from "@/lib/utils";
 import type { BackTask, BoardItem, BoardKind } from "./plan-api";
 
@@ -42,13 +46,18 @@ function newItem(title: string, patch: Partial<BoardItem>): BoardItem {
   };
 }
 
-/** Text that reads as content and swaps for an input on click. */
+/**
+ * Text that reads as content and swaps for an input on click. Type lives on
+ * the inner span (a plain element), never on the Button, so the app's type
+ * scale always wins over the component default.
+ */
 function InlineEdit({
   value,
   displayValue,
   placeholder,
   ariaLabel,
   className,
+  textClassName,
   placeholderClassName,
   onSave,
 }: {
@@ -57,6 +66,7 @@ function InlineEdit({
   placeholder: string;
   ariaLabel: string;
   className?: string;
+  textClassName?: string;
   placeholderClassName?: string;
   onSave: (value: string) => void;
 }) {
@@ -65,17 +75,25 @@ function InlineEdit({
   if (!editing) {
     const shown = displayValue ?? value;
     return (
-      <button
+      <Button
         type="button"
+        variant="ghost"
         aria-label={ariaLabel}
         onClick={() => {
           setDraft(value);
           setEditing(true);
         }}
-        className={cn("min-w-0 cursor-text text-left", className)}
+        className={cn(
+          "h-auto min-w-0 justify-start p-0 text-left font-normal hover:bg-transparent data-pressed:bg-transparent sm:h-auto",
+          className,
+        )}
       >
-        {shown || <span className={placeholderClassName}>{placeholder}</span>}
-      </button>
+        {shown ? (
+          <span className={cn("min-w-0", textClassName)}>{shown}</span>
+        ) : (
+          <span className={placeholderClassName}>{placeholder}</span>
+        )}
+      </Button>
     );
   }
   const commit = () => {
@@ -89,12 +107,16 @@ function InlineEdit({
       value={draft}
       placeholder={placeholder}
       aria-label={ariaLabel}
-      className="h-7 border-transparent bg-transparent px-0"
+      className="h-7 border-transparent bg-transparent px-0 text-meta dark:bg-transparent sm:text-meta"
       onChange={(event) => setDraft(event.target.value)}
       onBlur={commit}
       onKeyDown={(event) => {
         if (event.key === "Enter") commit();
-        if (event.key === "Escape") setEditing(false);
+        if (event.key === "Escape") {
+          event.preventDefault();
+          event.stopPropagation();
+          setEditing(false);
+        }
       }}
     />
   );
@@ -104,6 +126,7 @@ export function PlanBoard({ items, digests, digesting, onChange, onDigest, onFil
   const [url, setUrl] = useState("");
   const [dragOver, setDragOver] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+  const reduce = useReducedMotion();
 
   const setItem = (id: string, patch: Partial<BoardItem>) => {
     onChange(items.map((item) => (item.id === id ? { ...item, ...patch } : item)));
@@ -157,27 +180,45 @@ export function PlanBoard({ items, digests, digesting, onChange, onDigest, onFil
       onPaste={onPaste}
     >
       {items.length === 0 ? (
-        <p
-          className={
-            "rounded-3xl p-5 text-sm leading-6 text-neutral-400 " +
-            (dragOver ? "bg-white/10" : "bg-white/[0.04]")
-          }
-        >
-          No references yet. Drop an image, paste a link, or add one below.
-        </p>
+        <Empty className={cn("gap-4 rounded-card py-6 md:py-6", dragOver ? "bg-white/10" : "bg-muted")}>
+          <EmptyArt>
+            <DitherArt seed={9} />
+          </EmptyArt>
+          <p className="text-meta text-muted-foreground">
+            No references yet. Drop an image, paste a link, or add one below.
+          </p>
+        </Empty>
       ) : (
-        <ul className="flex min-h-0 flex-col gap-5">
-          {items.map((item) => {
+        <ul className="flex min-h-0 flex-col gap-4">
+          {items.map((item, index) => {
             const cover = item.images[0];
             const digest = digests[item.id];
             const name = item.title || "board item";
+            const host = (() => {
+              if (!item.url) return null;
+              try {
+                return new URL(item.url).host;
+              } catch {
+                return item.url;
+              }
+            })();
             return (
-              <li key={item.id} className="flex min-w-0 flex-col gap-1.5">
+              <motion.li
+                key={item.id}
+                initial={reduce ? false : { opacity: 0, y: 6 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{
+                  duration: 0.18,
+                  ease: [0.22, 1, 0.36, 1],
+                  delay: Math.min(index * 0.04, 0.24),
+                }}
+                className="group relative flex min-w-0 flex-col overflow-hidden rounded-card bg-surface-raised"
+              >
                 {cover ? (
                   <img
                     src={cover}
                     alt={item.title || "Board image"}
-                    className="aspect-video w-full rounded-2xl object-cover"
+                    className="aspect-video w-full object-cover"
                     loading="lazy"
                   />
                 ) : item.url ? (
@@ -185,89 +226,129 @@ export function PlanBoard({ items, digests, digesting, onChange, onDigest, onFil
                     href={item.url}
                     target="_blank"
                     rel="noreferrer"
-                    className="truncate rounded-2xl bg-white/[0.04] p-3 text-[13px] text-neutral-300 underline decoration-neutral-600 underline-offset-4"
+                    className="relative flex h-24 items-center justify-center gap-2 overflow-hidden px-4"
                   >
-                    {item.url}
-                  </a>
-                ) : null}
-                <div className="flex items-center gap-2">
-                  <Menu>
-                    <MenuTrigger
-                      render={
-                        <Button type="button" size="sm" variant="ghost" className="h-6 rounded-full px-2 py-0">
-                          <Badge variant="outline" className="border-white/10 text-neutral-300">{item.kind}</Badge>
-                        </Button>
-                      }
+                    <span
+                      aria-hidden="true"
+                      className="absolute inset-0 bg-white/[0.06]"
+                      style={ditherMaskStyle(0.35)}
                     />
-                    <MenuPopup align="start" className="min-w-32 rounded-2xl border-0 bg-[#1a1a1a] text-neutral-100 shadow-raised ring-1 ring-white/10">
-                      <MenuRadioGroup value={item.kind} onValueChange={(value) => setItem(item.id, { kind: value as BoardKind })}>
-                        {KINDS.map((kind) => (
-                          <MenuRadioItem key={kind} value={kind} closeOnClick className="min-h-0 rounded-xl px-2.5 py-1.5 text-sm">
-                            {kind}
-                          </MenuRadioItem>
-                        ))}
-                      </MenuRadioGroup>
-                    </MenuPopup>
-                  </Menu>
-                  <span className="flex-1" aria-hidden="true" />
+                    <Link2 className="relative size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+                    <span className="relative min-w-0 truncate text-meta text-muted-foreground">
+                      {host}
+                    </span>
+                  </a>
+                ) : (
+                  <span
+                    aria-hidden="true"
+                    className="block h-24 bg-white/[0.06]"
+                    style={ditherMaskStyle(0.35)}
+                  />
+                )}
+                <div className="flex flex-col gap-0.5 p-4">
+                  <InlineEdit
+                    value={item.title}
+                    placeholder="Title"
+                    ariaLabel="Board item title"
+                    textClassName="flex-1 truncate text-title font-medium text-neutral-100"
+                    placeholderClassName="text-meta text-neutral-500"
+                    onSave={(value) => setItem(item.id, { title: value })}
+                  />
+                  <span className="flex min-w-0 items-baseline gap-1 text-meta text-muted-foreground">
+                    <Menu>
+                      <MenuTrigger
+                        render={
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="ghost"
+                            aria-label={`Kind for ${name}: ${item.kind}. Change it.`}
+                            className="h-auto shrink-0 p-0 font-normal text-muted-foreground hover:bg-transparent hover:text-neutral-100 data-pressed:bg-transparent sm:h-auto"
+                          >
+                            <span className="text-meta">{item.kind}</span>
+                          </Button>
+                        }
+                      />
+                      <MenuPopup align="start">
+                        <MenuRadioGroup value={item.kind} onValueChange={(value) => setItem(item.id, { kind: value as BoardKind })}>
+                          {KINDS.map((kind) => (
+                            <MenuRadioItem key={kind} value={kind} closeOnClick>
+                              {kind}
+                            </MenuRadioItem>
+                          ))}
+                        </MenuRadioGroup>
+                      </MenuPopup>
+                    </Menu>
+                    {item.tags.length > 0 || item.notes || digest || digesting === item.id ? (
+                      <span aria-hidden="true" className="shrink-0">·</span>
+                    ) : null}
+                    <span className="min-w-0 flex-1 truncate">
+                      {item.tags.length > 0 ? (
+                        <InlineEdit
+                          value={item.tags.join(", ")}
+                          displayValue={item.tags.join(" · ")}
+                          placeholder="Tags"
+                          ariaLabel={`Tags for ${name}`}
+                          className="inline"
+                          textClassName="text-meta text-muted-foreground"
+                          placeholderClassName="text-meta text-neutral-500"
+                          onSave={(value) =>
+                            setItem(item.id, {
+                              tags: value.split(",").map((tag) => tag.trim()).filter(Boolean),
+                            })
+                          }
+                        />
+                      ) : null}
+                      {item.tags.length > 0 && (item.notes || digest || digesting === item.id) ? (
+                        <span aria-hidden="true"> · </span>
+                      ) : null}
+                      {item.notes ? (
+                        <InlineEdit
+                          value={item.notes}
+                          placeholder="Notes"
+                          ariaLabel={`Notes for ${name}`}
+                          className="inline"
+                          textClassName="text-meta text-muted-foreground"
+                          placeholderClassName="text-meta text-neutral-500"
+                          onSave={(value) => setItem(item.id, { notes: value })}
+                        />
+                      ) : null}
+                      {item.notes && (digest || digesting === item.id) ? (
+                        <span aria-hidden="true"> · </span>
+                      ) : null}
+                      {digesting === item.id ? (
+                        <span className="text-meta text-muted-foreground">Reading…</span>
+                      ) : digest ? (
+                        <span className="text-meta text-muted-foreground">{digest.mood}</span>
+                      ) : null}
+                    </span>
+                  </span>
+                </div>
+                <span className="absolute top-2 right-2 flex gap-1 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 [@media(hover:none)]:opacity-100">
+                  {item.images.length > 0 && !digest && digesting !== item.id ? (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      disabled={digesting !== null}
+                      onClick={() => onDigest(item.id)}
+                      className="h-7 bg-black/50 px-2 text-neutral-100 hover:bg-black/70 hover:text-neutral-100"
+                    >
+                      <span className="text-meta">Digest</span>
+                    </Button>
+                  ) : null}
                   <Button
                     type="button"
                     size="icon-sm"
                     variant="ghost"
                     aria-label={`Remove ${name}`}
-                    className="shrink-0 rounded-full"
                     onClick={() => onChange(items.filter((entry) => entry.id !== item.id))}
+                    className="bg-black/50 text-neutral-100 hover:bg-black/70 hover:text-neutral-100"
                   >
                     <X />
                   </Button>
-                </div>
-                <InlineEdit
-                  value={item.title}
-                  placeholder="Title"
-                  ariaLabel="Board item title"
-                  className="text-[15px] font-medium leading-6 text-neutral-100"
-                  placeholderClassName="text-neutral-500"
-                  onSave={(value) => setItem(item.id, { title: value })}
-                />
-                <InlineEdit
-                  value={item.tags.join(", ")}
-                  displayValue={item.tags.join(" · ")}
-                  placeholder="Tags, comma separated"
-                  ariaLabel={`Tags for ${name}`}
-                  className="text-[13px] leading-5 text-neutral-400"
-                  placeholderClassName="text-neutral-600"
-                  onSave={(value) =>
-                    setItem(item.id, {
-                      tags: value.split(",").map((tag) => tag.trim()).filter(Boolean),
-                    })
-                  }
-                />
-                <InlineEdit
-                  value={item.notes}
-                  placeholder="Notes"
-                  ariaLabel={`Notes for ${name}`}
-                  className="text-[13px] leading-5 text-neutral-400"
-                  placeholderClassName="text-neutral-600"
-                  onSave={(value) => setItem(item.id, { notes: value })}
-                />
-                <div className="flex items-center justify-between gap-2">
-                  <p className="min-w-0 flex-1 truncate text-[13px] text-neutral-500">
-                    {digesting === item.id ? "Reading the image…" : (digest?.mood ?? (item.images.length > 0 ? "No digest yet." : ""))}
-                  </p>
-                  {item.images.length > 0 && !digest ? (
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="ghost"
-                      className="h-6 shrink-0 rounded-full px-2 text-[13px]"
-                      disabled={digesting !== null}
-                      onClick={() => onDigest(item.id)}
-                    >
-                      Digest
-                    </Button>
-                  ) : null}
-                </div>
-              </li>
+                </span>
+              </motion.li>
             );
           })}
         </ul>
@@ -278,7 +359,7 @@ export function PlanBoard({ items, digests, digesting, onChange, onDigest, onFil
           value={url}
           placeholder="Paste an image or link URL"
           aria-label="Image or link URL"
-          className="h-8 min-w-0 flex-1 rounded-full border-white/10 bg-transparent text-[13px]"
+          className="min-w-0 flex-1"
           onChange={(event) => setUrl(event.target.value)}
           onKeyDown={(event) => {
             if (event.key === "Enter") addUrl();
@@ -289,7 +370,6 @@ export function PlanBoard({ items, digests, digesting, onChange, onDigest, onFil
           size="icon-sm"
           variant="ghost"
           aria-label="Add a link card"
-          className="shrink-0 rounded-full"
           disabled={!url.trim()}
           onClick={addUrl}
         >
@@ -300,7 +380,6 @@ export function PlanBoard({ items, digests, digesting, onChange, onDigest, onFil
           size="icon-sm"
           variant="ghost"
           aria-label="Add an image card"
-          className="shrink-0 rounded-full"
           onClick={() => fileRef.current?.click()}
         >
           <ImagePlus />
@@ -334,31 +413,31 @@ type AgentViewProps = {
 
 export function AgentView({ tasks, stale, busy, saveState, notice, onGenerate }: AgentViewProps) {
   return (
-    <details className="shrink-0 rounded-3xl bg-white/[0.04] px-4 py-3">
-      <summary className="flex cursor-pointer list-none items-center gap-2 text-sm text-neutral-300 [&::-webkit-details-marker]:hidden">
+    <details className="shrink-0 rounded-card bg-muted px-4 py-3">
+      <summary className="flex cursor-pointer list-none items-center gap-2 text-body text-neutral-100 [&::-webkit-details-marker]:hidden">
         <Plus className="size-3.5 text-neutral-500" aria-hidden="true" />
-        Agent view
+        Tasks
         {stale ? (
           <Badge className="border-transparent bg-amber-400/15 text-amber-200">Stale</Badge>
         ) : null}
-        <span className="ml-auto text-[13px] text-neutral-500">
-          {tasks.length === 0 ? "No back plan" : `${tasks.length} task${tasks.length === 1 ? "" : "s"}`}
+        <span className="ml-auto text-meta text-muted-foreground">
+          {tasks.length === 0 ? "No tasks yet" : `${tasks.length} task${tasks.length === 1 ? "" : "s"}`}
           {saveState === "saving" ? " · Saving…" : saveState === "error" ? " · Save failed" : ""}
         </span>
       </summary>
       <div className="flex flex-col gap-2 pt-2">
-        {notice ? <p className="text-[13px] text-red-400">{notice}</p> : null}
+        {notice ? <p className="text-meta text-red-400">{notice}</p> : null}
         {tasks.length === 0 ? (
-          <p className="text-[13px] leading-5 text-neutral-500">
-            Generate the back plan and the agents get ordered tasks from this front.
+          <p className="text-meta leading-5 text-muted-foreground">
+            No tasks yet — build them from this plan.
           </p>
         ) : (
           <ol className="flex flex-col gap-1.5">
             {tasks.map((task, index) => (
-              <li key={task.id} className="text-sm leading-6 text-neutral-300">
+              <li key={task.id} className="text-body leading-6 text-neutral-100">
                 <span className="text-neutral-500">{index + 1}. </span>
                 {task.title}
-                {task.detail ? <span className="text-neutral-500"> — {task.detail}</span> : null}
+                {task.detail ? <span className="text-muted-foreground"> — {task.detail}</span> : null}
               </li>
             ))}
           </ol>
@@ -368,11 +447,10 @@ export function AgentView({ tasks, stale, busy, saveState, notice, onGenerate }:
             type="button"
             size="sm"
             variant="secondary"
-            className="rounded-full"
             disabled={busy}
             onClick={onGenerate}
           >
-            {busy ? "Generating…" : tasks.length === 0 ? "Generate back plan" : "Regenerate"}
+            {busy ? "Building…" : tasks.length === 0 ? "Build tasks" : "Rebuild"}
           </Button>
         </div>
       </div>

@@ -1,6 +1,8 @@
 import {
   Bold,
   ChevronDown,
+  Ellipsis,
+  FoldVertical,
   Italic,
   List,
   ListOrdered,
@@ -21,6 +23,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
   Menu,
+  MenuItem,
   MenuPopup,
   MenuRadioGroup,
   MenuRadioItem,
@@ -82,8 +85,8 @@ type PlanSection = "script" | "beats" | "board";
 
 function PlanNotice({ loading, error }: { loading: boolean; error: string | null }) {
   return (
-    <p className="rounded-3xl bg-white/[0.04] p-5 text-sm leading-6 text-neutral-400">
-      {loading ? "Loading the plan…" : (error ?? "The plan needs the agent running.")}
+    <p className="rounded-card bg-muted p-4 text-body leading-6 text-muted-foreground">
+      {loading ? "Loading the plan…" : (error ?? "The plan isn't available.")}
     </p>
   );
 }
@@ -257,7 +260,7 @@ function renderInline(text: string, keyPrefix: string): ReactNode[] {
     }
     if (run.startsWith("`") && run.endsWith("`") && run.length > 2) {
       return (
-        <code key={key} className="rounded bg-white/10 px-1 font-mono text-[13px]">
+        <code key={key} className="rounded bg-white/10 px-1 font-mono text-meta">
           {run.slice(1, -1)}
         </code>
       );
@@ -307,7 +310,7 @@ function MarkdownText({
   if (!text.trim() && !editing) {
     return (
       <p
-        className="cursor-text text-sm leading-6 text-neutral-600"
+        className="cursor-text text-body leading-6 text-neutral-500"
         onClick={() => onOpenBlock(0, 0)}
       >
         Nothing to preview. Click to write.
@@ -341,6 +344,7 @@ function MarkdownText({
         const mod = event.metaKey || event.ctrlKey;
         if (event.key === "Escape") {
           event.preventDefault();
+          event.stopPropagation();
           onCancelBlock();
           return;
         }
@@ -398,7 +402,7 @@ function MarkdownText({
         }
         onUndoKey(event);
       }}
-      className={`max-h-72 w-full resize-none overflow-y-auto bg-transparent text-neutral-100 outline-none placeholder:text-neutral-600 ${editorClassName}`}
+      className={`max-h-72 w-full resize-none overflow-y-auto bg-transparent text-neutral-100 outline-none placeholder:text-neutral-500 ${editorClassName}`}
     />
   );
   const wrapBlock = (
@@ -406,7 +410,7 @@ function MarkdownText({
     start: number,
     end: number,
     content: ReactNode,
-    editorClassName = "text-sm leading-6",
+    editorClassName = "text-body leading-6",
   ) => {
     if (editing && editing.start === start && editing.end === end) {
       showEditor(key, editorClassName);
@@ -420,7 +424,7 @@ function MarkdownText({
   };
   const lines = text.split("\n");
   let editorShown = false;
-  const showEditor = (key: string, editorClassName = "text-sm leading-6") => {
+  const showEditor = (key: string, editorClassName = "text-body leading-6") => {
     blocks.push(<div key={key}>{renderEditor(editorClassName)}</div>);
     editorShown = true;
   };
@@ -438,10 +442,10 @@ function MarkdownText({
       const body = heading[2] ?? "";
       const className =
         level === 1
-          ? "text-lg font-semibold text-neutral-100"
+          ? "text-title font-semibold text-neutral-100"
           : level === 2
-            ? "text-base font-semibold text-neutral-100"
-            : "text-sm font-semibold text-neutral-100";
+            ? "text-title font-medium text-neutral-100"
+            : "text-body font-medium text-muted-foreground";
       wrapBlock(
         key,
         block.start,
@@ -459,7 +463,7 @@ function MarkdownText({
         key,
         block.start,
         block.end,
-        <blockquote className="border-l-2 border-white/15 pl-3 text-sm leading-6 text-neutral-300">
+        <blockquote className="border-l-2 border-white/15 pl-3 text-body leading-6 text-neutral-100">
           {quoted.map((quote, quoteIndex) => (
             <span key={quoteIndex}>
               {quoteIndex > 0 ? <br /> : null}
@@ -478,7 +482,7 @@ function MarkdownText({
         key,
         block.start,
         block.end,
-        <ul className="list-disc space-y-1 pl-5 text-sm leading-6 text-neutral-100 marker:text-neutral-500">
+        <ul className="list-disc space-y-1 pl-5 text-body leading-6 text-neutral-100 marker:text-neutral-500">
           {items.map((item, itemIndex) => (
             <li key={itemIndex}>{renderInline(item, `${key}-${itemIndex}`)}</li>
           ))}
@@ -494,7 +498,7 @@ function MarkdownText({
         key,
         block.start,
         block.end,
-        <ol className="list-decimal space-y-1 pl-5 text-sm leading-6 text-neutral-100 marker:text-neutral-500">
+        <ol className="list-decimal space-y-1 pl-5 text-body leading-6 text-neutral-100 marker:text-neutral-500">
           {items.map((item, itemIndex) => (
             <li key={itemIndex}>{renderInline(item, `${key}-${itemIndex}`)}</li>
           ))}
@@ -507,7 +511,7 @@ function MarkdownText({
       key,
       block.start,
       block.end,
-      <p className="text-sm leading-6 text-neutral-100">
+      <p className="text-body leading-6 text-neutral-100">
         {paragraph.map((line, lineIndex) => (
           <span key={lineIndex}>
             {lineIndex > 0 ? <br /> : null}
@@ -1312,7 +1316,7 @@ export function PlanDoc({ open, mode, onOpen, onClose, notice, className, projec
   };
   const planHeader = (
     <div className="flex shrink-0 items-center gap-1">
-      <h2 className="text-[15px] font-medium text-neutral-100">Plan</h2>
+      <h2 className="text-title font-medium text-neutral-100">Plan</h2>
       <div className="ml-auto flex items-center gap-0.5">
         {modeButton("edit", "Edit plan", PenLine)}
         {modeButton("talk", "Discuss", MessageSquare)}
@@ -1344,6 +1348,46 @@ export function PlanDoc({ open, mode, onOpen, onClose, notice, className, projec
     </div>
   );
 
+  // Expanded modes share one overflow menu: switch to the other mode,
+  // collapse back to the excerpt, or import from Google Docs. The drawer
+  // tab above already says Plan, so the expanded header needs no title.
+  const planOverflow = (other: PlanMode, otherLabel: string, OtherIcon: typeof PenLine) => (
+    <Menu>
+      <MenuTrigger
+        render={
+          <Button
+            type="button"
+            size="icon-sm"
+            variant="ghost"
+            ref={docsButtonRef}
+            aria-label="Plan actions"
+          >
+            <Ellipsis />
+          </Button>
+        }
+      />
+      <MenuPopup align="end">
+        <MenuItem onClick={() => onOpen(other)}>
+          <OtherIcon />
+          {otherLabel}
+        </MenuItem>
+        <MenuItem onClick={onClose}>
+          <FoldVertical />
+          Collapse plan
+        </MenuItem>
+        <MenuItem
+          onClick={() => {
+            setDocsError(null);
+            setDocsOpen(true);
+          }}
+        >
+          {docsToken ? <Link2 /> : <Unlink />}
+          {docsToken ? "Google Docs connected" : "Import from Google Docs…"}
+        </MenuItem>
+      </MenuPopup>
+    </Menu>
+  );
+
   const docsPopout = docsOpen ? (
         <>
           <button
@@ -1356,11 +1400,18 @@ export function PlanDoc({ open, mode, onOpen, onClose, notice, className, projec
           <div
             role="dialog"
             aria-label="Connect Google Docs"
-            className="fixed z-50 flex w-80 flex-col gap-2 rounded-2xl border-0 bg-[#1a1a1a] p-4 text-neutral-100 shadow-raised ring-1 ring-white/10"
+            className="fixed z-50 flex w-80 flex-col gap-2 rounded-card border bg-popover p-4 text-neutral-100 shadow-lg/5"
             style={docsPos ? { top: docsPos.top, right: docsPos.right } : undefined}
+            onKeyDown={(event) => {
+              if (event.key === "Escape") {
+                event.preventDefault();
+                event.stopPropagation();
+                setDocsOpen(false);
+              }
+            }}
           >
-            <p className="text-sm font-semibold tracking-wide">Google Docs</p>
-            <p className="text-xs leading-5 text-neutral-400">
+            <p className="text-title font-medium">Google Docs</p>
+            <p className="text-meta leading-5 text-muted-foreground">
               {docsToken
                 ? "Connected. Paste a Docs link to import it as a plan tab."
                 : "Sign in with a Google OAuth client ID (read-only Docs scope), then paste a link to import it as a tab."}
@@ -1414,7 +1465,7 @@ export function PlanDoc({ open, mode, onOpen, onClose, notice, className, projec
                 </Button>
               </div>
             )}
-            {docsError ? <p className="text-xs text-red-400">{docsError}</p> : null}
+            {docsError ? <p className="text-meta text-red-400">{docsError}</p> : null}
           </div>
         </>
       ) : null;
@@ -1427,8 +1478,8 @@ export function PlanDoc({ open, mode, onOpen, onClose, notice, className, projec
       >
         {planHeader}
         {docsPopout}
-        <p className="line-clamp-2 text-sm leading-5 text-neutral-400">{excerpt}</p>
-        {notice ? <p className="text-xs text-neutral-300">{notice}</p> : null}
+        <p className="line-clamp-2 text-body leading-6 text-muted-foreground">{excerpt}</p>
+        {notice ? <p className="text-meta text-muted-foreground">{notice}</p> : null}
       </article>
     );
   }
@@ -1441,300 +1492,310 @@ export function PlanDoc({ open, mode, onOpen, onClose, notice, className, projec
       animate={{ opacity: 1 }}
       transition={{ duration: 0.15, ease: "easeOut" }}
     >
-      {planHeader}
       {docsPopout}
 
       {mode === "edit" ? (
         <>
-          <Tabs value={section} onValueChange={(value) => setSection(value as PlanSection)}>
-            <TabsList size="sm" variant="underline" className="w-full justify-start gap-4">
-              <TabsTab value="script">Script</TabsTab>
-              <TabsTab value="beats">Beats</TabsTab>
-              <TabsTab value="board">Board</TabsTab>
-            </TabsList>
-          </Tabs>
-          {section === "script" ? (
-          <Tabs value={doc} onValueChange={(value) => setDoc(value)}>
-            <TabsList
-              size="sm"
-              className="flex w-full items-center gap-1 overflow-x-auto rounded-full bg-white/5 p-1 [&>[data-slot=tab-indicator]]:hidden"
+          <div className="flex shrink-0 items-center gap-2">
+            <Tabs
+              value={section}
+              onValueChange={(value) => setSection(value as PlanSection)}
+              className="min-w-0 flex-1"
             >
-              {tabs.map((item) =>
-                editingTab === item.id ? (
-                  <Input
-                    key={item.id}
-                    autoFocus
-                    type="text"
-                    size="sm"
-                    value={editingLabel}
-                    aria-label="Tab name"
-                    className="h-7 min-w-24 rounded-full border-white/15 bg-transparent"
-                    onChange={(event) => setEditingLabel(event.target.value)}
-                    onBlur={commitRename}
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter") commitRename();
-                      if (event.key === "Escape") {
-                        setEditingTab(null);
-                        setEditingLabel("");
-                      }
-                    }}
-                    onClick={(event) => event.stopPropagation()}
-                  />
-                ) : (
-                  <TabsTab
-                    key={item.id}
-                    value={item.id}
-                    className="rounded-full data-active:bg-white/10"
-                    onDoubleClick={(event) => {
-                      event.preventDefault();
-                      startRename(item);
-                    }}
-                    title="Double-click to rename"
-                  >
-                    {item.label}
-                  </TabsTab>
-                ),
-              )}
-              <Button
-                type="button"
-                size="icon-sm"
-                variant="ghost"
-                aria-label="Add a tab"
-                className="ml-auto shrink-0 rounded-full"
-                onClick={addTab}
-              >
-                <Plus />
-              </Button>
-            </TabsList>
-          </Tabs>
-          ) : null}
-          {section === "script" ? (
-          <>
-          <div
-            role="toolbar"
-            aria-label="Format the plan"
-            className="flex shrink-0 items-center gap-0.5"
+              <TabsList size="sm" variant="underline" className="w-full justify-start gap-4">
+                <TabsTab value="script">Script</TabsTab>
+                <TabsTab value="beats">Beats</TabsTab>
+                <TabsTab value="board">Board</TabsTab>
+              </TabsList>
+            </Tabs>
+            {planOverflow("talk", "Discuss", MessageSquare)}
+          </div>
+          <motion.div
+            key={section}
+            initial={reduce ? false : { opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 0.15, ease: "easeOut" }}
+            className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden"
           >
-            <Menu>
-              <MenuTrigger
-                render={
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="ghost"
-                    aria-label={`Text style: ${caretStyle === "normal" ? "normal text" : caretStyle.toUpperCase()}`}
-                    className="h-7 px-2 text-xs"
-                    onMouseDown={(event) => {
-                      event.preventDefault();
-                    }}
-                  >
-                    <span>{caretStyle === "normal" ? "Normal" : caretStyle.toUpperCase()}</span>
-                    <ChevronDown className="size-3!" />
-                  </Button>
-                }
-              />
-              <MenuPopup
-                align="start"
-                className="min-w-36 rounded-2xl border-0 bg-[#1a1a1a] text-neutral-100 shadow-raised ring-1 ring-white/10 before:hidden"
+            {section === "script" ? (
+            <Tabs value={doc} onValueChange={(value) => setDoc(value)}>
+              <TabsList
+                size="sm"
+                className="flex w-full items-center gap-1 overflow-x-auto rounded-full bg-muted p-1 [&>[data-slot=tab-indicator]]:hidden"
               >
-                <MenuRadioGroup
-                  value={caretStyle}
-                  onValueChange={(value) => {
-                    if (value === "normal" || value === "h1" || value === "h2" || value === "h3") {
-                      applyBlockStyle(value);
-                    }
-                  }}
+                {tabs.map((item) =>
+                  editingTab === item.id ? (
+                    <Input
+                      key={item.id}
+                      autoFocus
+                      type="text"
+                      size="sm"
+                      value={editingLabel}
+                      aria-label="Tab name"
+                      className="h-7 min-w-24 rounded-full border-white/15 bg-transparent"
+                      onChange={(event) => setEditingLabel(event.target.value)}
+                      onBlur={commitRename}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter") commitRename();
+                        if (event.key === "Escape") {
+                          setEditingTab(null);
+                          setEditingLabel("");
+                        }
+                      }}
+                      onClick={(event) => event.stopPropagation()}
+                    />
+                  ) : (
+                    <TabsTab
+                      key={item.id}
+                      value={item.id}
+                      className="rounded-full data-active:bg-white/10"
+                      onDoubleClick={(event) => {
+                        event.preventDefault();
+                        startRename(item);
+                      }}
+                      title="Double-click to rename"
+                    >
+                      {item.label}
+                    </TabsTab>
+                  ),
+                )}
+                <Button
+                  type="button"
+                  size="icon-sm"
+                  variant="ghost"
+                  aria-label="Add a tab"
+                  className="ml-auto shrink-0 rounded-full"
+                  onClick={addTab}
                 >
-                  {BLOCK_STYLES.map((style) => (
-                    <MenuRadioItem
-                      key={style.id}
-                      value={style.id}
-                      closeOnClick
-                      className="min-h-0 rounded-xl px-2.5 py-1.5 text-sm data-highlighted:bg-white/8"
+                  <Plus />
+                </Button>
+              </TabsList>
+            </Tabs>
+            ) : null}
+            {section === "script" ? (
+            <>
+            <div
+              role="toolbar"
+              aria-label="Format the plan"
+              className="flex shrink-0 items-center gap-0.5"
+            >
+              <Menu>
+                <MenuTrigger
+                  render={
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      aria-label={`Text style: ${caretStyle === "normal" ? "normal text" : caretStyle.toUpperCase()}`}
+                      className="h-7 px-2"
                       onMouseDown={(event) => {
-                        // Keep the editor focused so the selection survives
-                        // the click: without this the block commits and closes
-                        // before the style lands, and nothing happens.
                         event.preventDefault();
                       }}
                     >
-                      {style.label}
-                    </MenuRadioItem>
-                  ))}
-                </MenuRadioGroup>
-              </MenuPopup>
-            </Menu>
-            {FORMAT_ACTIONS.map((action) => {
-              const pressed =
-                (action.id === "bold" && marks.bold) ||
-                (action.id === "italic" && marks.italic) ||
-                (action.id === "strike" && marks.strike);
-              return (
-                <Tooltip key={action.id}>
-                  <TooltipTrigger
-                    render={
-                      <Button
-                        type="button"
-                        size="icon-sm"
-                        variant="ghost"
-                        aria-label={action.label}
-                        aria-pressed={pressed || undefined}
-                        data-pressed={pressed ? "" : undefined}
+                      <span className="text-meta">{caretStyle === "normal" ? "Normal" : caretStyle.toUpperCase()}</span>
+                      <ChevronDown className="size-3!" />
+                    </Button>
+                  }
+                />
+                <MenuPopup align="start" className="min-w-36">
+                  <MenuRadioGroup
+                    value={caretStyle}
+                    onValueChange={(value) => {
+                      if (value === "normal" || value === "h1" || value === "h2" || value === "h3") {
+                        applyBlockStyle(value);
+                      }
+                    }}
+                  >
+                    {BLOCK_STYLES.map((style) => (
+                      <MenuRadioItem
+                        key={style.id}
+                        value={style.id}
+                        closeOnClick
                         onMouseDown={(event) => {
-                          // Keep the textarea focused so the selection survives.
+                          // Keep the editor focused so the selection survives
+                          // the click: without this the block commits and closes
+                          // before the style lands, and nothing happens.
                           event.preventDefault();
-                        }}
-                        onClick={(event) => {
-                          event.preventDefault();
-                          applyFormat(action.id);
                         }}
                       >
-                        <action.icon />
-                      </Button>
-                    }
-                  />
-                  <TooltipPopup sideOffset={8}>{action.label}</TooltipPopup>
-                </Tooltip>
-              );
-            })}
-            <Tooltip key="undo">
-              <TooltipTrigger
-                render={
-                  <Button
-                    type="button"
-                    size="icon-sm"
-                    variant="ghost"
-                    aria-label="Undo plan edit"
-                    disabled={!canUndo}
-                    onMouseDown={(event) => {
-                      event.preventDefault();
-                    }}
-                    onClick={(event) => {
-                      event.preventDefault();
-                      undo();
-                    }}
-                  >
-                    <Undo2 />
-                  </Button>
-                }
-              />
-              <TooltipPopup sideOffset={8}>Undo</TooltipPopup>
-            </Tooltip>
-            <Tooltip key="redo">
-              <TooltipTrigger
-                render={
-                  <Button
-                    type="button"
-                    size="icon-sm"
-                    variant="ghost"
-                    aria-label="Redo plan edit"
-                    disabled={!canRedo}
-                    onMouseDown={(event) => {
-                      event.preventDefault();
-                    }}
-                    onClick={(event) => {
-                      event.preventDefault();
-                      redo();
-                    }}
-                  >
-                    <Redo2 />
-                  </Button>
-                }
-              />
-              <TooltipPopup sideOffset={8}>Redo</TooltipPopup>
-            </Tooltip>
-          </div>
-          <div
-            ref={planScrollRef}
-            aria-label={`Preview ${tabs.find((tab) => tab.id === doc)?.label ?? doc}`}
-            className={cn(
-              "min-h-[20rem] flex-1 overflow-y-auto overscroll-contain",
-              skeleton && "relative",
-            )}
-          >
-            <motion.div
-              aria-hidden={skeleton || undefined}
-              inert={skeleton}
-              initial={false}
-              animate={{ opacity: skeleton ? 0 : 1 }}
-              transition={{ duration: skeleton ? 0 : 0.22, ease: "easeOut" }}
-            >
-              <MarkdownText
-                text={texts[doc] ?? ""}
-                editing={editingBlock}
-                draft={blockDraft}
-                onDraftChange={setDraftLive}
-                onOpenBlock={openBlockEditor}
-                onCommitBlock={commitBlockEditor}
-                onCancelBlock={cancelBlockEditor}
-                onBlurBlock={handleBlockBlur}
-                onUndoKey={handleUndoKey}
-                onSelectChange={(start, end) => setBlockSel({ start, end })}
-                onInlineFormat={(id) => applyFormat(id)}
-                onSplitBlock={splitBlockAtCaret}
-                onJoinBackward={() => joinBlockAtCaret(-1)}
-                onJoinForward={() => joinBlockAtCaret(1)}
-                onMoveOut={moveOutOfBlock}
-                editorRef={(el) => {
-                  blockAreaRef.current = el;
-                }}
-              />
-            </motion.div>
-            {skeleton ? (
-              <motion.div
-                aria-hidden="true"
-                className="absolute inset-0 flex flex-col gap-3 overflow-hidden bg-card"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ duration: 0.15, ease: "easeOut" }}
-              >
-                {skeletonGroupsForText(texts[doc] ?? "").map((widths, groupIndex) => (
-                  <div key={groupIndex} className="flex flex-col gap-2.5">
-                    {widths.map((width, barIndex) => (
-                      <div
-                        key={barIndex}
-                        style={{ width }}
-                        className="h-3.5 shrink-0 rounded-md bg-white/8"
-                      />
+                        {style.label}
+                      </MenuRadioItem>
                     ))}
-                  </div>
-                ))}
-                <motion.div
-                  aria-hidden="true"
-                  className="absolute inset-y-0 left-0 w-full bg-gradient-to-r from-transparent via-white/10 to-transparent"
-                  initial={{ x: "-100%" }}
-                  animate={{ x: "100%" }}
-                  transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
+                  </MenuRadioGroup>
+                </MenuPopup>
+              </Menu>
+              {FORMAT_ACTIONS.map((action) => {
+                const pressed =
+                  (action.id === "bold" && marks.bold) ||
+                  (action.id === "italic" && marks.italic) ||
+                  (action.id === "strike" && marks.strike);
+                return (
+                  <Tooltip key={action.id}>
+                    <TooltipTrigger
+                      render={
+                        <Button
+                          type="button"
+                          size="icon-sm"
+                          variant="ghost"
+                          aria-label={action.label}
+                          aria-pressed={pressed || undefined}
+                          data-pressed={pressed ? "" : undefined}
+                          onMouseDown={(event) => {
+                            // Keep the textarea focused so the selection survives.
+                            event.preventDefault();
+                          }}
+                          onClick={(event) => {
+                            event.preventDefault();
+                            applyFormat(action.id);
+                          }}
+                        >
+                          <action.icon />
+                        </Button>
+                      }
+                    />
+                    <TooltipPopup sideOffset={8}>{action.label}</TooltipPopup>
+                  </Tooltip>
+                );
+              })}
+              <Tooltip key="undo">
+                <TooltipTrigger
+                  render={
+                    <Button
+                      type="button"
+                      size="icon-sm"
+                      variant="ghost"
+                      aria-label="Undo plan edit"
+                      disabled={!canUndo}
+                      onMouseDown={(event) => {
+                        event.preventDefault();
+                      }}
+                      onClick={(event) => {
+                        event.preventDefault();
+                        undo();
+                      }}
+                    >
+                      <Undo2 />
+                    </Button>
+                  }
+                />
+                <TooltipPopup sideOffset={8}>Undo</TooltipPopup>
+              </Tooltip>
+              <Tooltip key="redo">
+                <TooltipTrigger
+                  render={
+                    <Button
+                      type="button"
+                      size="icon-sm"
+                      variant="ghost"
+                      aria-label="Redo plan edit"
+                      disabled={!canRedo}
+                      onMouseDown={(event) => {
+                        event.preventDefault();
+                      }}
+                      onClick={(event) => {
+                        event.preventDefault();
+                        redo();
+                      }}
+                    >
+                      <Redo2 />
+                    </Button>
+                  }
+                />
+                <TooltipPopup sideOffset={8}>Redo</TooltipPopup>
+              </Tooltip>
+            </div>
+            <div
+              ref={planScrollRef}
+              aria-label={`Preview ${tabs.find((tab) => tab.id === doc)?.label ?? doc}`}
+              className={cn(
+                "min-h-[20rem] flex-1 overflow-y-auto overscroll-contain",
+                skeleton && "relative",
+              )}
+            >
+              <motion.div
+                aria-hidden={skeleton || undefined}
+                inert={skeleton}
+                initial={false}
+                animate={{ opacity: skeleton ? 0 : 1 }}
+                transition={{ duration: skeleton ? 0 : 0.22, ease: "easeOut" }}
+              >
+                <MarkdownText
+                  text={texts[doc] ?? ""}
+                  editing={editingBlock}
+                  draft={blockDraft}
+                  onDraftChange={setDraftLive}
+                  onOpenBlock={openBlockEditor}
+                  onCommitBlock={commitBlockEditor}
+                  onCancelBlock={cancelBlockEditor}
+                  onBlurBlock={handleBlockBlur}
+                  onUndoKey={handleUndoKey}
+                  onSelectChange={(start, end) => setBlockSel({ start, end })}
+                  onInlineFormat={(id) => applyFormat(id)}
+                  onSplitBlock={splitBlockAtCaret}
+                  onJoinBackward={() => joinBlockAtCaret(-1)}
+                  onJoinForward={() => joinBlockAtCaret(1)}
+                  onMoveOut={moveOutOfBlock}
+                  editorRef={(el) => {
+                    blockAreaRef.current = el;
+                  }}
                 />
               </motion.div>
-            ) : null}
-          </div>
-          <SmoothScrollTarget target={planScrollRef} lerp={0.075} />
-          </>
-          ) : section === "beats" ? (
-            plan ? (
-              <PlanBeats
-                beats={plan.front.beats}
-                onChange={(beats) => updateFront({ ...plan.front, beats })}
-                onImport={importPlanMarkdown}
+              {skeleton ? (
+                <motion.div
+                  aria-hidden="true"
+                  className="absolute inset-0 flex flex-col gap-3 overflow-hidden bg-card"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  transition={{ duration: 0.15, ease: "easeOut" }}
+                >
+                  {skeletonGroupsForText(texts[doc] ?? "").map((widths, groupIndex) => (
+                    <div key={groupIndex} className="flex flex-col gap-2.5">
+                      {widths.map((width, barIndex) => (
+                        <div
+                          key={barIndex}
+                          style={{ width }}
+                          className="h-3.5 shrink-0 rounded-md bg-white/8"
+                        />
+                      ))}
+                    </div>
+                  ))}
+                  <motion.div
+                    aria-hidden="true"
+                    className="absolute inset-y-0 left-0 w-full bg-gradient-to-r from-transparent via-white/10 to-transparent" // taste-skill-ignore: skeleton shimmer sweep, the one moving highlight while the plan opens.
+                    initial={{ x: "-100%" }}
+                    animate={{ x: "100%" }}
+                    transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
+                  />
+                </motion.div>
+              ) : null}
+            </div>
+            <SmoothScrollTarget target={planScrollRef} lerp={0.075} />
+            </>
+            ) : section === "beats" ? (
+              plan ? (
+                <PlanBeats
+                  beats={plan.front.beats}
+                  onChange={(beats) => updateFront({ ...plan.front, beats })}
+                  onImport={importPlanMarkdown}
+                />
+              ) : (
+                <PlanNotice loading={loading} error={error} />
+              )
+            ) : plan ? (
+              <PlanBoard
+                items={plan.front.board}
+                digests={Object.fromEntries(
+                  Object.entries(plan.back.digests).map(([id, digest]) => [id, { mood: digest.mood }]),
+                )}
+                digesting={digesting}
+                onChange={(board) => updateFront({ ...plan.front, board })}
+                onDigest={runDigest}
+                onFiles={addBoardFiles}
               />
             ) : (
               <PlanNotice loading={loading} error={error} />
-            )
-          ) : plan ? (
-            <PlanBoard
-              items={plan.front.board}
-              digests={Object.fromEntries(
-                Object.entries(plan.back.digests).map(([id, digest]) => [id, { mood: digest.mood }]),
-              )}
-              digesting={digesting}
-              onChange={(board) => updateFront({ ...plan.front, board })}
-              onDigest={runDigest}
-              onFiles={addBoardFiles}
-            />
-          ) : (
-            <PlanNotice loading={loading} error={error} />
-          )}
+            )}
+          </motion.div>
           <AgentView
             tasks={plan?.back.tasks ?? []}
             stale={plan?.back.stale ?? false}
@@ -1746,15 +1807,19 @@ export function PlanDoc({ open, mode, onOpen, onClose, notice, className, projec
         </>
       ) : (
         <>
+          <div className="flex shrink-0 items-center gap-2">
+            <h2 className="min-w-0 flex-1 text-title font-medium text-neutral-100">Discuss</h2>
+            {planOverflow("edit", "Edit plan", PenLine)}
+          </div>
           <ul className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto">
             {lines.map((line) => (
               <li
                 key={line.id}
                 className={cn(
-                  "max-w-[90%] rounded-2xl px-3 py-2 text-sm leading-5",
+                  "max-w-[90%] rounded-card px-4 py-2 text-body leading-6",
                   line.from === "you"
                     ? "ml-auto bg-white/10 text-neutral-100"
-                    : "bg-black/30 text-neutral-300",
+                    : "bg-black/30 text-neutral-100",
                 )}
               >
                 {line.text}

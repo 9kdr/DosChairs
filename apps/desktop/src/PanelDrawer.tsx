@@ -1,15 +1,15 @@
 import type { ReactNode } from "react";
-import { Drawer } from "@base-ui/react/drawer";
-import { X } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { motion, useReducedMotion } from "motion/react";
+import { Drawer, DrawerPopup, DrawerTitle } from "@/components/ui/drawer";
 
 /**
- * Narrow-window home for the Plan/Shelf/History panel: a right-side drawer
- * over the single column. The desktop side column stays as is above 760px.
+ * Narrow-window home for the Plan/Shelf/History panel: a right-side coss
+ * Drawer over the single column. The desktop side column stays as is above
+ * 760px.
  *
- * Built on the Base UI Drawer, the primitive under the coss Drawer (token
- * surface, ~220ms ease-out in, quicker fade/slide out). components/ui is
- * owned by another batch, so the styled composition lives here for now.
+ * The slide is the coss drawer animation at Chair's timing (~220ms
+ * ease-out); the content inside gets one soft motion enter. The header row
+ * (tabs plus close) belongs to the panel content, not the drawer.
  */
 export function PanelDrawer({
   open,
@@ -20,35 +20,29 @@ export function PanelDrawer({
   onClose: () => void;
   children: ReactNode;
 }) {
+  const reduce = useReducedMotion();
   return (
-    <Drawer.Root
+    <Drawer
       open={open}
       onOpenChange={(next) => {
         if (!next) onClose();
       }}
+      position="right"
     >
-      <Drawer.Portal>
-        <Drawer.Backdrop className="fixed inset-0 z-40 bg-black/60 transition-opacity duration-200 ease-out data-ending-style:opacity-0 data-starting-style:opacity-0 motion-reduce:transition-none" />
-        <Drawer.Viewport className="fixed inset-0 z-40 flex justify-end">
-          <Drawer.Popup className="flex h-full w-full flex-col overflow-hidden rounded-l-card bg-card p-4 pt-12 text-neutral-100 transition-transform duration-[220ms] ease-out data-ending-style:translate-x-full data-starting-style:translate-x-full data-ending-style:duration-150 motion-reduce:transition-none md:max-w-md">
-            <Drawer.Title className="sr-only">Project panel</Drawer.Title>
-            <div className="flex shrink-0 justify-end pb-1">
-              <Button
-                type="button"
-                size="icon-sm"
-                variant="ghost"
-                aria-label="Close panel"
-                onClick={onClose}
-                autoFocus
-                className="rounded-lg text-neutral-400 hover:bg-white/[0.06] hover:text-neutral-100"
-              >
-                <X />
-              </Button>
-            </div>
-            <div className="flex min-h-0 flex-1 flex-col overflow-hidden">{children}</div>
-          </Drawer.Popup>
-        </Drawer.Viewport>
-      </Drawer.Portal>
-    </Drawer.Root>
+      <DrawerPopup
+        variant="straight"
+        className="h-full w-full max-w-none touch-pan-y rounded-l-card bg-card duration-[220ms] ease-out motion-reduce:transition-none md:max-w-md"
+      >
+        <DrawerTitle className="sr-only">Project panel</DrawerTitle>
+        <motion.div
+          initial={reduce ? false : { opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
+          className="flex min-h-0 flex-1 flex-col overflow-hidden p-4"
+        >
+          {children}
+        </motion.div>
+      </DrawerPopup>
+    </Drawer>
   );
 }
