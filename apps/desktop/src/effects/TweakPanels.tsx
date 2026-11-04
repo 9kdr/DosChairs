@@ -1,19 +1,13 @@
 import type { Control, EffectSpec, Rig } from "@chair/effects";
-import { RotateCcwIcon, SlidersHorizontalIcon, WavesIcon } from "lucide-react";
+import { RotateCcwIcon, SlidersHorizontalIcon } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import { InfoHint } from "@/components/info-hint";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
-import {
-  RIG_SLIDERS,
-  RIG_TOGGLES,
-  controlRange,
-  type ControlValue,
-  type RigBake,
-} from "./effect-model";
+import { RIG_SLIDERS, RIG_TOGGLES, controlRange, type ControlValue } from "./effect-model";
 
 export const CARD = "rounded-[28px] bg-[#1a1a1a] text-neutral-100 shadow-raised ring-1 ring-white/8";
 
@@ -22,7 +16,7 @@ export function PanelTitle({
   title,
   children,
 }: {
-  icon: typeof WavesIcon;
+  icon: LucideIcon;
   title: string;
   children?: React.ReactNode;
 }) {
@@ -125,17 +119,24 @@ function VariableWidget({
 }
 
 /**
- * The variables the piece exposes in Resolve: name, control and default
- * per row, laid out like the inspector that will show them. Editing a
- * default retargets the published control, so the preview and the macro
- * agree on what the knob starts at.
+ * Everything the piece exposes, in one list: the Resolve inspector
+ * variables first (plain name, control on the right), then the motion
+ * rig, which re-simulates on every change. Editing a default retargets
+ * the published control, so the preview and the macro agree on what the
+ * knob starts at.
  */
 export function VariablesPanel({
   spec,
+  rig,
   onPatch,
+  onRigChange,
+  onRigReset,
 }: {
   spec: EffectSpec | null;
-  onPatch: (id: string, patch: { label?: string; default?: ControlValue }) => void;
+  rig: Rig | null;
+  onPatch: (id: string, value: ControlValue) => void;
+  onRigChange: (patch: Partial<Rig>) => void;
+  onRigReset: () => void;
 }) {
   if (!spec) return null;
   const controls = spec.controls ?? [];
@@ -151,14 +152,10 @@ export function VariablesPanel({
         <div className="flex flex-col gap-2.5 px-1">
           {controls.map((control) => (
             <div key={`${spec.id}-${control.id}`} className="flex items-center gap-2.5">
-              <Input
-                size="sm"
-                value={control.label}
-                aria-label="Variable name"
-                onChange={(event) => onPatch(control.id, { label: event.target.value })}
-                className="w-32 shrink-0 text-xs"
-              />
-              <VariableWidget control={control} onDefault={(next) => onPatch(control.id, { default: next })} />
+              <span className="w-32 shrink-0 truncate text-xs text-neutral-300">
+                {control.label}
+              </span>
+              <VariableWidget control={control} onDefault={(next) => onPatch(control.id, next)} />
             </div>
           ))}
         </div>
@@ -167,33 +164,11 @@ export function VariablesPanel({
           This piece exposes no variables.
         </p>
       )}
-    </section>
-  );
-}
-
-/** The motion rig: re-simulates on every change and shows what it baked. */
-export function RigPanel({
-  rig,
-  bake,
-  onChange,
-  onReset,
-}: {
-  rig: Rig | null;
-  bake: RigBake;
-  onChange: (patch: Partial<Rig>) => void;
-  onReset: () => void;
-}) {
-  return (
-    <section aria-label="Rig" className={cn(CARD, "flex shrink-0 flex-col gap-3 p-4")}>
-      <PanelTitle icon={WavesIcon} title="Rig">
-        {rig ? (
-          <Badge variant="outline" size="sm" className="tabular-nums" aria-live="polite">
-            {bake.keys} keys
-          </Badge>
-        ) : null}
-      </PanelTitle>
       {rig ? (
         <>
+          {controls.length > 0 ? (
+            <div aria-hidden="true" className="border-t border-white/8" />
+          ) : null}
           <div className="flex flex-col gap-3 px-1">
             {RIG_SLIDERS.map((field) => {
               const value = rig[field.key] ?? field.fallback;
@@ -206,7 +181,7 @@ export function RigPanel({
                   max={field.max}
                   step={field.step}
                   value={value}
-                  onValueChange={(next) => onChange({ [field.key]: scalar(next) })}
+                  onValueChange={(next) => onRigChange({ [field.key]: scalar(next) })}
                 />
               );
             })}
@@ -220,22 +195,19 @@ export function RigPanel({
                   <Switch
                     aria-label={toggle.label}
                     checked={rig[toggle.key] !== false}
-                    onCheckedChange={(checked) => onChange({ [toggle.key]: checked })}
+                    onCheckedChange={(checked) => onRigChange({ [toggle.key]: checked })}
                   />
                 </label>
               ))}
             </div>
           </div>
-          <div className="flex items-center gap-2 px-1 text-xs text-neutral-500">
-            <span className="tabular-nums">
-              {bake.keys} keyframes baked from {bake.frames} frames
-            </span>
+          <div className="flex items-center px-1">
             <Button
               type="button"
               size="xs"
               variant="ghost"
               className="ml-auto text-neutral-400"
-              onClick={onReset}
+              onClick={onRigReset}
             >
               <RotateCcwIcon />
               Reset

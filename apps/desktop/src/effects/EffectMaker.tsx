@@ -56,7 +56,7 @@ import {
   writePieceBrief,
 } from "./effects-api";
 import { PreviewStage, type PreviewHandle } from "./PreviewStage";
-import { CARD, RigPanel, VariablesPanel } from "./TweakPanels";
+import { CARD, VariablesPanel } from "./TweakPanels";
 
 export type ClipChoice = {
   id: string;
@@ -241,7 +241,7 @@ export function EffectMaker({
 
   const useSample = (why?: string) => {
     load(sampleEffect());
-    setNote(why ?? "Sample piece loaded.");
+    if (why) setNote(why);
   };
 
   /** Draft, then up to two vision checks; a failed check swaps in the revised spec. */
@@ -451,12 +451,9 @@ export function EffectMaker({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [controls, rig]);
 
-  const patchControl = (id: string, patch: { label?: string; default?: ControlValue }) => {
-    setSpec((current) => (current ? updateControl(current, id, patch) : current));
-    if (patch.default !== undefined) {
-      const value = patch.default;
-      setControls((current) => ({ ...current, [id]: value }));
-    }
+  const patchControl = (id: string, value: ControlValue) => {
+    setSpec((current) => (current ? updateControl(current, id, { default: value }) : current));
+    setControls((current) => ({ ...current, [id]: value }));
   };
 
   return (
@@ -623,15 +620,13 @@ export function EffectMaker({
           </div>
         </section>
 
-        <VariablesPanel spec={spec} onPatch={patchControl} />
-        {rig ? (
-          <RigPanel
-            rig={rig}
-            bake={bake ?? { spec: spec as EffectSpec, keys: 0, frames: 0 }}
-            onChange={(patch) => setRig((current) => (current ? { ...current, ...patch } : current))}
-            onReset={() => spec && setRig(rigOf(spec))}
-          />
-        ) : null}
+        <VariablesPanel
+          spec={spec}
+          rig={rig}
+          onPatch={patchControl}
+          onRigChange={(patch) => setRig((current) => (current ? { ...current, ...patch } : current))}
+          onRigReset={() => spec && setRig(rigOf(spec))}
+        />
 
         {failed || status || note ? (
           <div aria-live="polite" className="flex shrink-0 items-start gap-2 px-1 text-xs leading-5">
