@@ -350,7 +350,9 @@ SPARK_BRIEF_NOTE = (
     "library adapter below — pick one and adapt it. Keep its shape, its "
     "typed props, and the house taste; invent only what the brief needs. "
     "Render only the element asked for on a transparent background (no text "
-    "unless asked); gate any fill behind a backdrop prop defaulting off."
+    "unless asked); gate any fill behind a backdrop prop defaulting off. "
+    "No full-frame washes, glows, or tints unless the brief asks for one: "
+    "keep paint inside the element, and keep the rest of the frame transparent."
 )
 
 

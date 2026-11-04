@@ -1,6 +1,8 @@
 """Effect modules: generate (+ one repair), check, bundle, install, HTTP, health (#241)."""
 
 import json
+import os
+import shutil
 import threading
 from http.server import ThreadingHTTPServer
 from pathlib import Path
@@ -16,6 +18,33 @@ from chair_agent.modules import InvalidModule
 ROOT = Path(__file__).resolve().parents[3]
 TOOLCHAIN = (ROOT / "packages" / "effects" / "node_modules" / ".bin" / "esbuild").exists()
 needs_toolchain = pytest.mark.skipif(not TOOLCHAIN, reason="run `mise run bootstrap` first")
+
+
+def _has_chromium() -> bool:
+    override = os.environ.get("CHAIR_CHROMIUM", "").strip()
+    if override and Path(override).is_file():
+        return True
+    cache = Path(
+        os.environ.get("PLAYWRIGHT_BROWSERS_PATH", "").strip()
+        or Path.home() / ".cache" / "ms-playwright"
+    )
+    if cache.is_dir():
+        for child in cache.iterdir():
+            if child.name.startswith("chromium-") and (child / "chrome-linux" / "chrome").is_file():
+                return True
+            if child.name.startswith("chromium_headless_shell-") and next(
+                (child / "chrome-headless-shell-linux64").glob("chrome-headless-shell"), None
+            ):
+                return True
+    return any(
+        shutil.which(name)
+        for name in ("chromium", "chromium-browser", "google-chrome", "google-chrome-stable")
+    )
+
+
+needs_chromium = pytest.mark.skipif(
+    not _has_chromium(), reason="needs a chromium binary for browser verification"
+)
 
 GOOD = """\
 import React from "react";
@@ -272,6 +301,48 @@ def test_generate_rejects_unasked_opaque_frame(isolated) -> None:
     with pytest.raises(InvalidModule, match="no background") as caught:
         modules.generate_module("smoothly merging liquid boxes", client=client)
     assert "failed the check twice" in str(caught.value)
+
+
+BROKEN_SHADER = """\
+import React from "react";
+import { ShaderPass } from "@chair/effects";
+export const meta = { id: "bad-shader", name: "Bad Shader", kind: "overlay",
+  durationSec: 2, fps: 30, width: 640, height: 360 };
+export const props = {
+  hue: { type: "number", min: 0, max: 1, default: 0.5, title: "Hue" },
+};
+const FRAG = `#version 300 es
+precision highp float;
+in vec2 vUv;
+out vec4 oColor;
+uniform float u_hue;
+void main() {
+  vec2 bad = (u_hue - 0.5) * 2.0;
+  oColor = vec4(bad, 0.0, 1.0);
+}`;
+export default function Effect({ t, hue, width, height }: any) {
+  const uniforms = { u_hue: hue, u_time: t };
+  return <ShaderPass frag={FRAG} width={width} height={height} uniforms={uniforms} />;
+}
+"""
+
+
+@needs_toolchain
+@needs_chromium
+def test_generate_rejects_failure_fallback_with_gl_log(isolated) -> None:
+    client = FakeClient([fenced(BROKEN_SHADER), fenced(BROKEN_SHADER)])
+    with pytest.raises(InvalidModule, match="failed the check twice") as caught:
+        modules.generate_module("smoothly merging liquid boxes", client=client)
+    assert "failure fallback" in str(caught.value)
+    assert "dimension mismatch" in str(caught.value)
+
+
+def test_spark_prompt_bans_full_frame_washes() -> None:
+    spark = "\n\n".join(
+        m.content for m in modules.build_generate_messages("smoothly merging liquid boxes")
+        if m.role == "developer"
+    )
+    assert "No full-frame washes" in spark
 
 
 def test_generate_threads_brief_scope_into_the_check(isolated, monkeypatch) -> None:

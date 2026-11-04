@@ -4,7 +4,10 @@
  * paint a full-frame opaque fill, and what visible text the frame carries —
  * and `scopeErrors` turns them into check errors unless the brief asked for
  * a background or text. Canvases are skipped: WebGL coverage cannot be read
- * from markup, so shader fills are reviewed by eye, not by this file.
+ * from markup, so `verify.ts` re-checks the same rules against a real browser
+ * frame (live DOM text and fills, canvas alpha coverage) when chromium is
+ * available. A failure fallback (`isFailureFallback`) is never legitimate
+ * output, whatever the brief asked for.
  */
 
 export interface ScopeFlags {
@@ -90,6 +93,39 @@ export function extractText(html: string): string {
 }
 
 /**
+ * Phrases a module shows only when something broke (the kit ShaderPass box,
+ * WebGL fallbacks, error boundaries). Such a frame is never the asked-for
+ * effect, so it fails whatever the brief asked for.
+ */
+const FALLBACK_RE =
+  /webgl|shader failed|failed to compile|could not (create|initialise|initialize)|something went wrong|error (loading|rendering)/i;
+
+export function isFailureFallback(text: string): boolean {
+  return FALLBACK_RE.test(text);
+}
+
+/**
+ * Visible-paint coverage the markup rules cannot see: when more than 40% of
+ * the frame's pixels differ from their backing (measured by compositing the
+ * biggest canvas over black and over white), the piece is tinting the whole
+ * frame — a wash, glow, or full-frame tint — not drawing one element. Buffer
+ * alpha alone misses this: a WebGL canvas composites premultiplied, so RGB
+ * written with near-zero alpha still shows. Compare against a gold module.
+ */
+export const COVERAGE_LIMIT = 0.4;
+
+export function coverageError(ratio: number | null, wantsBackground: boolean): string | null {
+  if (ratio === null || wantsBackground || ratio <= COVERAGE_LIMIT) return null;
+  const pct = Math.round(ratio * 100);
+  return (
+    `frame paints ${pct}% of pixels but the brief asks for no background: ` +
+    "keep paint inside the element the brief asked for — no full-frame washes, glows, or tints. " +
+    "For a WebGL canvas, output premultiplied color vec4(col * alpha, alpha): " +
+    "unmultiplied RGB leaks into transparent areas even where alpha is 0"
+  );
+}
+
+/**
  * Scope violations as check errors. Null flags mean "not asked" (reference
  * modules, hand imports, library golds): no opinion, no errors.
  */
@@ -97,9 +133,19 @@ export function scopeErrors(
   covers: string[],
   text: string,
   flags: ScopeFlags | null | undefined,
+  shaderLog?: string | null,
 ): string[] {
   if (!flags) return [];
   const errors: string[] = [];
+  if (isFailureFallback(text)) {
+    const detail = shaderLog ? ` (GL log: ${shaderLog.slice(0, 300)})` : "";
+    errors.push(
+      `module renders its own failure fallback ("${text.slice(0, 80)}") instead of the effect${detail}: ` +
+        "fix the WebGL/GLSL so the frame paints, or remove the failing pass — " +
+        "every vec2/vec3/vec4 needs an explicit constructor, never a scalar assignment",
+    );
+    return errors;
+  }
   if (covers.length > 0 && !flags.wantsBackground) {
     errors.push(
       `fully opaque frame (${covers[0]}) but the brief asks for no background: ` +

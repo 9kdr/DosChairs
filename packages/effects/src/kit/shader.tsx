@@ -6,7 +6,13 @@
  * layout effect on every render, so each goToTime paints exactly the frame its
  * uniforms describe, and server rendering emits a deterministic `<canvas>`
  * carrying the uniforms as data. If WebGL2 or the shader fails, a labelled
- * box shows instead of a silent black frame.
+ * box shows instead of a silent black frame; it carries `data-shader-failed`
+ * and the GL info log in `data-shader-log` (also console.error'd) so the
+ * module check can reject the file instead of shipping the fallback.
+ *
+ * Paint premultiplied: the canvas composites premultiplied, so write
+ * `vec4(col * alpha, alpha)`. Unmultiplied RGB leaks into transparent areas
+ * even where alpha is 0 (a full-frame tint the alpha channel does not show).
  */
 import React from "react";
 import { coerceUniformValue, paintFragment } from "../gl.js";
@@ -33,14 +39,19 @@ export function boundUniforms(uniforms: Record<string, UniformInput>): BoundUnif
 
 export function ShaderPass({ frag, uniforms, width, height }: ShaderPassProps): React.ReactElement {
   const ref = React.useRef<HTMLCanvasElement | null>(null);
-  const [failed, setFailed] = React.useState(false);
+  const [failure, setFailure] = React.useState<string | null>(null);
   React.useLayoutEffect(() => {
     const canvas = ref.current;
     if (!canvas) return;
     const gl = canvas.getContext("webgl2", { preserveDrawingBuffer: true, alpha: true, antialias: false });
-    const ok = !!gl && paintFragment(gl, frag, width, height, boundUniforms(uniforms));
-    if (!ok && !failed) setFailed(true);
-    else if (ok && failed) setFailed(false);
+    let log = "WebGL2 unavailable in this host";
+    const ok = !!gl && paintFragment(gl, frag, width, height, boundUniforms(uniforms), (info) => { log = info; });
+    if (!ok && failure === null) {
+      console.error(`[chair] ShaderPass: shader failed to compile:\n${log}`);
+      setFailure(log);
+    } else if (ok && failure !== null) {
+      setFailure(null);
+    }
   });
   return (
     <>
@@ -49,10 +60,12 @@ export function ShaderPass({ frag, uniforms, width, height }: ShaderPassProps): 
         width={width}
         height={height}
         data-uniforms={JSON.stringify(uniforms)}
-        style={{ position: "absolute", inset: 0, width: "100%", height: "100%", display: failed ? "none" : "block" }}
+        style={{ position: "absolute", inset: 0, width: "100%", height: "100%", display: failure !== null ? "none" : "block" }}
       />
-      {failed ? (
+      {failure !== null ? (
         <div
+          data-shader-failed="1"
+          data-shader-log={failure.slice(0, 500)}
           style={{
             position: "absolute",
             inset: 0,

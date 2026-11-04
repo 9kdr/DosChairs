@@ -1,6 +1,13 @@
 /** Scope enforcement: fills and text are measured from markup, then gated by flags. */
 import { describe, expect, it } from "vitest";
-import { describeCovers, extractText, isTransparentBackground, scopeErrors } from "./scope.js";
+import {
+  coverageError,
+  describeCovers,
+  extractText,
+  isFailureFallback,
+  isTransparentBackground,
+  scopeErrors,
+} from "./scope.js";
 
 const FRAME = (inner: string, rootStyle = "position:absolute;inset:0"): string =>
   `<div style="${rootStyle}">${inner}</div>`;
@@ -60,5 +67,45 @@ describe("scopeErrors", () => {
     expect(scopeErrors([], "Hello", { wantsBackground: false, wantsText: true })).toEqual([]);
     expect(scopeErrors(["root fill"], "Hello", null)).toEqual([]);
     expect(scopeErrors([], "", flags)).toEqual([]);
+  });
+
+  it("rejects a failure fallback even when text was asked for", () => {
+    const text = "WebGL2 unavailable or shader failed to compile";
+    const errors = scopeErrors([], text, { wantsBackground: true, wantsText: true });
+    expect(errors.length).toBe(1);
+    expect(errors[0]).toContain("failure fallback");
+  });
+
+  it("hands the model the GL log with the fallback error", () => {
+    const errors = scopeErrors([], "shader failed to compile", flags, "ERROR: 0:65 dimension mismatch");
+    expect(errors.join(" ")).toContain("ERROR: 0:65 dimension mismatch");
+    expect(errors.join(" ")).toContain("explicit constructor");
+  });
+});
+
+describe("isFailureFallback", () => {
+  it("spots kit and host failure boxes, not effect titles", () => {
+    expect(isFailureFallback("WebGL2 unavailable or shader failed to compile")).toBe(true);
+    expect(isFailureFallback("fragment shader: ERROR: failed to compile")).toBe(true);
+    expect(isFailureFallback("Something went wrong rendering this title")).toBe(true);
+    expect(isFailureFallback("Liquid Boxes")).toBe(false);
+    expect(isFailureFallback("")).toBe(false);
+  });
+});
+
+describe("coverageError", () => {
+  it("rejects wide visible paint unless a background was asked for", () => {
+    const error = coverageError(1, false);
+    expect(error).not.toBeNull();
+    expect(error!).toContain("100%");
+    expect(error!).toContain("premultiplied");
+    expect(coverageError(0.41, false)).not.toBeNull();
+  });
+
+  it("passes narrow paint, asked-for backgrounds, and unreadable canvases", () => {
+    expect(coverageError(0.4, false)).toBeNull();
+    expect(coverageError(0.058, false)).toBeNull();
+    expect(coverageError(1, true)).toBeNull();
+    expect(coverageError(null, false)).toBeNull();
   });
 });

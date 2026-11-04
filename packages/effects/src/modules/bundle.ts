@@ -7,6 +7,8 @@
  *      back, to prove frames are pure functions of (props, t)
  *   3. wrap the default export with the #234 wrapper: props -> manifest schema
  *      (Inspector controls), history() from the action schedule or a baked table
+ *   4. when scope flags are set, re-check the frame in headless chromium
+ *      (verify.ts): live fallback text, opaque fills, and canvas alpha coverage
  *
  * Only imports on approved-imports.json resolve; everything is bundled.
  */
@@ -21,7 +23,8 @@ import type { OgrafBundle, OgrafProp } from "@chair/ograf";
 import type { EffectMeta } from "../kit/types.js";
 import { effectsPackageDir, isApproved, loadCatalogue } from "./catalogue.js";
 import { scanSource, validateMeta, validateProps } from "./validate.js";
-import { scopeErrors, type ScopeFlags } from "./scope.js";
+import { coverageError, scopeErrors, type ScopeFlags } from "./scope.js";
+import { verifyInBrowser } from "./verify.js";
 
 const PROBE_MARK = "@@CHAIR_PROBE@@";
 const PROBE_TIMEOUT_MS = 20_000;
@@ -66,7 +69,7 @@ export function approvedImportsPlugin(entry: string): Plugin {
 }
 
 /** Same allow-list for the probe build, where the module is reached through an alias. */
-function probeImportsPlugin(entry: string): Plugin {
+export function probeImportsPlugin(entry: string): Plugin {
   const inner = approvedImportsPlugin(entry);
   return {
     name: "chair-probe-imports",
@@ -165,18 +168,45 @@ export async function checkModule(entry: string, opts: CheckOptions = {}): Promi
   }
   const errors = [...outcome.errors];
   const warnings = [...outcome.warnings];
+  const checks: Record<string, boolean | number> = { ...outcome.checks };
   const meta = validateMeta(outcome.meta);
   const props = validateProps(outcome.props);
   errors.unshift(...meta.errors, ...props.errors);
-  errors.push(...scopeErrors(outcome.scope?.covers ?? [], outcome.scope?.text ?? "", opts.scope ?? null));
+  const scope = opts.scope ?? null;
+  errors.push(...scopeErrors(outcome.scope?.covers ?? [], outcome.scope?.text ?? "", scope));
+  if (scope) {
+    // The SSR probe cannot see client-only state (a ShaderPass compile
+    // fallback) or canvas paint (a semi-transparent wash), so re-check the
+    // same rules against a real browser frame when one is available.
+    try {
+      const seen = await verifyInBrowser(entry, { plugin: probeImportsPlugin(entry), scope });
+      if (seen.skipped) {
+        warnings.push(
+          `browser verification skipped: ${seen.reason} (shader-compile and pixel-coverage rules not enforced)`,
+        );
+      } else {
+        checks["browserVerified"] = true;
+        if (typeof seen.paintCoverage === "number") checks["paintCoverage"] = seen.paintCoverage;
+        errors.push(...scopeErrors(seen.covers ?? [], seen.text ?? "", scope, seen.shaderLog ?? null));
+        const wash = coverageError(seen.paintCoverage ?? null, scope.wantsBackground);
+        if (wash) errors.push(wash);
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      errors.push(`browser verification failed: ${message}`);
+    }
+  }
   warnings.unshift(...meta.warnings, ...props.warnings);
+  // The browser step re-checks the same scope rules against live data, so an
+  // identical finding would otherwise reach the model twice.
+  const unique = [...new Set(errors)];
   return {
-    ok: errors.length === 0 && meta.value !== null && props.value !== null,
-    errors,
+    ok: unique.length === 0 && meta.value !== null && props.value !== null,
+    errors: unique,
     warnings,
     meta: meta.value,
     props: props.value ?? [],
-    checks: outcome.checks,
+    checks,
   };
 }
 
