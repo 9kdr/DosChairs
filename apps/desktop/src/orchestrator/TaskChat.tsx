@@ -138,7 +138,7 @@ export function TaskChat({
         />
       </div>
 
-      <div className="flex shrink-0 gap-4 px-4 pt-2 pb-6">
+      <div className="flex shrink-0 gap-4 px-4 pt-2 pb-20">
         <div className="min-w-0 flex-1">
           <div className="mx-auto w-full max-w-3xl">
             {canUndoTask(task, history) ? (
