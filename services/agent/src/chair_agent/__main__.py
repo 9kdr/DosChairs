@@ -586,7 +586,7 @@ def _resolve_timeline_item(
     """
     try:
         import DaVinciResolveScript as bmd
-        from chair_resolve import resolve_app  # noqa: F401
+        from chair_resolve.read import resolve_app  # noqa: F401
     except ImportError as error:
         raise _ResolveUnavailable(
             "the Resolve adapter or scripting host is missing here; run the "
@@ -602,13 +602,16 @@ def _resolve_timeline_item(
     try:
         resolve = bmd.scriptapp("Resolve")
         manager = resolve.GetProjectManager()
-        project = None
-        if isinstance(project_name, str) and project_name.strip():
-            project = manager.GetProjectByName(project_name.strip())
-        if project is None:
-            project = manager.GetCurrentProject()
+        project = manager.GetCurrentProject()
         if project is None:
             raise _ResolveFailed("Resolve Studio has no project open.")
+        if isinstance(project_name, str) and project_name.strip():
+            if project.GetName() != project_name.strip():
+                raise _ResolveFailed(
+                    f"Project {project_name.strip()!r} is not open in Resolve "
+                    f"(open {project.GetName()!r}); the route never switches "
+                    "projects on its own."
+                )
         timeline = None
         if isinstance(timeline_name, str) and timeline_name.strip():
             wanted = timeline_name.strip()

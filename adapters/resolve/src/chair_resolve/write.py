@@ -291,7 +291,8 @@ def _resolve_effect_spec(entry: dict[str, Any]) -> dict[str, Any]:
 
 
 def _current_comp_name(item: Any, names: list[str]) -> str | None:
-    current = getattr(item, "GetCurrentFusionComp", lambda: None)()
+    current_fn = getattr(item, "GetCurrentFusionComp", None)
+    current = current_fn() if callable(current_fn) else None
     if current is not None:
         attrs = getattr(current, "GetAttrs", lambda: {})()
         if isinstance(attrs, dict) and attrs.get("COMPS_Name"):
