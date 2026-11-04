@@ -12,8 +12,11 @@ capability manifest fallback. Start timecode is not retimed.
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
 from typing import Any
 
+from chair_resolve.fusion import chair_cache_dir, spec_to_comp
 from chair_resolve.manifest import MANIFEST, Manifest
 from chair_resolve.read import FRAME_RATES, TRACK_PREFIX, ResolveClosedError, resolve_app
 
@@ -52,9 +55,7 @@ def import_media(path: str, resolve: Any = None) -> Any:
     return imported[0]
 
 
-def plan_from_timeline(
-    timeline: dict[str, Any], manifest: Manifest = MANIFEST
-) -> dict[str, Any]:
+def plan_from_timeline(timeline: dict[str, Any], manifest: Manifest = MANIFEST) -> dict[str, Any]:
     """Plan Studio scripting calls for a Chair timeline, as plain dicts."""
     if not isinstance(timeline, dict):
         raise TypeError("Timeline must be an object.")
@@ -85,7 +86,10 @@ def plan_from_timeline(
 
 
 def write_timeline(
-    timeline: dict[str, Any], manifest: Manifest = MANIFEST, resolve: Any = None
+    timeline: dict[str, Any],
+    manifest: Manifest = MANIFEST,
+    resolve: Any = None,
+    fusion_cache_dir: Any = None,
 ) -> dict[str, Any]:
     """Create a new Studio timeline from Chair IR. Returns counts, not objects."""
     plan = plan_from_timeline(timeline, manifest)
@@ -105,9 +109,7 @@ def write_timeline(
             "a timeline with that name already exists."
         )
     if not project.SetCurrentTimeline(timeline_obj):
-        raise RuntimeError(
-            f"Studio could not set current timeline to {plan['timeline_name']!r}."
-        )
+        raise RuntimeError(f"Studio could not set current timeline to {plan['timeline_name']!r}.")
     timeline_obj.SetSettings({"timelineFrameRate": plan["frame_rate"]})
 
     items_by_path: dict[str, Any] = {}
@@ -143,14 +145,17 @@ def write_timeline(
             marker["duration"],
             marker["custom_data"],
         )
+    imported = 0
     for fusion in plan["fusion"]:
-        by_clip[fusion["clip_id"]].ImportFusionComp(fusion["comp_path"])
+        item = by_clip[fusion["clip_id"]]
+        if _import_planned_fusion(plan, manifest, item, fusion, fusion_cache_dir):
+            imported += 1
     return {
         "timeline": plan["timeline_name"],
         "tracks": len(plan["tracks"]),
         "clips": len(plan["clips"]),
         "markers": len(plan["markers"]),
-        "fusion": len(plan["fusion"]),
+        "fusion": imported,
         "skipped": len(plan["skipped"]),
     }
 
@@ -248,6 +253,126 @@ def _plan_clip(
     }
 
 
+def load_effect_spec(entry: dict[str, Any]) -> dict[str, Any]:
+    """Resolve a planned effect-spec entry: inline spec, or specRef JSON file."""
+    if "spec" in entry:
+        spec = entry["spec"]
+        if not isinstance(spec, dict):
+            raise ValueError(
+                f"Effect {entry.get('effect_id')!r} has an inline spec that is not an object."
+            )
+        return spec
+    ref = entry.get("spec_ref", "")
+    if not isinstance(ref, str) or not ref.strip():
+        raise ValueError(f"Effect {entry.get('effect_id')!r} needs a specRef file path.")
+    path = Path(ref.strip())
+    if not path.is_file():
+        raise RuntimeError(f"Effect {entry.get('effect_id')!r} specRef is missing: {path}.")
+    try:
+        spec = json.loads(path.read_text())
+    except (OSError, ValueError) as exc:
+        raise RuntimeError(
+            f"Effect {entry.get('effect_id')!r} specRef is unreadable: {exc}."
+        ) from exc
+    if not isinstance(spec, dict):
+        raise RuntimeError(f"Effect {entry.get('effect_id')!r} specRef is not an object.")
+    return spec
+
+
+def _resolve_effect_spec(entry: dict[str, Any]) -> dict[str, Any]:
+    return load_effect_spec(entry)
+
+
+def _current_comp_name(item: Any, names: list[str]) -> str | None:
+    current = getattr(item, "GetCurrentFusionComp", lambda: None)()
+    if current is not None:
+        attrs = getattr(current, "GetAttrs", lambda: {})()
+        if isinstance(attrs, dict) and attrs.get("COMPS_Name"):
+            return str(attrs["COMPS_Name"])
+    return names[-1] if names else None
+
+
+def add_effect(
+    item: Any,
+    spec: dict[str, Any],
+    *,
+    cache_dir: Any = None,
+    baked: dict[str, dict[str, list[dict[str, Any]]]] | None = None,
+    media: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Import an effect spec onto a timeline item as a NEW Fusion comp version.
+
+    The comp text goes to Chair's cache folder, never next to source media.
+    ImportFusionComp leaves the previous comp version untouched, so the
+    returned op record carries the previous comp name: pass it to
+    remove_effect to switch back (the undo the history needs).
+    A spec the macro node set cannot express is NOT faked: the return is
+    {"effect_id", "fallback": {...}} and nothing is imported.
+    """
+    rendered = spec_to_comp(spec, baked=baked, media=media)
+    if "fallback" in rendered:
+        return {"effect_id": spec.get("id"), "fallback": rendered["fallback"]}
+    target = cache_dir if cache_dir is not None else chair_cache_dir()
+    target = Path(target)
+    target.mkdir(parents=True, exist_ok=True)
+    comp_path = target / f"chair_{spec.get('id', 'effect')}.comp"
+    comp_path.write_text(rendered["text"])
+    before = list(getattr(item, "GetFusionCompNameList", lambda: [])() or [])
+    prev = _current_comp_name(item, before)
+    imported = item.ImportFusionComp(str(comp_path))
+    if not imported:
+        raise RuntimeError(f"Studio did not import Fusion comp {comp_path}.")
+    after = list(getattr(item, "GetFusionCompNameList", lambda: [])() or [])
+    added = [name for name in after if name not in before]
+    comp_name = added[-1] if added else (after[-1] if after else None)
+    return {
+        "effect_id": spec.get("id"),
+        "comp_path": str(comp_path),
+        "comp_name": comp_name,
+        "prev_comp_name": prev,
+        "undo": {"prev_comp_name": prev},
+    }
+
+
+def _import_planned_fusion(
+    plan: dict[str, Any],
+    manifest: Manifest,
+    item: Any,
+    fusion: dict[str, Any],
+    cache_dir: Any = None,
+) -> bool:
+    """Import one planned fusion entry. False when it fell back to skipped."""
+    if "comp_path" in fusion:
+        item.ImportFusionComp(fusion["comp_path"])
+        return True
+    op = add_effect(item, _resolve_effect_spec(fusion), cache_dir=cache_dir)
+    if "fallback" in op:
+        fallback = manifest.fallbacks.get("fusionMacros", "rendered clip instead")
+        plan["skipped"].append(
+            {
+                "kind": "effect",
+                "id": fusion["effect_id"],
+                "reason": f"Effect {fusion['effect_id']!r} ({fusion['preset']!r}): {fallback}",
+            }
+        )
+        return False
+    return True
+
+
+def remove_effect(item: Any, op: dict[str, Any]) -> bool:
+    """Undo add_effect: switch the item back to its previous comp version."""
+    if "fallback" in op:
+        return True
+    undo = op.get("undo") or {}
+    prev = undo.get("prev_comp_name", op.get("prev_comp_name"))
+    if not prev:
+        return False
+    loader = getattr(item, "LoadFusionCompByName", None)
+    if loader is None:
+        return False
+    return bool(loader(prev))
+
+
 def _plan_effect(plan: dict[str, Any], manifest: Manifest, clip_id: str, effect: Any) -> None:
     if not isinstance(effect, dict):
         raise TypeError("Effect must be an object.")
@@ -265,6 +390,35 @@ def _plan_effect(plan: dict[str, Any], manifest: Manifest, clip_id: str, effect:
         plan["skipped"].append(
             {"kind": "effect", "id": effect_id, "reason": f"Effect {effect_id!r} is disabled."}
         )
+        return
+    if "spec" in params or "specRef" in params:
+        if not manifest.capabilities.fusion_macros:
+            fallback = manifest.fallbacks.get("fusionMacros", "Fusion macros are disabled.")
+            plan["skipped"].append(
+                {
+                    "kind": "effect",
+                    "id": effect_id,
+                    "reason": f"Effect {effect_id!r} ({effect['presetName']!r}): {fallback}",
+                }
+            )
+            return
+        inline = params.get("spec")
+        ref = params.get("specRef")
+        if inline is not None and not isinstance(inline, dict):
+            raise ValueError(f"Effect {effect_id!r} needs params.spec, an effect spec object.")
+        if inline is None and (not isinstance(ref, str) or not ref.strip()):
+            raise ValueError(f"Effect {effect_id!r} needs params.specRef, a spec file path.")
+        entry: dict[str, Any] = {
+            "clip_id": clip_id,
+            "effect_id": effect_id,
+            "preset": str(effect["presetName"]),
+            "kind": "effect-spec",
+        }
+        if inline is not None:
+            entry["spec"] = inline
+        else:
+            entry["spec_ref"] = ref.strip()
+        plan["fusion"].append(entry)
         return
     if not manifest.capabilities.fusion_comps:
         fallback = manifest.fallbacks.get("fusionComps", "Fusion comps are disabled.")
