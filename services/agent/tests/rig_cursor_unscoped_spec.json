@@ -1,0 +1,825 @@
+{
+  "schemaVersion": "0.1.0",
+  "id": "fx-dde38d49343c",
+  "name": "Swing Cursor Click",
+  "durationSec": 6.0,
+  "fps": 30.0,
+  "width": 1920,
+  "height": 1080,
+  "layers": [
+    {
+      "id": "bg",
+      "type": "shape",
+      "name": "Backdrop",
+      "params": {
+        "kind": "rect",
+        "fill": "#0E1116",
+        "opacity": 1,
+        "x": 960,
+        "y": 540,
+        "scaleX": 1920,
+        "scaleY": 1080,
+        "rotation": 0
+      }
+    },
+    {
+      "id": "button",
+      "type": "shape",
+      "name": "Button",
+      "params": {
+        "kind": "rect",
+        "fill": "#1B2433",
+        "opacity": 1,
+        "x": 960,
+        "y": 540,
+        "rotation": 0
+      },
+      "curves": {
+        "scaleX": {
+          "keyframes": [
+            {
+              "time": 0,
+              "value": 0,
+              "easing": "easeOut"
+            },
+            {
+              "time": 0.35,
+              "value": 560,
+              "easing": "easeOut"
+            },
+            {
+              "time": 0.5,
+              "value": 500,
+              "easing": "easeInOut"
+            },
+            {
+              "time": 0.65,
+              "value": 530,
+              "easing": "easeInOut"
+            },
+            {
+              "time": 0.8,
+              "value": 520,
+              "easing": "easeInOut"
+            },
+            {
+              "time": 3.2,
+              "value": 520,
+              "easing": "easeIn"
+            },
+            {
+              "time": 3.35,
+              "value": 480,
+              "easing": "easeOut"
+            },
+            {
+              "time": 3.55,
+              "value": 540,
+              "easing": "easeOut"
+            },
+            {
+              "time": 3.8,
+              "value": 520,
+              "easing": "easeInOut"
+            },
+            {
+              "time": 6,
+              "value": 520,
+              "easing": "easeInOut"
+            }
+          ]
+        },
+        "scaleY": {
+          "keyframes": [
+            {
+              "time": 0,
+              "value": 0,
+              "easing": "easeOut"
+            },
+            {
+              "time": 0.35,
+              "value": 190,
+              "easing": "easeOut"
+            },
+            {
+              "time": 0.5,
+              "value": 160,
+              "easing": "easeInOut"
+            },
+            {
+              "time": 0.65,
+              "value": 175,
+              "easing": "easeInOut"
+            },
+            {
+              "time": 0.8,
+              "value": 170,
+              "easing": "easeInOut"
+            },
+            {
+              "time": 3.2,
+              "value": 170,
+              "easing": "easeIn"
+            },
+            {
+              "time": 3.35,
+              "value": 150,
+              "easing": "easeOut"
+            },
+            {
+              "time": 3.55,
+              "value": 182,
+              "easing": "easeOut"
+            },
+            {
+              "time": 3.8,
+              "value": 170,
+              "easing": "easeInOut"
+            },
+            {
+              "time": 6,
+              "value": 170,
+              "easing": "easeInOut"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "button-label",
+      "type": "text",
+      "name": "Button Label",
+      "params": {
+        "string": "Click Me",
+        "font": "sans-serif",
+        "size": 72,
+        "fill": "#FFFFFF",
+        "x": 960,
+        "y": 565
+      },
+      "curves": {
+        "opacity": {
+          "keyframes": [
+            {
+              "time": 0,
+              "value": 0,
+              "easing": "easeInOut"
+            },
+            {
+              "time": 0.13,
+              "value": 0,
+              "easing": "easeInOut"
+            },
+            {
+              "time": 0.43,
+              "value": 1,
+              "easing": "easeOut"
+            },
+            {
+              "time": 6,
+              "value": 1,
+              "easing": "easeInOut"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "cursor",
+      "type": "text",
+      "name": "Cursor",
+      "params": {
+        "string": "➤",
+        "font": "sans-serif",
+        "size": 120,
+        "fill": "#FFFFFF",
+        "opacity": 1
+      },
+      "curves": {
+        "x": {
+          "keyframes": [
+            {
+              "time": 0,
+              "value": 40,
+              "easing": "easeIn",
+              "outHandle": [
+                0.15,
+                120
+              ]
+            },
+            {
+              "time": 0.9,
+              "value": 970,
+              "easing": "easeOut",
+              "inHandle": [
+                0.15,
+                120
+              ],
+              "outHandle": [
+                0.12,
+                -35
+              ]
+            },
+            {
+              "time": 1.2,
+              "value": 760,
+              "easing": "easeInOut",
+              "inHandle": [
+                0.08,
+                -20
+              ],
+              "outHandle": [
+                0.08,
+                20
+              ]
+            },
+            {
+              "time": 1.5,
+              "value": 870,
+              "easing": "easeInOut",
+              "inHandle": [
+                0.08,
+                15
+              ],
+              "outHandle": [
+                0.08,
+                -12
+              ]
+            },
+            {
+              "time": 1.8,
+              "value": 805,
+              "easing": "easeInOut",
+              "inHandle": [
+                0.08,
+                -10
+              ],
+              "outHandle": [
+                0.08,
+                8
+              ]
+            },
+            {
+              "time": 2.1,
+              "value": 830,
+              "easing": "easeOut",
+              "inHandle": [
+                0.1,
+                8
+              ]
+            },
+            {
+              "time": 3,
+              "value": 830,
+              "easing": "easeInOut"
+            },
+            {
+              "time": 3.2,
+              "value": 848,
+              "easing": "easeIn"
+            },
+            {
+              "time": 3.45,
+              "value": 818,
+              "easing": "easeOut"
+            },
+            {
+              "time": 3.7,
+              "value": 833,
+              "easing": "easeInOut"
+            },
+            {
+              "time": 4,
+              "value": 830,
+              "easing": "easeInOut"
+            },
+            {
+              "time": 6,
+              "value": 830,
+              "easing": "easeInOut"
+            }
+          ]
+        },
+        "y": {
+          "keyframes": [
+            {
+              "time": 0,
+              "value": 920,
+              "easing": "easeIn",
+              "outHandle": [
+                0.15,
+                -80
+              ]
+            },
+            {
+              "time": 0.9,
+              "value": 410,
+              "easing": "easeOut",
+              "inHandle": [
+                0.15,
+                -80
+              ],
+              "outHandle": [
+                0.12,
+                25
+              ]
+            },
+            {
+              "time": 1.2,
+              "value": 530,
+              "easing": "easeInOut",
+              "inHandle": [
+                0.08,
+                18
+              ],
+              "outHandle": [
+                0.08,
+                -15
+              ]
+            },
+            {
+              "time": 1.5,
+              "value": 455,
+              "easing": "easeInOut",
+              "inHandle": [
+                0.08,
+                -12
+              ],
+              "outHandle": [
+                0.08,
+                8
+              ]
+            },
+            {
+              "time": 1.8,
+              "value": 495,
+              "easing": "easeInOut",
+              "inHandle": [
+                0.08,
+                8
+              ],
+              "outHandle": [
+                0.08,
+                -5
+              ]
+            },
+            {
+              "time": 2.1,
+              "value": 480,
+              "easing": "easeOut",
+              "inHandle": [
+                0.1,
+                -5
+              ]
+            },
+            {
+              "time": 3,
+              "value": 480,
+              "easing": "easeInOut"
+            },
+            {
+              "time": 3.2,
+              "value": 505,
+              "easing": "easeIn"
+            },
+            {
+              "time": 3.45,
+              "value": 462,
+              "easing": "easeOut"
+            },
+            {
+              "time": 3.7,
+              "value": 484,
+              "easing": "easeInOut"
+            },
+            {
+              "time": 4,
+              "value": 480,
+              "easing": "easeInOut"
+            },
+            {
+              "time": 6,
+              "value": 480,
+              "easing": "easeInOut"
+            }
+          ]
+        },
+        "rotation": {
+          "keyframes": [
+            {
+              "time": 0,
+              "value": 28,
+              "easing": "easeIn"
+            },
+            {
+              "time": 0.9,
+              "value": -14,
+              "easing": "easeOut"
+            },
+            {
+              "time": 1.2,
+              "value": 9,
+              "easing": "easeInOut"
+            },
+            {
+              "time": 1.5,
+              "value": -6,
+              "easing": "easeInOut"
+            },
+            {
+              "time": 1.8,
+              "value": 3,
+              "easing": "easeInOut"
+            },
+            {
+              "time": 2.1,
+              "value": 0,
+              "easing": "easeOut"
+            },
+            {
+              "time": 3,
+              "value": 0,
+              "easing": "easeInOut"
+            },
+            {
+              "time": 3.2,
+              "value": -9,
+              "easing": "easeIn"
+            },
+            {
+              "time": 3.45,
+              "value": 7,
+              "easing": "easeOut"
+            },
+            {
+              "time": 3.7,
+              "value": -2,
+              "easing": "easeInOut"
+            },
+            {
+              "time": 4,
+              "value": 0,
+              "easing": "easeInOut"
+            },
+            {
+              "time": 6,
+              "value": 0,
+              "easing": "easeInOut"
+            }
+          ]
+        },
+        "scaleX": {
+          "keyframes": [
+            {
+              "time": 0,
+              "value": 1,
+              "easing": "easeInOut"
+            },
+            {
+              "time": 3,
+              "value": 1,
+              "easing": "easeInOut"
+            },
+            {
+              "time": 3.2,
+              "value": 0.82,
+              "easing": "easeIn"
+            },
+            {
+              "time": 3.45,
+              "value": 1.1,
+              "easing": "easeOut"
+            },
+            {
+              "time": 3.7,
+              "value": 0.96,
+              "easing": "easeInOut"
+            },
+            {
+              "time": 4,
+              "value": 1,
+              "easing": "easeInOut"
+            },
+            {
+              "time": 6,
+              "value": 1,
+              "easing": "easeInOut"
+            }
+          ]
+        },
+        "scaleY": {
+          "keyframes": [
+            {
+              "time": 0,
+              "value": 1,
+              "easing": "easeInOut"
+            },
+            {
+              "time": 3,
+              "value": 1,
+              "easing": "easeInOut"
+            },
+            {
+              "time": 3.2,
+              "value": 0.82,
+              "easing": "easeIn"
+            },
+            {
+              "time": 3.45,
+              "value": 1.1,
+              "easing": "easeOut"
+            },
+            {
+              "time": 3.7,
+              "value": 0.96,
+              "easing": "easeInOut"
+            },
+            {
+              "time": 4,
+              "value": 1,
+              "easing": "easeInOut"
+            },
+            {
+              "time": 6,
+              "value": 1,
+              "easing": "easeInOut"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "ripple",
+      "type": "shape",
+      "name": "Click Ripple",
+      "params": {
+        "kind": "ellipse",
+        "fill": "#4DFF9E",
+        "x": 830,
+        "y": 480,
+        "rotation": 0
+      },
+      "curves": {
+        "scaleX": {
+          "keyframes": [
+            {
+              "time": 0,
+              "value": 20,
+              "easing": "easeInOut"
+            },
+            {
+              "time": 3.15,
+              "value": 20,
+              "easing": "easeInOut"
+            },
+            {
+              "time": 3.2,
+              "value": 20,
+              "easing": "easeOut"
+            },
+            {
+              "time": 3.7,
+              "value": 260,
+              "easing": "easeOut"
+            },
+            {
+              "time": 4.3,
+              "value": 320,
+              "easing": "easeInOut"
+            }
+          ]
+        },
+        "scaleY": {
+          "keyframes": [
+            {
+              "time": 0,
+              "value": 20,
+              "easing": "easeInOut"
+            },
+            {
+              "time": 3.15,
+              "value": 20,
+              "easing": "easeInOut"
+            },
+            {
+              "time": 3.2,
+              "value": 20,
+              "easing": "easeOut"
+            },
+            {
+              "time": 3.7,
+              "value": 260,
+              "easing": "easeOut"
+            },
+            {
+              "time": 4.3,
+              "value": 320,
+              "easing": "easeInOut"
+            }
+          ]
+        },
+        "opacity": {
+          "keyframes": [
+            {
+              "time": 0,
+              "value": 0,
+              "easing": "easeInOut"
+            },
+            {
+              "time": 3.15,
+              "value": 0,
+              "easing": "easeInOut"
+            },
+            {
+              "time": 3.2,
+              "value": 0.9,
+              "easing": "easeOut"
+            },
+            {
+              "time": 3.7,
+              "value": 0.45,
+              "easing": "easeInOut"
+            },
+            {
+              "time": 4.3,
+              "value": 0,
+              "easing": "easeInOut"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "flash",
+      "type": "shape",
+      "name": "Click Flash",
+      "params": {
+        "kind": "ellipse",
+        "fill": "#FFFFFF",
+        "x": 830,
+        "y": 480,
+        "rotation": 0
+      },
+      "curves": {
+        "scaleX": {
+          "keyframes": [
+            {
+              "time": 0,
+              "value": 10,
+              "easing": "easeInOut"
+            },
+            {
+              "time": 3.15,
+              "value": 10,
+              "easing": "easeInOut"
+            },
+            {
+              "time": 3.2,
+              "value": 120,
+              "easing": "easeOut"
+            },
+            {
+              "time": 3.45,
+              "value": 40,
+              "easing": "easeOut"
+            },
+            {
+              "time": 3.7,
+              "value": 10,
+              "easing": "easeInOut"
+            }
+          ]
+        },
+        "scaleY": {
+          "keyframes": [
+            {
+              "time": 0,
+              "value": 10,
+              "easing": "easeInOut"
+            },
+            {
+              "time": 3.15,
+              "value": 10,
+              "easing": "easeInOut"
+            },
+            {
+              "time": 3.2,
+              "value": 120,
+              "easing": "easeOut"
+            },
+            {
+              "time": 3.45,
+              "value": 40,
+              "easing": "easeOut"
+            },
+            {
+              "time": 3.7,
+              "value": 10,
+              "easing": "easeInOut"
+            }
+          ]
+        },
+        "opacity": {
+          "keyframes": [
+            {
+              "time": 0,
+              "value": 0,
+              "easing": "easeInOut"
+            },
+            {
+              "time": 3.15,
+              "value": 0,
+              "easing": "easeInOut"
+            },
+            {
+              "time": 3.2,
+              "value": 0.9,
+              "easing": "easeOut"
+            },
+            {
+              "time": 3.45,
+              "value": 0.4,
+              "easing": "easeOut"
+            },
+            {
+              "time": 3.7,
+              "value": 0,
+              "easing": "easeInOut"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "controls": [
+    {
+      "id": "button-text",
+      "label": "Button text",
+      "type": "text",
+      "default": "Click Me",
+      "target": {
+        "layerId": "button-label",
+        "param": "string"
+      }
+    },
+    {
+      "id": "accent-color",
+      "label": "Accent color",
+      "type": "color",
+      "default": "#4DFF9E",
+      "target": {
+        "layerId": "ripple",
+        "param": "fill"
+      }
+    },
+    {
+      "id": "cursor-color",
+      "label": "Cursor color",
+      "type": "color",
+      "default": "#FFFFFF",
+      "target": {
+        "layerId": "cursor",
+        "param": "fill"
+      }
+    }
+  ],
+  "rig": {
+    "inputPath": [
+      {
+        "time": 0,
+        "x": 40,
+        "y": 920
+      },
+      {
+        "time": 0.9,
+        "x": 970,
+        "y": 410
+      },
+      {
+        "time": 1.5,
+        "x": 870,
+        "y": 455
+      },
+      {
+        "time": 2.1,
+        "x": 830,
+        "y": 480
+      },
+      {
+        "time": 3.2,
+        "x": 848,
+        "y": 505
+      }
+    ],
+    "stiffness": 110,
+    "damping": 9,
+    "mass": 1,
+    "swing": true,
+    "tilt": true,
+    "squash": true,
+    "overshoot": true
+  },
+  "export": {
+    "target": "fusion-macro"
+  }
+}

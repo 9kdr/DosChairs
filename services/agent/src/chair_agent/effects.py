@@ -27,6 +27,7 @@ from jsonschema import Draft202012Validator
 from pydantic import BaseModel, ConfigDict
 
 from chair_agent.client import Message, ModelClient
+from chair_agent.modules import scope_from_brief
 
 SCHEMA_VERSION = "0.1.0"
 
@@ -66,6 +67,17 @@ TASTE_GUIDE = (
     "set above: reach the web look with shape/text/image layers plus Blur, "
     "SoftGlow, and ColorCorrector, and use a shader layer only when the "
     "look truly needs custom GLSL."
+)
+
+SCOPE_GUIDE = (
+    "Scope: render ONLY the element the prompt asked for, on a TRANSPARENT "
+    "background by default. The spec composites over the editor's footage, "
+    "so never add a full-frame backdrop rect, plate, or fill unless the "
+    "prompt asks for a background. No text unless the prompt asks for text "
+    "or gives the exact string; a cursor or pointer the prompt names is one "
+    "small glyph layer, not a label. No extra props, buttons, labels, or "
+    "frames the prompt did not ask for. A deterministic check drops "
+    "full-frame backdrops and unasked text after generation."
 )
 
 MAX_VERIFY_ROUNDS = 2
@@ -250,6 +262,163 @@ def pick_export_target(spec: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
+# A shape covering this fraction of the canvas reads as a backdrop.
+_BACKDROP_COVERAGE = 0.9
+_BACKDROP_OPACITY = 0.9
+
+
+def _layer_numbers(layer: Mapping[str, Any], key: str) -> list[float]:
+    """Every static or keyframed value a layer gives one property."""
+    values: list[float] = []
+    params = layer.get("params")
+    if isinstance(params, Mapping):
+        value = params.get(key)
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            values.append(float(value))
+    curves = layer.get("curves")
+    if isinstance(curves, Mapping):
+        curve = curves.get(key)
+        frames = curve.get("keyframes") if isinstance(curve, Mapping) else None
+        if isinstance(frames, list):
+            for frame in frames:
+                value = frame.get("value") if isinstance(frame, Mapping) else None
+                if isinstance(value, (int, float)) and not isinstance(value, bool):
+                    values.append(float(value))
+    return values
+
+
+def _layer_extent(layer: Mapping[str, Any], key: str) -> float:
+    """Largest static or keyframed size; 0 when the layer never says."""
+    return max(_layer_numbers(layer, key), default=0.0)
+
+
+def _layer_opacity(layer: Mapping[str, Any]) -> float:
+    """Peak opacity; a layer that never mentions it is fully opaque."""
+    return max(_layer_numbers(layer, "opacity"), default=1.0)
+
+
+def _is_full_frame_backdrop(layer: Mapping[str, Any], width: int, height: int) -> bool:
+    if layer.get("type") != "shape" or width <= 0 or height <= 0:
+        return False
+    covers = (
+        _layer_extent(layer, "scaleX") >= _BACKDROP_COVERAGE * width
+        and _layer_extent(layer, "scaleY") >= _BACKDROP_COVERAGE * height
+    )
+    return covers and _layer_opacity(layer) >= _BACKDROP_OPACITY
+
+
+def _rig_target_id(spec: Mapping[str, Any]) -> str | None:
+    """First layer already animating x or y: the rig's subject.
+
+    Mirrors the desktop's rigTargetId (effect-model.ts): the layer the baked
+    rig keys land on. The guard never drops it.
+    """
+    layers = spec.get("layers")
+    if not isinstance(layers, list):
+        return None
+    for layer in layers:
+        if not isinstance(layer, Mapping):
+            continue
+        curves = layer.get("curves")
+        if isinstance(curves, Mapping) and ("x" in curves or "y" in curves):
+            layer_id = layer.get("id")
+            return str(layer_id) if isinstance(layer_id, str) and layer_id else None
+    return None
+
+
+def _unasked_string(
+    layer: Mapping[str, Any], prompt: str, wants_text: bool,
+) -> str | None:
+    """The offending string when a text layer is neither asked for nor a glyph."""
+    if layer.get("type") != "text" or wants_text:
+        return None
+    params = layer.get("params")
+    string = params.get("string") if isinstance(params, Mapping) else None
+    if not isinstance(string, str) or not string.strip():
+        return None
+    trimmed = string.strip()
+    if len(trimmed) == 1:
+        # A lone glyph (cursor arrow, dot) is drawn, not written; a lone
+        # letter is never "asked for" by sharing one character.
+        return None if not trimmed.isalnum() else trimmed
+    if trimmed.lower() in prompt.lower():
+        return None
+    return trimmed
+
+
+def apply_prompt_scope(spec: dict[str, Any], prompt: str) -> list[str]:
+    """Drop layers the prompt never asked for: backdrops and stray text (#278).
+
+    The model likes to dress the stage (a backdrop rect, a demo button with a
+    label); in Resolve that paint covers the footage, so the guard removes it
+    deterministically after generation. Scope words come from the module
+    path's scope_from_brief, so both paths agree on what "asked for" means.
+    The rig's subject layer always stays, the rig block is untouched, and
+    controls left pointing at dropped layers go with them. Returns one human
+    note per removal for the record.
+    """
+    scope = scope_from_brief(prompt or "")
+    layers = spec.get("layers")
+    if not isinstance(layers, list):
+        return []
+    width = spec.get("width")
+    height = spec.get("height")
+    canvas = (
+        int(width) if isinstance(width, (int, float)) else 0,
+        int(height) if isinstance(height, (int, float)) else 0,
+    )
+    rig = spec.get("rig")
+    has_rig = isinstance(rig, Mapping) and bool(rig.get("inputPath"))
+    target_id = _rig_target_id(spec) if has_rig else None
+    dropped: list[str] = []
+    dropped_ids: set[str] = set()
+    kept: list[Any] = []
+    for layer in layers:
+        if not isinstance(layer, Mapping):
+            kept.append(layer)
+            continue
+        layer_id = str(layer.get("id", "?"))
+        if target_id is not None and layer.get("id") == target_id:
+            kept.append(layer)
+            continue
+        if not scope["wantsBackground"] and _is_full_frame_backdrop(
+            layer, canvas[0], canvas[1]
+        ):
+            dropped.append(f"{layer_id} (full-frame backdrop the prompt didn't ask for)")
+            dropped_ids.add(layer_id)
+            continue
+        string = _unasked_string(layer, prompt or "", scope["wantsText"])
+        if string is not None:
+            dropped.append(f"{layer_id} (unasked text {string!r})")
+            dropped_ids.add(layer_id)
+            continue
+        kept.append(layer)
+    if not dropped or not kept:
+        # Nothing to remove, or every layer looked unasked: leave the spec
+        # whole rather than ship an empty stage.
+        return []
+    spec["layers"] = kept
+    controls = spec.get("controls")
+    if isinstance(controls, list):
+        live = [
+            control for control in controls
+            if not (
+                isinstance(control, Mapping)
+                and isinstance(control.get("target"), Mapping)
+                and control.get("target", {}).get("layerId") in dropped_ids
+            )
+        ]
+        for control in controls:
+            if control not in live:
+                target = control.get("target", {}) if isinstance(control, Mapping) else {}
+                dropped.append(
+                    f"control {control.get('id', '?')!r} "
+                    f"(target layer {target.get('layerId', '?')!r} was dropped)"
+                )
+        spec["controls"] = live
+    return dropped
+
+
 def _image_part(reference_image: str) -> dict[str, Any] | None:
     """Normalize a data URL or file path into a chat image part."""
     value = (reference_image or "").strip()
@@ -304,6 +473,7 @@ def build_generate_messages(
         "gain), which stays keyframable Fusion nodes; reach for untagged "
         "custom GLSL only when the look truly needs it.",
         TASTE_GUIDE,
+        SCOPE_GUIDE,
         "Published controls: expose the 1-3 things an editor would retitle or "
         "recolor (text string, main color), each targeting a real layer param.",
         f"Canvas: {width}x{height}, {fps} fps, {duration_sec}s. Use exactly "
@@ -520,9 +690,12 @@ def generate_effect(
         spec["height"] = height
         spec["fps"] = fps
         spec["durationSec"] = duration_sec
-        spec["export"] = pick_export_target(spec)
         if rig is not None:
             spec["rig"] = dict(rig)
+        dropped = apply_prompt_scope(spec, prompt)
+        if dropped:
+            notes += " Scope guard removed " + "; ".join(dropped) + "."
+        spec["export"] = pick_export_target(spec)
         record = EffectRecord(id=effect_id, spec=spec, notes=notes)
         _register(record, env)
     except InvalidEffect as error:
