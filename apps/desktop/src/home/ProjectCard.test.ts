@@ -21,6 +21,14 @@ describe("ProjectCard", () => {
     expect(html).toContain("Rough cut sample");
     expect(html).toContain("Actions for Rough cut sample");
   });
+
+  it("thumbnails with a static seeded dither, not a gradient wash", () => {
+    const html = ReactDOMServer.renderToString(
+      React.createElement(ProjectCard, { project: TEST_PROJECT }),
+    );
+    expect(html).not.toContain("135deg");
+    expect(html).toContain("mask-image");
+  });
 });
 
 describe("ProjectCardActions", () => {

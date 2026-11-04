@@ -12,7 +12,7 @@ import {
   MenuSeparator,
   MenuTrigger,
 } from "@/components/ui/menu";
-import { ditherMaskStyle, type DitherMatrix } from "@/lib/dither";
+import { ditherMaskStyle, matrixForSeed } from "@/lib/dither";
 import { cn } from "@/lib/utils";
 import { EditorLogo } from "./EditorLogo";
 import { editorShort, formatEditedAt, type Project } from "./data";
@@ -41,45 +41,6 @@ export function ProjectCardActions({
   );
 }
 
-/**
- * Dark duotone pairs for the thumbnail wash. All stay near the app
- * background so the grid reads as one surface, not a rainbow.
- */
-const THUMB_GRADIENTS: ReadonlyArray<readonly [string, string]> = [
-  ["#26343f", "#12171d"],
-  ["#33304a", "#15131f"],
-  ["#27443a", "#111915"],
-  ["#443a28", "#1a1510"],
-  ["#432b32", "#1a1114"],
-  ["#2b3a44", "#10161b"],
-];
-
-/** Stable gradient for a project id: a short hash picks one pair. */
-function thumbGradient(id: string): string {
-  let hash = 0;
-  for (let index = 0; index < id.length; index += 1) {
-    hash = (hash * 31 + id.charCodeAt(index)) >>> 0;
-  }
-  const [from, to] = THUMB_GRADIENTS[hash % THUMB_GRADIENTS.length]!;
-  return `linear-gradient(135deg, ${from} 0%, ${to} 100%)`;
-}
-
-const THUMB_MATRICES: readonly DitherMatrix[] = [
-  "bayer2",
-  "bayer4",
-  "bayer8",
-  "blue-noise",
-];
-
-/** Stable dither grain for a project name: a short hash picks the matrix. */
-function thumbMatrix(name: string): DitherMatrix {
-  let hash = 0;
-  for (let index = 0; index < name.length; index += 1) {
-    hash = (hash * 31 + name.charCodeAt(index)) >>> 0;
-  }
-  return THUMB_MATRICES[hash % THUMB_MATRICES.length]!;
-}
-
 /** Visual project tile with quiet overflow menu and context menu. */
 export function ProjectCard({
   project,
@@ -103,10 +64,7 @@ export function ProjectCard({
           />
         }
       >
-        <div
-          className="relative aspect-[16/10] overflow-hidden rounded-xl"
-          style={{ backgroundImage: thumbGradient(project.id) }}
-        >
+        <div className="relative aspect-[16/10] overflow-hidden rounded-xl bg-card">
           <div className="absolute inset-0 grid place-items-center">
             <EditorLogo
               id={editorId}
@@ -128,8 +86,8 @@ export function ProjectCard({
           />
           <div
             aria-hidden="true"
-            className="absolute inset-0 bg-white/[0.05]"
-            style={ditherMaskStyle(0.35, { matrix: thumbMatrix(project.name) })}
+            className="absolute inset-0 bg-white/[0.10]"
+            style={ditherMaskStyle(0.35, { matrix: matrixForSeed(project.name) })}
           />
 
           {/* Quiet overflow control */}

@@ -6,10 +6,12 @@ import { DitherArt } from "@/components/dither-art";
 import { SmoothScrollTarget } from "@/components/smooth-scroll";
 import { Button } from "@/components/ui/button";
 import { Empty, EmptyArt } from "@/components/ui/empty";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { ChairMark } from "./ChairMark";
 import { EditorLogo } from "./EditorLogo";
 import {
+  DEFAULT_GRID_SIZE,
   GRID_SIZE_LAYOUT,
   GridSizeSlider,
   columnsForWidth,
@@ -21,6 +23,7 @@ import {
 } from "./GridSizeSlider";
 import {
   editorName,
+  editorShort,
   type EditorInfo,
   type EditorStatus,
   type Project,
@@ -104,10 +107,6 @@ export function HomeScreen({ onOpenProject }: HomeScreenProps) {
           setTab(next);
           setSettingsOpen(false);
         }}
-        onAccount={() => {
-          setTab("projects");
-          setSettingsOpen(false);
-        }}
         onSettings={() => setSettingsOpen(true)}
       />
     </section>
@@ -125,7 +124,7 @@ function ProjectsPane({
   const maxSize = maxGridSizeForWidth(gridWidth);
   // Preferred snap (persisted). Display may clamp below this on a narrow shell.
   const [preferredSize, setPreferredSize] = useState<GridSize>(() =>
-    readStoredGridSize(1),
+    readStoredGridSize(DEFAULT_GRID_SIZE),
   );
   const [approach, setApproach] = useState<GridApproach>({
     committed: preferredSize,
@@ -453,21 +452,29 @@ function EditorsStrip({ editors }: { editors: EditorInfo[] }) {
       )}
     >
       {editors.map((editor) => (
-        <span
-          key={editor.id}
-          role="img"
-          aria-label={`${editorName(editor.id)}, ${STATUS_LABEL[editor.status]}`}
-          className="relative grid size-7 place-items-center rounded-full text-neutral-200"
-        >
-          <EditorLogo id={editor.id} className="size-3.5" />
-          <span
-            aria-hidden="true"
-            className={cn(
-              "pointer-events-none absolute top-1 right-1 size-1.5 rounded-full ring-2 ring-card",
-              STATUS_DOT[editor.status],
-            )}
-          />
-        </span>
+        <Tooltip key={editor.id}>
+          <TooltipTrigger
+            render={
+              <span
+                role="img"
+                aria-label={`${editorName(editor.id)}, ${STATUS_LABEL[editor.status]}`}
+                className="relative grid size-7 place-items-center rounded-full text-neutral-200"
+              />
+            }
+          >
+            <EditorLogo id={editor.id} className="size-3.5" />
+            <span
+              aria-hidden="true"
+              className={cn(
+                "pointer-events-none absolute top-1 right-1 size-1.5 rounded-full ring-2 ring-card",
+                STATUS_DOT[editor.status],
+              )}
+            />
+          </TooltipTrigger>
+          <TooltipPopup side="bottom">
+            {editorShort(editor.id)} · {STATUS_LABEL[editor.status]}
+          </TooltipPopup>
+        </Tooltip>
       ))}
     </div>
   );

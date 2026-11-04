@@ -10,6 +10,7 @@ import {
 } from "./grid-size";
 
 export {
+  DEFAULT_GRID_SIZE,
   GRID_SIZE_LAYOUT,
   GRID_SIZE_MAX,
   columnsForWidth,
