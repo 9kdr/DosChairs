@@ -41,6 +41,9 @@ importers:
       '@base-ui/react':
         specifier: 1.8.0
         version: 1.8.0(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
+      '@chair/effects':
+        specifier: workspace:*
+        version: link:../../packages/effects
       '@chair/shared':
         specifier: workspace:*
         version: link:../../packages/shared

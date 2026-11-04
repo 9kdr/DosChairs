@@ -114,6 +114,7 @@ function itemFromJson(value: unknown): ChangesetItem {
   };
   if (typeof value.targetId === "string") item.targetId = value.targetId;
   if (typeof value.beatId === "string") item.beatId = value.beatId;
+  if (typeof value.specRef === "string") item.specRef = value.specRef;
   if (isRecord(value.patch)) item.patch = value.patch;
   if (value.fallback !== undefined) {
     if (

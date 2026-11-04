@@ -97,6 +97,8 @@ export interface ChangesetItem {
   op: EditOp;
   targetId?: string;
   beatId?: string;
+  /** Effect spec id for add_effect items. Resolves to schemas/effect-spec.schema.json. */
+  specRef?: string;
   rationale: string;
   patch?: Record<string, unknown>;
   fallback?: ChangesetFallback;
