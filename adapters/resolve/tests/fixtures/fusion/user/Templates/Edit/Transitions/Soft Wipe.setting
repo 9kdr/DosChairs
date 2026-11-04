@@ -1,0 +1,4 @@
+{ Tools = ordered() { Wipe1 = GroupOperator { Inputs = ordered() {
+  Softness = InstanceInput { SourceOp = "Mask1", Source = "SoftEdge", Name = "Softness", Default = 0.2, MinAllowed = 0, MaxAllowed = 1, },
+  Angle = InstanceInput { SourceOp = "Mask1", Source = "Angle", Default = 45, },
+} } } }

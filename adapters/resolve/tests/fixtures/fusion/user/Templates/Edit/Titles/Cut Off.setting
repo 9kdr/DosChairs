@@ -1,0 +1,6 @@
+{
+	Tools = ordered() {
+		CutOff = MacroOperator {
+			Inputs = ordered() {
+				Input1 = InstanceInput { SourceOp = "T", Source = "Size", Default = 2, },
+				Input2 = InstanceInput { SourceOp = "T", Source = "Gain", Default = 

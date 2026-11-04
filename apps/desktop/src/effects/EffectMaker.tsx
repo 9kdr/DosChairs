@@ -22,7 +22,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Spinner } from "@/components/ui/spinner";
-import { Textarea } from "@/components/ui/textarea";
+import { acceptsChairRef, readChairRefs } from "@/lib/chair-ref";
 import { ServiceError } from "@/lib/services/client";
 import { cn } from "@/lib/utils";
 import {
@@ -35,7 +35,10 @@ import {
   type ControlValue,
   type ControlValues,
 } from "./effect-model";
+import { BriefField } from "./BriefField";
 import { generateEffect, sampleEffect, verifyEffect } from "./effects-api";
+import { fetchPieces } from "./pieces-api";
+import { PieceTray, ReferenceChips, referenceOf, type Reference } from "./ReferenceChips";
 import { PreviewStage, type PreviewHandle } from "./PreviewStage";
 import { CARD, ControlsPanel, PanelTitle, RigPanel } from "./TweakPanels";
 
@@ -111,6 +114,8 @@ export function EffectMaker({
   const [prompt, setPrompt] = useState("");
   const [reference, setReference] = useState<{ name: string; url: string } | null>(null);
   const [dragging, setDragging] = useState(false);
+  const [refs, setRefs] = useState<Reference[]>([]);
+  const [refDrag, setRefDrag] = useState(false);
   const [spec, setSpec] = useState<EffectSpec | null>(null);
   const [rig, setRig] = useState<Rig | null>(null);
   const [controls, setControls] = useState<ControlValues>({});
@@ -178,7 +183,12 @@ export function EffectMaker({
     abortRef.current = controller;
     const { signal } = controller;
     setBusy(true);
-    const draft = addRound({ kind: "draft", state: "running", title: "Muse Spark is drafting", notes: brief });
+    const draft = addRound({
+      kind: "draft",
+      state: "running",
+      title: "Muse Spark is drafting",
+      notes: refs.length ? `${brief}\nUsing ${refs.map((ref) => `@${ref.label}`).join(", ")}` : brief,
+    });
     try {
       const made = await generateEffect(
         {
@@ -187,6 +197,7 @@ export function EffectMaker({
           fps: 30,
           durationSec: 3,
           referenceImage: reference?.url,
+          references: refs.map(({ id, label }) => ({ id, label })),
         },
         { signal },
       );
@@ -250,6 +261,26 @@ export function EffectMaker({
     void attach(event.dataTransfer.files[0]);
   };
 
+  const addRef = (next: Reference) =>
+    setRefs((current) => (current.some((ref) => ref.id === next.id) ? current : [...current, next]));
+
+  /** A piece dragged in from a shelf: look it up so the chip shows its kind. */
+  const onRefDrop = (event: DragEvent) => {
+    const dropped = readChairRefs(event.dataTransfer).filter((ref) => ref.kind === "piece");
+    if (dropped.length === 0) return;
+    event.preventDefault();
+    setRefDrag(false);
+    for (const ref of dropped) {
+      addRef({ id: ref.id, label: ref.label, kind: "piece" });
+      void fetchPieces(ref.label, { limit: 20 })
+        .then((found) => {
+          const match = found.find((piece) => piece.id === ref.id);
+          if (match) setRefs((current) => current.map((entry) => (entry.id === ref.id ? referenceOf(match) : entry)));
+        })
+        .catch(() => undefined);
+    }
+  };
+
   const onKey = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
       event.preventDefault();
@@ -271,16 +302,22 @@ export function EffectMaker({
       <div className="flex min-h-0 flex-col gap-3 overflow-y-auto">
         <section aria-label="Brief" className={cn(CARD, "flex shrink-0 flex-col gap-3 p-4")}>
           <PanelTitle icon={WandSparklesIcon} title="Brief" />
-          <div className="flex flex-col gap-2 px-1">
-            <Textarea
-              size="sm"
-              value={prompt}
-              placeholder="Describe the look: a bouncy title, a dither over footage…"
-              aria-label="Describe the effect"
-              disabled={busy}
-              onChange={(event) => setPrompt(event.target.value)}
-              onKeyDown={onKey}
-            />
+          <div
+            className={cn("flex flex-col gap-2 rounded-2xl px-1 transition-colors", refDrag && "bg-amber-300/[0.05] ring-1 ring-amber-300/40")}
+            onDragOver={(event) => {
+              if (!acceptsChairRef(event.dataTransfer)) return;
+              event.preventDefault();
+              event.dataTransfer.dropEffect = "copy";
+              setRefDrag(true);
+            }}
+            onDragLeave={(event) => {
+              if (!(event.relatedTarget instanceof Node && event.currentTarget.contains(event.relatedTarget))) setRefDrag(false);
+            }}
+            onDrop={onRefDrop}
+          >
+            <ReferenceChips refs={refs} onRemove={(id) => setRefs((current) => current.filter((ref) => ref.id !== id))} />
+            <BriefField value={prompt} onChange={setPrompt} onPick={(piece) => addRef(referenceOf(piece))} onKeyDown={onKey} disabled={busy} />
+            <PieceTray onAdd={(piece) => addRef(referenceOf(piece))} disabled={busy} />
             <div className="flex flex-wrap gap-1.5" role="group" aria-label="Starting points">
               {STARTER_PROMPTS.map((starter) => (
                 <button
@@ -296,6 +333,7 @@ export function EffectMaker({
             </div>
             <div
               onDragOver={(event) => {
+                if (acceptsChairRef(event.dataTransfer)) return;
                 event.preventDefault();
                 setDragging(true);
               }}

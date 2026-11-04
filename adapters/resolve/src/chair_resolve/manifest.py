@@ -7,6 +7,7 @@ class Capabilities(BaseModel):
     keyframes: bool
     fusion_comps: bool
     fusion_macros: bool = True
+    template_scan: bool = True
     adjustment_layers: bool
     markers: bool
     subtitles: bool
@@ -43,5 +44,6 @@ MANIFEST = Manifest(
         "adjustmentLayers": "add an adjustment clip in Studio by hand",
         "speedChanges": "retime the clip in Studio by hand",
         "fusionMacros": "render the effect to a clip and place it by hand",
+        "templateScan": "no Fusion folder found: name the macro in the brief by hand",
     },
 )

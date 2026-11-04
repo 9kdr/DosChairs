@@ -7,6 +7,7 @@
 import type { EffectSpec } from "@chair/effects";
 import { ServiceError, type FetchFn } from "@/lib/services/client";
 import { agentBaseUrl } from "@/lib/services/config";
+import type { PieceReference } from "./pieces-api";
 
 export type GenerateInput = {
   prompt: string;
@@ -15,6 +16,8 @@ export type GenerateInput = {
   durationSec: number;
   /** Data URL of the dropped reference image. */
   referenceImage?: string;
+  /** Pieces the brief points at (@-mentions and dropped chips). */
+  references?: PieceReference[];
 };
 
 export type Generated = { id: string; spec: EffectSpec; notes: string };
@@ -71,6 +74,7 @@ export async function generateEffect(input: GenerateInput, options: Options = {}
       fps: input.fps,
       durationSec: input.durationSec,
       ...(input.referenceImage ? { referenceImage: input.referenceImage } : {}),
+      ...(input.references?.length ? { references: input.references } : {}),
     },
     options,
   );
