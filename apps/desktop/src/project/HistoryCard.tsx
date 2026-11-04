@@ -153,7 +153,7 @@ export function HistoryCard({
       <div className="flex items-center gap-2 px-1 pb-1">
         <HistoryIcon className="size-4 text-neutral-400" aria-hidden="true" />
         <h2 className="text-sm font-medium text-neutral-100">History</h2>
-        <span className="text-xs tabular-nums text-muted-foreground">
+        <span className="shrink-0 text-xs whitespace-nowrap tabular-nums text-muted-foreground">
           {entries.length === 1 ? "1 entry" : `${entries.length} entries`}
         </span>
         <InfoHint text="Every apply lands on a copy." />
