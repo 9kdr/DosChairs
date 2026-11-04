@@ -117,7 +117,9 @@ describe("ograf spec export", () => {
   it("binds the rig to the topmost layer without animated x/y", () => {
     // bounce-title: bg static, ball animated, title static -> title wins.
     expect(specRigTarget(loadSpec())).toBe("title");
-    expect(specRigTarget({ ...loadSpec(), rig: undefined })).toBeNull();
+    const { rig: _dropped, ...noRig } = loadSpec();
+    void _dropped;
+    expect(specRigTarget(noRig)).toBeNull();
   });
 
   it("paints deterministically from resolved layers", () => {

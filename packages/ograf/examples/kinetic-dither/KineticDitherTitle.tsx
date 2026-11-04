@@ -198,17 +198,18 @@ export function KineticDitherTitle(input: KineticDitherTitleProps): React.ReactE
         stateRef.current = null;
         return;
       }
-      let gl = stateRef.current?.gl;
-      if (!gl) {
+      if (!stateRef.current) {
+        let fresh: WebGL2RenderingContext | null = null;
         try {
-          gl = node.getContext("webgl2", { alpha: false }) as WebGL2RenderingContext | null;
+          fresh = node.getContext("webgl2", { alpha: false }) as WebGL2RenderingContext | null;
         } catch {
-          gl = null;
+          fresh = null;
         }
-        if (!gl) {
+        if (!fresh) {
           setGlMissing(true);
           return;
         }
+        const gl: WebGL2RenderingContext = fresh;
         const vs = compile(gl, gl.VERTEX_SHADER, VS);
         const fs = compile(gl, gl.FRAGMENT_SHADER, FS);
         if (!vs || !fs) {

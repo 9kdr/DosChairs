@@ -124,7 +124,8 @@ describe("shader GL pass", () => {
 
   it("lets an explicit binding own a clock name", () => {
     const spec = shaderSpec();
-    spec.shader!.uniforms = [...spec.shader!.uniforms, { name: "u_time", controlId: "dither-size" }];
+    const bindings = [...(spec.shader?.uniforms ?? []), { name: "u_time", controlId: "dither-size" }];
+    spec.shader = { source: spec.shader!.source, uniforms: bindings };
     const uniforms = shaderUniforms(spec, 1.5);
     expect(uniforms.filter((u) => u.name === "u_time")).toHaveLength(1);
     expect(uniforms.find((u) => u.name === "u_time")?.value).toEqual({
@@ -153,7 +154,9 @@ describe("shader GL pass", () => {
   it("reports compile failure instead of throwing", () => {
     const log: string[] = [];
     expect(paintShader(stubGL(log, true), shaderSpec(), 1.0, {})).toBe(false);
-    expect(paintShader(stubGL(log), { ...shaderSpec(), shader: undefined }, 1.0, {})).toBe(false);
+    const { shader: _dropped, ...noShader } = shaderSpec();
+    void _dropped;
+    expect(paintShader(stubGL(log), noShader, 1.0, {})).toBe(false);
   });
 
   it("keeps the frame path free of clocks and timers", () => {
