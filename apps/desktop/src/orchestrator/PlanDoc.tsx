@@ -229,6 +229,9 @@ const FORMAT_ACTIONS = [
   { id: "quote", label: "Quote", icon: Quote },
 ] as const;
 
+/** Least-used formats: they move into the toolbar's ⋯ menu below 400px. */
+const OVERFLOW_FORMATS: ReadonlySet<string> = new Set(["strike", "quote"]);
+
 const BLOCK_STYLES = [
   { id: "normal", label: "Normal text" },
   { id: "h1", label: "Heading 1" },
@@ -1524,7 +1527,7 @@ export function PlanDoc({ open, mode, onOpen, onClose, notice, className, projec
             <div
               role="toolbar"
               aria-label="Format the plan"
-              className="flex shrink-0 items-center gap-0.5 overflow-x-auto [&>button]:shrink-0"
+              className="flex shrink-0 flex-wrap items-center gap-0.5 @container [&>button]:shrink-0"
             >
               {editingTab ? (
                 <Input
@@ -1554,7 +1557,7 @@ export function PlanDoc({ open, mode, onOpen, onClose, notice, className, projec
                         size="sm"
                         variant="ghost"
                         aria-label={`Section: ${activeDocLabel}. Change it.`}
-                        className="h-7 max-w-36 px-2"
+                        className="h-7 max-w-36 px-2 @max-[399px]:min-w-0 @max-[399px]:shrink"
                       >
                         <span className="min-w-0 flex-1 truncate text-left text-meta">
                           {activeDocLabel}
@@ -1648,6 +1651,7 @@ export function PlanDoc({ open, mode, onOpen, onClose, notice, className, projec
                           size="icon-sm"
                           variant="ghost"
                           aria-label={action.label}
+                          className={OVERFLOW_FORMATS.has(action.id) ? "@max-[399px]:hidden" : undefined}
                           aria-pressed={pressed || undefined}
                           data-pressed={pressed ? "" : undefined}
                           onMouseDown={(event) => {
@@ -1713,6 +1717,44 @@ export function PlanDoc({ open, mode, onOpen, onClose, notice, className, projec
                 />
                 <TooltipPopup sideOffset={8}>Redo</TooltipPopup>
               </Tooltip>
+              <Menu>
+                <MenuTrigger
+                  render={
+                    <Button
+                      type="button"
+                      size="icon-sm"
+                      variant="ghost"
+                      aria-label="More formatting options"
+                      className="hidden @max-[399px]:inline-flex"
+                      onMouseDown={(event) => {
+                        event.preventDefault();
+                      }}
+                    >
+                      <Ellipsis />
+                    </Button>
+                  }
+                />
+                <MenuPopup align="end">
+                  {FORMAT_ACTIONS.filter((action) => OVERFLOW_FORMATS.has(action.id)).map((action) => (
+                    <MenuItem
+                      key={action.id}
+                      closeOnClick
+                      onMouseDown={(event) => {
+                        // Keep the editor focused so the selection survives
+                        // the click, like the text-style menu items.
+                        event.preventDefault();
+                      }}
+                      onClick={(event) => {
+                        event.preventDefault();
+                        applyFormat(action.id);
+                      }}
+                    >
+                      <action.icon />
+                      {action.label}
+                    </MenuItem>
+                  ))}
+                </MenuPopup>
+              </Menu>
             </div>
             <div
               ref={planScrollRef}
