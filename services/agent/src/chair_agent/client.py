@@ -142,13 +142,17 @@ class HttpxTransport:
 def completion_text(payload: dict[str, Any]) -> str:
     choices = payload.get("choices")
     if not isinstance(choices, list) or not choices or not isinstance(choices[0], dict):
-        raise UnexpectedResponse
+        raise UnexpectedResponse("no choices in model response")
     message = choices[0].get("message")
     if not isinstance(message, dict):
-        raise UnexpectedResponse
+        raise UnexpectedResponse("no message in model response")
     content = message.get("content")
     if not isinstance(content, str):
-        raise UnexpectedResponse
+        finish = choices[0].get("finish_reason")
+        raise UnexpectedResponse(
+            f"no text content in model response (finish_reason={finish}); "
+            "the model likely spent its token budget before writing output"
+        )
     return content
 
 

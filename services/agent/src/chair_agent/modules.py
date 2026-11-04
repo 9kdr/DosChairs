@@ -37,7 +37,9 @@ OGRAF_DIR_ENV = "CHAIR_OGRAF_DIR"
 _CLI_TIMEOUT_SECONDS = 90
 _MODEL_TIMEOUT_SECONDS = 240.0
 _WONDER_TIMEOUT_SECONDS = 600.0
-_WONDER_MAX_TOKENS = 8000
+# Wonder burns most of its budget on reasoning before writing any output;
+# 8000 starved it (finish: length, empty content). Verified accepted: 32000.
+_WONDER_MAX_TOKENS = 32000
 MODES = ("spark", "wonder")
 _MAX_REFERENCE_CHARS = 6000
 _MAX_REFERENCES = 5
