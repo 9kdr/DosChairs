@@ -5,7 +5,8 @@ import { DitherShader } from "@/lib/dither";
 import type { DitherColor } from "@/lib/dither";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { canUndoTask, type HistoryEntry } from "../project/store";
+import { historyForTask, type HistoryEntry } from "../project/store";
+import { activityForTask } from "./TaskActivity";
 import { createServicesClient } from "@/lib/services/client";
 import type { AgentJobStatus } from "@/lib/services/types";
 import { stopLiveTask } from "./taskThread";
@@ -275,6 +276,11 @@ function TaskRow({
     }
   };
 
+  // The board row is the task's live line: lane chip, active step, progress.
+  const activity = activityForTask(task);
+  const liveStep = activity.steps.find((step) => step.state === "active");
+  const undoable = historyForTask(history, task.id).length > 0;
+
   return (
     <div
       ref={rootRef}
@@ -318,51 +324,76 @@ function TaskRow({
             "linear-gradient(to right, #1a1a1a 0%, #1a1a1a 60%, transparent 100%)",
         }}
       />
-      <div className="relative flex items-center justify-between gap-3 px-3.5 py-2.5">
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-medium text-neutral-100">
-            {task.name}
-          </p>
-          <p className="truncate text-xs text-neutral-400">
-            {LANE_LABEL[task.lane]} · {task.status}
-          </p>
+      <div className="relative flex flex-col gap-2.5 px-4 py-3.5">
+        <div className="flex items-center justify-between gap-3">
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-[15px] font-medium text-neutral-100">
+              {task.name}
+            </p>
+            <p className="truncate text-xs text-neutral-400">
+              {liveStep?.label ?? task.status}
+            </p>
+          </div>
+          <div className="flex shrink-0 items-center gap-1.5">
+            {canStopTask(task) ? (
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                aria-label={`Stop ${task.name}`}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onStop?.();
+                }}
+                onKeyDown={(event) => event.stopPropagation()}
+                className="bg-[#1a1a1a] text-neutral-400 opacity-0 ring-1 ring-white/10 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100 hover:text-neutral-100 focus-visible:opacity-100"
+              >
+                <Square />
+                Stop task
+              </Button>
+            ) : null}
+            {onUndo && undoable ? (
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                aria-label={`Undo ${task.name}`}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onUndo();
+                }}
+                onKeyDown={(event) => event.stopPropagation()}
+                className="bg-[#1a1a1a] text-neutral-400 ring-1 ring-white/10 hover:text-neutral-100"
+              >
+                <Undo2 />
+                Undo
+              </Button>
+            ) : null}
+            <Loader2 className="size-3.5 shrink-0 animate-spin text-neutral-400" />
+          </div>
         </div>
-        <div className="flex shrink-0 items-center gap-1.5">
-          {canStopTask(task) ? (
-            <Button
-              type="button"
-              size="sm"
-              variant="ghost"
-              aria-label={`Stop ${task.name}`}
-              onClick={(event) => {
-                event.stopPropagation();
-                onStop?.();
-              }}
-              onKeyDown={(event) => event.stopPropagation()}
-              className="bg-[#1a1a1a] text-neutral-400 opacity-0 ring-1 ring-white/10 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100 hover:text-neutral-100 focus-visible:opacity-100"
-            >
-              <Square />
-              Stop task
-            </Button>
-          ) : null}
-          {onUndo && canUndoTask(task, history) ? (
-            <Button
-              type="button"
-              size="sm"
-              variant="ghost"
-              aria-label={`Undo ${task.name}`}
-              onClick={(event) => {
-                event.stopPropagation();
-                onUndo();
-              }}
-              onKeyDown={(event) => event.stopPropagation()}
-              className="bg-[#1a1a1a] text-neutral-400 opacity-0 ring-1 ring-white/10 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100 hover:text-neutral-100 focus-visible:opacity-100"
-            >
-              <Undo2 />
-              Undo task
-            </Button>
-          ) : null}
-          <Loader2 className="size-3.5 shrink-0 animate-spin text-neutral-400" />
+        <div className="flex items-center gap-2">
+          <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-white/[0.06] px-2 py-0.5 text-xs font-medium text-neutral-200 ring-1 ring-white/10">
+            <span
+              aria-hidden="true"
+              className="size-1.5 rounded-full"
+              style={{ backgroundColor: LANE_DOT[task.lane] }}
+            />
+            {LANE_LABEL[task.lane]}
+          </span>
+          <div
+            className="h-1 min-w-0 flex-1 overflow-hidden rounded-full bg-white/10"
+            role="progressbar"
+            aria-valuenow={Math.round(activity.progress * 100)}
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-label={`${task.name} progress`}
+          >
+            <div
+              className="h-full rounded-full bg-neutral-200 transition-[width] duration-500"
+              style={{ width: `${Math.round(activity.progress * 100)}%` }}
+            />
+          </div>
         </div>
       </div>
     </div>
