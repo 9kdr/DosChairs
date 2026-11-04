@@ -71,7 +71,7 @@ describe("chair ref payload", () => {
       ONE,
       PIECE,
       { kind: "asset", id: "", label: "empty id" },
-      { kind: "clip", id: "c1", label: "unknown kind" },
+      { kind: "macro", id: "c1", label: "unknown kind" },
       { kind: "asset", id: "no-label" },
       null,
     ]);
@@ -101,5 +101,19 @@ describe("chair ref transfer", () => {
 
     expect(acceptsChairRef(transfer)).toBe(false);
     expect(readChairRefs(transfer)).toEqual([]);
+  });
+
+  it("carries the @ picker's clip and plan kinds", () => {
+    const transfer = stubTransfer();
+    const refs: ChairRef[] = [
+      { kind: "clip", id: "clip-1", label: "Interview" },
+      { kind: "plan", id: "board:mood", label: "Night grade" },
+    ];
+    writeChairRefs(transfer, refs);
+    expect(readChairRefs(transfer)).toEqual(refs);
+  });
+
+  it("still drops unknown kinds", () => {
+    expect(decodeChairRefs(JSON.stringify({ kind: "macro", id: "x", label: "X" }))).toEqual([]);
   });
 });
