@@ -108,25 +108,31 @@ export function shaderUniforms(
   return out;
 }
 
-const programCache = new WeakMap<WebGL2RenderingContext, Map<string, WebGLProgram | null>>();
+const programCache = new WeakMap<WebGL2RenderingContext, Map<string, CompiledProgram>>();
 
 function compileOne(
   gl: WebGL2RenderingContext,
   type: number,
   src: string,
-): WebGLShader | null {
+): { shader: WebGLShader | null; log: string } {
   const shader = gl.createShader(type);
-  if (!shader) return null;
+  if (!shader) return { shader: null, log: "could not create shader object" };
   gl.shaderSource(shader, src);
   gl.compileShader(shader);
   if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+    const log = (gl.getShaderInfoLog(shader) || "compile failed").trim();
     gl.deleteShader(shader);
-    return null;
+    return { shader: null, log };
   }
-  return shader;
+  return { shader, log: "" };
 }
 
-function programFor(gl: WebGL2RenderingContext, source: string): WebGLProgram | null {
+interface CompiledProgram {
+  prog: WebGLProgram | null;
+  log: string;
+}
+
+function programFor(gl: WebGL2RenderingContext, source: string): CompiledProgram {
   let bySource = programCache.get(gl);
   if (!bySource) {
     bySource = new Map();
@@ -134,20 +140,26 @@ function programFor(gl: WebGL2RenderingContext, source: string): WebGLProgram | 
   }
   const cached = bySource.get(source);
   if (cached !== undefined) return cached;
+  const fail = (log: string): CompiledProgram => {
+    const out = { prog: null, log };
+    bySource.set(source, out);
+    return out;
+  };
   const vs = compileOne(gl, gl.VERTEX_SHADER, FULLSCREEN_VS);
+  if (!vs.shader) return fail(`vertex shader: ${vs.log}`);
   const fs = compileOne(gl, gl.FRAGMENT_SHADER, source);
-  let prog: WebGLProgram | null = null;
-  if (vs && fs) {
-    prog = gl.createProgram();
-    if (prog) {
-      gl.attachShader(prog, vs);
-      gl.attachShader(prog, fs);
-      gl.linkProgram(prog);
-      if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) prog = null;
-    }
+  if (!fs.shader) return fail(`fragment shader: ${fs.log}`);
+  const prog = gl.createProgram();
+  if (!prog) return fail("could not create program object");
+  gl.attachShader(prog, vs.shader);
+  gl.attachShader(prog, fs.shader);
+  gl.linkProgram(prog);
+  if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) {
+    return fail(`link: ${(gl.getProgramInfoLog(prog) || "link failed").trim()}`);
   }
-  bySource.set(source, prog);
-  return prog;
+  const out = { prog, log: "" };
+  bySource.set(source, out);
+  return out;
 }
 
 function setUniform(
@@ -164,8 +176,10 @@ function setUniform(
 /**
  * Paint one fullscreen fragment pass on a WebGL2 context. Returns true when
  * anything was drawn; false (never throws) means compile/link failed and the
- * caller should show its fallback. Shared by spec shader layers and kit
- * ShaderPass so there is one program cache and one draw path.
+ * caller should show its fallback. The optional onError receives the GL info
+ * log so a failure is a loud, actionable error instead of a silent frame.
+ * Shared by spec shader layers and kit ShaderPass so there is one program
+ * cache and one draw path.
  */
 export function paintFragment(
   gl: WebGL2RenderingContext,
@@ -173,10 +187,14 @@ export function paintFragment(
   width: number,
   height: number,
   uniforms: BoundUniform[],
+  onError?: (log: string) => void,
 ): boolean {
   try {
-    const prog = programFor(gl, source);
-    if (!prog) return false;
+    const { prog, log } = programFor(gl, source);
+    if (!prog) {
+      onError?.(log || "shader failed to compile");
+      return false;
+    }
     gl.viewport(0, 0, width, height);
     gl.clearColor(0, 0, 0, 0);
     gl.clear(gl.COLOR_BUFFER_BIT);

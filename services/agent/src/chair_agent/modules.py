@@ -1,4 +1,4 @@
-"""Effect modules: Muse Wonder writes one TSX file, Chair bundles it for Resolve.
+"""Effect modules: Muse Spark writes one TSX file, Chair bundles it for Resolve.
 
 An effect module is a single TSX file (``meta``, ``props``, a default React
 component that is a pure function of props and ``t``). The agent asks Muse
@@ -30,11 +30,17 @@ from pydantic import BaseModel, ConfigDict
 
 from chair_agent.client import Message, ModelClient
 
-DEFAULT_MODULE_MODEL = "muse-wonder-1.0"
+DEFAULT_MODULE_MODEL = "muse-spark-1.3-contributor"
+WONDER_MODULE_MODEL = "muse-wonder-1.0"
 MODEL_ENV = "CHAIR_MODULE_MODEL"
 OGRAF_DIR_ENV = "CHAIR_OGRAF_DIR"
 _CLI_TIMEOUT_SECONDS = 90
 _MODEL_TIMEOUT_SECONDS = 240.0
+_WONDER_TIMEOUT_SECONDS = 600.0
+# Wonder burns most of its budget on reasoning before writing any output;
+# 8000 starved it (finish: length, empty content). Verified accepted: 32000.
+_WONDER_MAX_TOKENS = 32000
+MODES = ("spark", "wonder")
 _MAX_REFERENCE_CHARS = 6000
 _MAX_REFERENCES = 5
 
@@ -276,7 +282,7 @@ You write Chair effect modules: ONE TSX file that becomes a native DaVinci
 Resolve (OGraf) title. Its props become Fusion Inspector controls the editor
 can keyframe. The file must export exactly:
 
-  export const meta = { id, name, kind: 'generator'|'overlay'|'rig'|'transition',
+  export const meta = { id, name, kind: 'generator'|'overlay'|'rig'|'transition'|'background',
                         durationSec, fps, width, height };
   export const props = {     // each prop becomes an Inspector control
     targetX: { type: 'number', min: 0, max: 1920, default: 960, title: 'Mouse X' },
@@ -299,8 +305,14 @@ Hard rules (a check renders your frames, seeks away and back, and rejects the fi
    Prefer numbers and colors: they are keyframable. Prop ids are plain identifiers and may not be
    t, frame, fps, width, height, history, data. Make every prop visibly change the frame.
 5. Imports: ONLY the approved list below, as written. No relative imports, no other packages.
-6. Fill the frame: position:absolute; inset:0 root, sized to width x height, transparent
-   background for overlay/rig kinds. Colors arrive as lowercase '#rrggbb'.
+6. Scope: render ONLY the element the brief asked for, on a TRANSPARENT background by
+   default. Paint a background only if the brief asks for one, or when kind is
+   'background' (a generator that IS the backdrop). Gate any other fill behind a
+   `backdrop` boolean prop that defaults to false. No text unless the brief asks for
+   text (Resolve has Text+ for titles). No frames, labels, vignettes, or extra shapes:
+   the piece must composite cleanly over footage. Root: position:absolute; inset:0,
+   sized to width x height. Colors arrive as lowercase '#rrggbb'. The check rejects a
+   fully opaque frame or visible text the brief did not ask for, and you get one repair.
 7. Reply with ONE ```tsx code block containing the whole file and nothing else.
 
 Approved imports:
@@ -333,6 +345,17 @@ def _reference_blocks(
     return blocks
 
 
+SPARK_BRIEF_NOTE = (
+    "Spark works inside constraints: start from the closest gold module or "
+    "library adapter below — pick one and adapt it. Keep its shape, its "
+    "typed props, and the house taste; invent only what the brief needs. "
+    "Render only the element asked for on a transparent background (no text "
+    "unless asked); gate any fill behind a backdrop prop defaulting off. "
+    "No full-frame washes, glows, or tints unless the brief asks for one: "
+    "keep paint inside the element, and keep the rest of the frame transparent."
+)
+
+
 def build_generate_messages(
     brief: str,
     *,
@@ -343,15 +366,35 @@ def build_generate_messages(
     duration_sec: float = 8,
     references: Sequence[Any] | None = None,
     piece_ids: Sequence[str] | None = None,
+    mode: str = "spark",
 ) -> list[Message]:
     if not brief.strip():
         raise InvalidModule("generate needs a non-empty 'brief'")
+    if mode not in MODES:
+        raise InvalidModule(f"unknown mode: {mode!r} (want 'spark' or 'wonder')")
+    try:
+        from chair_agent.skills import context_for, wonder_context
+
+        skills_block = wonder_context() if mode == "wonder" else context_for(brief)
+    except Exception:
+        skills_block = ""
     developer = [
         CONTRACT + catalogue_text(),
         "Two working reference modules to copy the shape from:\n" + _example_sources(),
         f"Canvas: {width}x{height}, {fps} fps, {duration_sec}s. Use exactly these numbers in meta."
         + (f" meta.kind must be '{kind}'." if kind else ""),
     ]
+    if skills_block and mode == "wonder":
+        developer.append(
+            "House skills and an optional toolbox (improvise freely):\n" + skills_block
+        )
+    elif skills_block:
+        developer.append(
+            "House skills and the closest library entries (follow them):\n"
+            + SPARK_BRIEF_NOTE
+            + "\n\n"
+            + skills_block
+        )
     blocks = _reference_blocks(references, piece_ids)
     if blocks:
         developer.append(
@@ -399,7 +442,7 @@ def module_model(env: Mapping[str, str] | None = None) -> str:
     return (source.get(MODEL_ENV) or "").strip() or DEFAULT_MODULE_MODEL
 
 
-def _model_client() -> ModelClient:
+def _model_client(model: str | None = None) -> ModelClient:
     import httpx
 
     from chair_agent.client import HttpxTransport, RoleModels, load_settings
@@ -409,13 +452,19 @@ def _model_client() -> ModelClient:
         raise InvalidModule(
             f"module generation needs a model: set META_API_KEY (and optionally {MODEL_ENV})"
         )
+    resolved = model or module_model()
+    wonder = resolved == WONDER_MODULE_MODEL
     try:
         return ModelClient(
-            models=RoleModels(planner=None, executor=module_model(), verifier=None),
+            models=RoleModels(planner=None, executor=resolved, verifier=None),
             transport=HttpxTransport(
-                settings.base_url, client=httpx.Client(timeout=_MODEL_TIMEOUT_SECONDS)
+                settings.base_url,
+                client=httpx.Client(
+                    timeout=_WONDER_TIMEOUT_SECONDS if wonder else _MODEL_TIMEOUT_SECONDS
+                ),
             ),
             api_key=settings.api_key,
+            max_tokens=_WONDER_MAX_TOKENS if wonder else None,
         )
     except Exception as error:
         raise InvalidModule(f"module model unavailable: {error}") from error
@@ -481,9 +530,34 @@ def _write_source(module_id: str, source: str, env: Mapping[str, str] | None = N
     return path
 
 
-def _check_source(module_id: str, source: str, env: Mapping[str, str] | None) -> dict[str, Any]:
+_BACKGROUND_WORDS = {"background", "backdrop", "bg", "wallpaper"}
+_TEXT_WORDS = {
+    "text", "title", "caption", "says", "say", "label", "word", "words",
+    "letter", "letters", "type", "typographic", "typography", "heading", "subtitle",
+}
+
+
+def scope_from_brief(brief: str) -> dict[str, bool]:
+    """What the brief asks the frame to carry: background and/or text.
+
+    The check rejects a fully opaque frame or visible text unless the words
+    are here, so a piece stays the element it was asked for on a transparent
+    stage. Background generators set kind background instead of asking.
+    """
+    tokens = set(re.findall(r"[a-z]+", (brief or "").lower()))
+    return {
+        "wantsBackground": not tokens.isdisjoint(_BACKGROUND_WORDS),
+        "wantsText": not tokens.isdisjoint(_TEXT_WORDS),
+    }
+
+
+def _check_source(
+    module_id: str, source: str, env: Mapping[str, str] | None,
+    scope: Mapping[str, bool] | None = None,
+) -> dict[str, Any]:
     path = _write_source(module_id, source, env)
-    report = run_cli("check", path)["report"]
+    data = json.dumps({"scope": dict(scope)}) if scope is not None else None
+    report = run_cli("check", path, None, data)["report"]
     _count_check(report)
     return report
 
@@ -524,15 +598,21 @@ def generate_module(
     piece_ids: Sequence[str] | None = None,
     client: ModelClient | None = None,
     env: Mapping[str, str] | None = None,
+    model: str | None = None,
+    mode: str = "spark",
 ) -> ModuleRecord:
-    """Draft with Muse Wonder, check, repair once on any failure, then store."""
+    """Draft with Muse Spark (or Wonder), check, repair once, then store."""
     if width <= 0 or height <= 0 or fps <= 0 or duration_sec <= 0:
         raise InvalidModule("canvas width, height, fps, and durationSec must be positive")
-    active = client if client is not None else _model_client()
+    if mode not in MODES:
+        raise InvalidModule(f"unknown mode: {mode!r} (want 'spark' or 'wonder')")
+    scope = scope_from_brief(brief)
+    active = client if client is not None else _model_client(model)
     model = getattr(getattr(active, "models", None), "executor", None) or module_model(env)
     messages = build_generate_messages(
         brief, kind=kind, width=width, height=height, fps=fps,
         duration_sec=duration_sec, references=references, piece_ids=piece_ids,
+        mode=mode,
     )
     module_id = f"fxm-{uuid.uuid4().hex[:12]}"
     started = time.perf_counter()
@@ -544,7 +624,7 @@ def generate_module(
         errors: list[str]
         try:
             source = parse_code(completion.text)
-            report = _check_source(module_id, source, env)
+            report = _check_source(module_id, source, env, scope)
             errors = [] if report["ok"] else list(report["errors"])
         except InvalidModule as parse_error:
             if str(parse_error).startswith("module toolchain"):
@@ -556,7 +636,7 @@ def generate_module(
             retry = active.execute(build_repair_messages(source, errors))
             try:
                 source = parse_code(retry.text)
-                report = _check_source(module_id, source, env)
+                report = _check_source(module_id, source, env, scope)
             except InvalidModule as second:
                 if str(second).startswith("module toolchain"):
                     raise

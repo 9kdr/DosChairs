@@ -15,7 +15,7 @@ export type PropSpec =
   | { type: "string"; default: string; title?: string }
   | { type: "boolean"; default: boolean; title?: string };
 
-export type ModuleKind = "generator" | "overlay" | "rig" | "transition";
+export type ModuleKind = "generator" | "overlay" | "rig" | "transition" | "background";
 
 export interface EffectMeta {
   id: string;

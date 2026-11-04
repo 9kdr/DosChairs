@@ -2,7 +2,7 @@
 import type { OgrafProp } from "@chair/ograf";
 import type { EffectMeta, ModuleKind } from "../kit/types.js";
 
-export const MODULE_KINDS: ModuleKind[] = ["generator", "overlay", "rig", "transition"];
+export const MODULE_KINDS: ModuleKind[] = ["generator", "overlay", "rig", "transition", "background"];
 /** Names the wrapper passes to every frame; a prop may not shadow them. */
 export const RESERVED_PROPS = ["t", "frame", "fps", "width", "height", "history", "data", "children", "key", "ref"];
 export const MAX_PROPS = 20;

@@ -70,6 +70,30 @@ def test_planner_executor_and_verifier_share_one_client() -> None:
     assert all(request.headers["authorization"] == "Bearer test-key" for request in seen)
 
 
+def test_max_tokens_sent_only_when_set() -> None:
+    seen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(200, json={"choices": [{"message": {"content": "done"}}]})
+
+    plain = _client(handler, api_key="test-key", models=_models())
+    plain.execute([Message(role="user", content="cut")])
+    assert "max_tokens" not in json.loads(seen[-1].content)
+
+    roomy = ModelClient(
+        models=_models(),
+        transport=HttpxTransport(
+            "https://example.test/v1",
+            client=httpx.Client(transport=httpx.MockTransport(handler)),
+        ),
+        api_key="test-key",
+        max_tokens=8000,
+    )
+    roomy.execute([Message(role="user", content="cut")])
+    assert json.loads(seen[-1].content)["max_tokens"] == 8000
+
+
 def test_missing_model_does_not_call() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         raise AssertionError(request.url)

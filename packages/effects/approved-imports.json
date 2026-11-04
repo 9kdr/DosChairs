@@ -5,7 +5,9 @@
     {
       "name": "react",
       "summary": "React 19. Use plain function components and hooks (useRef, useLayoutEffect, useMemo). Never useEffect/useState for animation: a frame is a pure function of props and t.",
-      "api": ["import React from 'react'"]
+      "api": [
+        "import React from 'react'"
+      ]
     },
     {
       "name": "react/jsx-runtime",
@@ -22,7 +24,9 @@
     {
       "name": "three",
       "summary": "three.js 0.180 for 3D scenes. Build or update the scene from props and t inside a useLayoutEffect on every render, call renderer.render once, never start an animation loop. Keep one WebGLRenderer in a ref (preserveDrawingBuffer: true, alpha: true). Mirror the frame inputs on the canvas as data-frame={JSON.stringify(...)} so the determinism check can compare frames.",
-      "api": ["import * as THREE from 'three'"],
+      "api": [
+        "import * as THREE from 'three'"
+      ],
       "prefix": true
     },
     {
@@ -55,7 +59,89 @@
         "simulateFollower(history, xName, yName, t, opts?): { x, y, vx, vy, tilt, scaleAlong, scaleAcross, heading }   // expressive-mouse rig: overshoot, swing/tilt, squash-and-stretch",
         "verletChain(anchor: (tau) => {x, y}, count, t, {segment?, gravity?, damping?, iterations?}): {x, y}[]   // hanging rope; one letter per point for text physics",
         "<ShaderPass frag={glsl} uniforms={{ u_time: t, u_color: '#ff6a00', u_res: [width, height] }} width={width} height={height} />   // fullscreen WebGL2 pass. frag is GLSL ES 3.00 and receives `in vec2 vUv` (0..1). Uniforms may be number, boolean, #rrggbb string (vec3), or number[2..4].",
-        "hexToRgb01(hex): [r, g, b]; hexToRgba(hex, alpha?): string; mixHex(a, b, u): string"
+        "hexToRgb01(hex): [r, g, b]; hexToRgba(hex, alpha?): string; mixHex(a, b, u): string",
+        "SeekAdapter: { init(root, props), seek(t), dispose() }   // every animation library plugs in here",
+        "installVirtualClock(seed?, stepMs?): VirtualClock   // init installs rAF/performance.now/Date.now/seeded-random overrides; dispose restores",
+        "createSeekClock({ seed?, stepMs? }): SeekAdapter   // init installs the clock; seek pauses WAAPI and steps it (replays from 0 on backwards scrub)",
+        "seekWaapi(root, t); createWaapiAdapter(): SeekAdapter   // pause every animation under root and pin currentTime",
+        "seekPaper(mount, t); createPaperAdapter(() => mount)   // speed 0 + setFrame(t * 1000)",
+        "seekOgl(program, render, t); createOglAdapter(() => program, render)   // u_time + one frame",
+        "seekMotion(controls, t); createMotionAdapter(() => controls)   // pause + .time",
+        "seekAnime(anim, t); createAnimeAdapter(() => anim)   // pause + seek seconds (anime takes ms)",
+        "simulateWorld(build, t, dt?); seedMatter(Matter, seed)   // re-simulate 0..t at a fixed step",
+        "transitionProgress(t, duration); seekTransition(draw, t, duration)   // progress = t / duration",
+        "morphAt(interpolate, from, to, u); createFlubberAdapter(interpolate, setPath, from, to, duration)",
+        "GradientWash({ t, width, height, ink?, accent?, paper?, flow?, scale?, speed? })   // slow domain-warped gradient",
+        "GrainOverlay({ t, fps?, amount? })   // film grain keyed to the frame number",
+        "HalftoneLayer({ tone, cell?, ink? })   // round-dot halftone screen as CSS",
+        "GlowWrap({ color?, radius?, strength?, children })   // soft outer glow"
+      ]
+    },
+    {
+      "name": "@paper-design/shaders",
+      "summary": "Apache-2.0. ShaderMount plus fragment shaders (mesh-gradient, metaballs, liquid-metal, dithering, image-dithering, halftone-dots/cmyk, grain-gradient, fluted-glass, water, warp, god-rays). Mount with speed 0, seek with setFrame(t * 1000).",
+      "api": [
+        "import { ShaderMount, metaballsFragmentShader, meshGradientFragmentShader, ditheringFragmentShader, grainGradientFragmentShader, flutedGlassFragmentShader } from '@paper-design/shaders'",
+        "seekPaper(mount, t): stop the loop, setFrame(t * 1000)",
+        "createPaperAdapter(() => mount): SeekAdapter"
+      ]
+    },
+    {
+      "name": "ogl",
+      "summary": "Unlicense. Minimal WebGL for custom GLSL (e.g. smooth-min SDF liquid boxes). Use only inside a layout effect; mirror u_time into SSR markup. Seek: set u_time to t, render once.",
+      "api": [
+        "import { Renderer, Program, Mesh, Triangle } from 'ogl'",
+        "seekOgl(program, render, t): set u_time, paint one frame",
+        "createOglAdapter(() => program, render): SeekAdapter"
+      ]
+    },
+    {
+      "name": "motion",
+      "summary": "Motion (motion.dev), MIT. Create with autoplay off and set MotionGlobalConfig.useManualTiming = true once so no clock runs. Seek: controls.time = t. Note: motion needs the DOM, so compute the same values during render for the probe.",
+      "api": [
+        "import { animate, stagger, MotionGlobalConfig } from 'motion'",
+        "MotionGlobalConfig.useManualTiming = true   // once: no rAF loop",
+        "seekMotion(controls, t): pause + set .time to seconds",
+        "createMotionAdapter(() => controls): SeekAdapter",
+        "stagger(step, { grid, from }): (target, i, total) => delayMs   // pure, render-safe"
+      ]
+    },
+    {
+      "name": "animejs",
+      "summary": "anime.js v4, MIT. Timelines stay paused and move only through Timer.seek(ms); set engine.useDefaultMainLoop = false once so no loop runs. stagger() is pure and render-safe.",
+      "api": [
+        "import { createTimeline, createTimer, stagger, engine } from 'animejs'",
+        "engine.useDefaultMainLoop = false   // once: no rAF loop",
+        "seekAnime(anim, t): pause + seek to seconds (anime takes ms)",
+        "createAnimeAdapter(() => anim): SeekAdapter"
+      ]
+    },
+    {
+      "name": "matter-js",
+      "summary": "matter-js, MIT. Build bodies during render, step Matter.Engine.update(engine, dt * 1000) at a fixed dt inside simulateWorld, seed Common._seed once. Never keep an engine between frames.",
+      "api": [
+        "import Matter from 'matter-js'",
+        "seedMatter(Matter, 7): pin internal randomness",
+        "simulateWorld(build, t, dt = 1/240): re-simulate 0..t and snapshot"
+      ]
+    },
+    {
+      "name": "flubber",
+      "summary": "flubber, MIT. interpolate(a, b) is already a pure function of blend 0..1: the seek recipe is morphAt(interpolate, from, to, u).",
+      "api": [
+        "import flubber from 'flubber'",
+        "morphAt(flubber.interpolate, from, to, u): path d at blend u",
+        "createFlubberAdapter(flubber.interpolate, setPath, from, to, duration): SeekAdapter"
+      ]
+    },
+    {
+      "name": "gl-transitions",
+      "summary": "gl-transitions, MIT (check the file header of the transition you bundle). Stateless GLSL over a progress uniform: seek is progress = t / duration.",
+      "api": [
+        "import transitions from 'gl-transitions'   // [{ name, glsl, ... }] (178 transitions)",
+        "transitionProgress(t, duration): 0..1 progress",
+        "seekTransition(draw, t, duration): paint one frame",
+        "createTransitionAdapter(draw, duration): SeekAdapter"
       ]
     }
   ]

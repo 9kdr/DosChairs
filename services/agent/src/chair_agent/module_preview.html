@@ -29,6 +29,7 @@ const fingerprint = () => {
 const seek = async (t) => { await el.goToTime({ timestamp: Math.round(t * 1000) }); };
 const show = (t) => { document.getElementById('tlabel').textContent = t.toFixed(2) + 's'; };
 const t0 = parseFloat(q.get('t') ?? '0');
+if (q.has('checker')) document.getElementById('stage').style.background = 'repeating-conic-gradient(#7a7a7a 0% 25%, #c2c2c2 0% 50%) 0 0 / 48px 48px';
 await seek(t0); show(t0);
 if (q.get('check')) {
   const [a, b] = q.get('check').split(',').map(parseFloat);
