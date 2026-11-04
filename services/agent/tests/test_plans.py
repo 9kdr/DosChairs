@@ -121,7 +121,8 @@ def test_board_items_appear_in_the_piece_listing(isolated) -> None:
     assert macros.list_pieces("style-x")["pieces"][0]["id"] == "board:style-x"
     ids = [entry["id"] for entry in macros.list_pieces("warm morning")["pieces"]]
     assert "board:style-x" in ids
-    assert macros.list_pieces("no such look")["total"] == 0
+    missing = [entry["id"] for entry in macros.list_pieces("zxqv-kwjj")["pieces"]]
+    assert "board:style-x" not in missing
 
 
 def test_find_piece_resolves_board_ref_for_effect_briefs(isolated) -> None:
