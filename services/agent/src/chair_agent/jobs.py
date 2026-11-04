@@ -70,7 +70,7 @@ class Artifact(BaseModel):
 
 
 class ChangesetProposal(BaseModel):
-    """A proposed edit. Applying it is the UI's job after a human accepts."""
+    """A proposed edit. The app writes it to Resolve onto a copy; undo restores the original."""
 
     model_config = ConfigDict(extra="forbid")
 

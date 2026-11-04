@@ -12,6 +12,7 @@ from chair_agent.executor import (
     dialogue_regions,
     fill_tool_calls,
     merge_spans,
+    sound_changeset_items,
     sound_moment,
 )
 from chair_agent.jobs import HandlerResult, Job
@@ -680,6 +681,30 @@ def test_run_loop_reports_missing_sfx_as_skipped() -> None:
         "riser_into_cut", "tape_stop_outro",
     ]
     assert all(skip.reason for skip in result.skipped)
+
+
+def test_riser_near_start_trims_head_and_keeps_peak() -> None:
+    """A 2s riser into a 1s cut: 1s placed at 0, sourced from 1s in."""
+    items, skipped = sound_changeset_items(
+        "riser into the cut at 00:00:01",
+        ["riser_into_cut"],
+        [],
+        total_frames=300,
+        rate=30.0,
+        sfx={"riser": SfxFile(
+            kind="riser", path="/sfx/riser.wav", name="riser.wav",
+            duration_seconds=2.0, source="synth", license="generated",
+        )},
+        duck_target_id="music-1",
+    )
+    assert skipped == []
+    clips = [item for item in items if item.op == "add_clip"]
+    assert len(clips) == 1
+    snapshot = clips[0].patch["clip"]
+    assert snapshot["timelineRange"]["start"] == {"value": 0, "rate": 30.0}
+    assert snapshot["timelineRange"]["duration"] == {"value": 30, "rate": 30.0}
+    assert snapshot["sourceRange"]["start"] == {"value": 30, "rate": 30.0}
+    assert snapshot["sourceRange"]["duration"] == {"value": 30, "rate": 30.0}
 
 
 def test_run_loop_skips_riser_without_a_cut_time() -> None:

@@ -188,6 +188,20 @@ class Handler(BaseHTTPRequestHandler):
             except ValueError as error:
                 self._send(400, _error("invalid_sounds_fetch", str(error)))
             return
+        if sounds_path in ("/sounds/apply", "/sounds/undo"):
+            try:
+                body = self._body()
+            except ValueError:
+                self._send(400, {"error": "request body must be JSON"})
+                return
+            try:
+                if sounds_path == "/sounds/apply":
+                    self._send(200, _sounds_apply_body(body, self.controller))
+                else:
+                    self._send(200, _sounds_undo_body(body))
+            except _SoundsApplyError as error:
+                self._send(error.status, {"error": str(error)})
+            return
         module_route = _module_paths(self.path)
         if module_route is not None:
             self._module_post(*module_route)
@@ -656,31 +670,38 @@ def _rig_generate_body(body: dict[str, Any]) -> dict[str, Any]:
     )
 
 
-def _resolve_timeline_item(
-    project_name: Any, timeline_name: Any, track_type: str, track_index: int,
-    clip_index: int,
-) -> tuple[Any, str, str]:
-    """Find a timeline clip through Studio scripting. Never creates anything.
+def _resolve_project(project_name: Any) -> Any:
+    """The open Studio project. Never switches projects on its own.
 
-    Returns (item, project name, timeline name). Raises _ResolveUnavailable
-    without the adapter/scripting host, _ResolveFailed when the names or
-    the clip do not resolve.
+    Raises _ResolveUnavailable without the adapter/scripting host,
+    _ResolveFailed when no project is open or the named one is not open.
     """
     try:
-        import DaVinciResolveScript as bmd
-        from chair_resolve.read import resolve_app  # noqa: F401
+        from chair_resolve.read import (  # noqa: F401
+            resolve_app,
+            scripting_module_paths,
+        )
     except ImportError as error:
         raise _ResolveUnavailable(
             "the Resolve adapter or scripting host is missing here; run the "
             f"agent where chair-adapter-resolve and DaVinciResolveScript import ({error})"
         ) from error
     try:
-        from chair_resolve import add_effect as _add  # noqa: F401
-    except ImportError as error:
-        raise _ResolveUnavailable(
-            f"chair-adapter-resolve is not importable ({error})"
-        ) from error
-    del _add
+        import DaVinciResolveScript as bmd
+    except ImportError:
+        import sys as _sys
+
+        for path in scripting_module_paths():
+            if path not in _sys.path:
+                _sys.path.insert(0, path)
+        try:
+            import DaVinciResolveScript as bmd
+        except ImportError as error:
+            raise _ResolveUnavailable(
+                "the Resolve adapter or scripting host is missing here; run the "
+                "agent where chair-adapter-resolve and DaVinciResolveScript "
+                f"import ({error})"
+            ) from error
     try:
         resolve = bmd.scriptapp("Resolve")
         manager = resolve.GetProjectManager()
@@ -694,20 +715,67 @@ def _resolve_timeline_item(
                     f"(open {project.GetName()!r}); the route never switches "
                     "projects on its own."
                 )
+        return project
+    except (_ResolveUnavailable, _ResolveFailed):
+        raise
+    except Exception as error:
+        raise _ResolveFailed(f"Resolve scripting failed: {error}") from error
+
+
+def _find_timeline_by_name(project: Any, wanted: str) -> Any | None:
+    """One project timeline by name. None when it is not in the project."""
+    count = project.GetTimelineCount() or 0
+    for index in range(1, count + 1):
+        candidate = project.GetTimelineByIndex(index)
+        if candidate is not None and candidate.GetName() == wanted:
+            return candidate
+    return None
+
+
+def _resolve_project_timeline(project_name: Any, timeline_name: Any) -> tuple[Any, Any]:
+    """Open project plus named (or current) timeline. Never creates anything.
+
+    Returns (project, timeline). Raises _ResolveUnavailable without the
+    adapter/scripting host, _ResolveFailed when the names do not resolve.
+    """
+    project = _resolve_project(project_name)
+    try:
         timeline = None
         if isinstance(timeline_name, str) and timeline_name.strip():
             wanted = timeline_name.strip()
-            for index in range(1, project.GetTimelineCount() + 1):
-                candidate = project.GetTimelineByIndex(index)
-                if candidate is not None and candidate.GetName() == wanted:
-                    timeline = candidate
-                    break
+            timeline = _find_timeline_by_name(project, wanted)
             if timeline is None:
                 raise _ResolveFailed(f"Timeline {wanted!r} is not in this project.")
         else:
             timeline = project.GetCurrentTimeline()
         if timeline is None:
             raise _ResolveFailed("Resolve Studio has no current timeline.")
+        return project, timeline
+    except _ResolveFailed:
+        raise
+    except Exception as error:
+        raise _ResolveFailed(f"Resolve scripting failed: {error}") from error
+
+
+def _resolve_timeline_item(
+    project_name: Any, timeline_name: Any, track_type: str, track_index: int,
+    clip_index: int,
+) -> tuple[Any, str, str]:
+    """Find a timeline clip through Studio scripting. Never creates anything.
+
+    Returns (item, project name, timeline name). Raises _ResolveUnavailable
+    without the adapter/scripting host, _ResolveFailed when the names or
+    the clip do not resolve.
+    """
+    try:
+        from chair_resolve import add_effect as _add  # noqa: F401
+    except ImportError as error:
+        raise _ResolveUnavailable(
+            f"chair-adapter-resolve is not importable ({error})"
+        ) from error
+    del _add
+    project, timeline = _resolve_project_timeline(project_name, timeline_name)
+    try:
         items = timeline.GetItemListInTrack(track_type, track_index) or []
         if clip_index < 0 or clip_index >= len(items):
             raise _ResolveFailed(
@@ -715,7 +783,7 @@ def _resolve_timeline_item(
                 f"(has {len(items)} clips)."
             )
         return items[clip_index], project.GetName(), timeline.GetName()
-    except (_ResolveUnavailable, _ResolveFailed):
+    except _ResolveFailed:
         raise
     except Exception as error:
         raise _ResolveFailed(f"Resolve scripting failed: {error}") from error
@@ -787,6 +855,289 @@ def _rig_apply_body(body: dict[str, Any]) -> dict[str, Any]:
         "timeline": timeline_name,
         "undo": op.get("undo"),
     }
+
+
+_SOUND_APPLY_OPS = frozenset({"add_track", "add_clip", "set_gain"})
+
+
+class _SoundsApplyError(Exception):
+    """A /sounds/apply or /sounds/undo failure: status plus one plain sentence."""
+
+    def __init__(self, status: int, message: str) -> None:
+        self.status = status
+        super().__init__(message)
+
+
+def _sounds_coerce_items(raw_items: Any, where: str) -> list[Any]:
+    """Raw dicts to typed items. Raises _SoundsApplyError naming the bad item."""
+    from pydantic import ValidationError
+
+    from chair_agent.edit_ops import ChangesetItem
+
+    if not isinstance(raw_items, list) or not raw_items:
+        raise _SoundsApplyError(400, f"{where} holds no items to apply")
+    items = []
+    for index, raw in enumerate(raw_items):
+        if not isinstance(raw, dict):
+            raise _SoundsApplyError(400, f"{where} item {index} must be an object")
+        try:
+            items.append(ChangesetItem.model_validate(raw))
+        except ValidationError as error:
+            first = error.errors()[0]
+            at = ".".join(str(part) for part in first.get("loc", ()))
+            raise _SoundsApplyError(
+                400, f"{where} item {index} is not a changeset item ({at}: {first['msg']})"
+            ) from error
+    return items
+
+
+def _sounds_job_items(controller: JobController, job_id: str) -> list[Any]:
+    """A finished job's proposal. Raises _SoundsApplyError when it cannot apply."""
+    try:
+        job = controller.get(job_id)
+    except JobNotFound:
+        raise _SoundsApplyError(404, f"job {job_id!r} is unknown") from None
+    if job.status != "completed":
+        if job.status in ("failed", "moderated", "canceled"):
+            raise _SoundsApplyError(
+                400, f"job {job_id!r} {job.status}: {job.error or 'it has no proposal to apply'}"
+            )
+        raise _SoundsApplyError(
+            409, f"job {job_id!r} is {job.status}; wait for it to finish"
+        )
+    ops = job.changeset.ops if job.changeset is not None else []
+    items = _sounds_coerce_items(ops, f"job {job_id!r}")
+    if not any(item.op in _SOUND_APPLY_OPS for item in items):
+        raise _SoundsApplyError(400, f"job {job_id!r} has no sound items to apply")
+    return items
+
+
+def _sound_maybe(obj: Any, name: str, *args: Any) -> Any:
+    if obj is None:
+        return None
+    method = getattr(obj, name, None)
+    if method is None:
+        return None
+    return method(*args)
+
+
+def _sound_snapshot_item(item: Any) -> dict[str, Any]:
+    pool = _sound_maybe(item, "GetMediaPoolItem")
+    file_path = _sound_maybe(pool, "GetClipProperty", "File Path")
+    return {
+        "unique_id": _sound_maybe(item, "GetUniqueId") or "",
+        "name": _sound_maybe(item, "GetName") or "",
+        "start": _sound_maybe(item, "GetStart"),
+        "end": _sound_maybe(item, "GetEnd"),
+        "source_start_frame": _sound_maybe(item, "GetSourceStartFrame"),
+        "source_end_frame": _sound_maybe(item, "GetSourceEndFrame"),
+        "file_path": file_path if isinstance(file_path, str) and file_path.strip() else None,
+    }
+
+
+def _sound_rate_label(timeline: Any, project: Any) -> str:
+    """Frame-rate label off the timeline, else the project (mirrors the read path)."""
+    for owner in (timeline, project):
+        for key in ("timelineFrameRate", "timelinePlaybackFrameRate"):
+            value = _sound_maybe(owner, "GetSetting", key)
+            if isinstance(value, bool) or value is None:
+                continue
+            if isinstance(value, (int, float)):
+                return str(value)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+    return ""
+
+
+def _sound_snapshot(project: Any, timeline: Any) -> dict[str, Any]:
+    """Snapshot one timeline object for timeline_from_resolve. Read-only."""
+    tracks = []
+    for track_type in ("video", "audio", "subtitle"):
+        count = int(_sound_maybe(timeline, "GetTrackCount", track_type) or 0)
+        for index in range(1, count + 1):
+            items = _sound_maybe(timeline, "GetItemListInTrack", track_type, index) or []
+            tracks.append({
+                "track_type": track_type,
+                "index": index,
+                "name": _sound_maybe(timeline, "GetTrackName", track_type, index) or "",
+                "items": [
+                    _sound_snapshot_item(item) for item in items if item is not None
+                ],
+            })
+    return {
+        "project_name": _sound_maybe(project, "GetName") or "",
+        "name": _sound_maybe(timeline, "GetName") or "",
+        "unique_id": _sound_maybe(timeline, "GetUniqueId") or "",
+        "start_frame": _sound_maybe(timeline, "GetStartFrame"),
+        "frame_rate": _sound_rate_label(timeline, project),
+        "tracks": tracks,
+        "markers": _sound_maybe(timeline, "GetMarkers") or {},
+    }
+
+
+def _free_copy_name(project: Any, original_name: str) -> str:
+    """`<original> (sound copy)`, with ` 2`, ` 3` while the name is taken."""
+    taken: set[str] = set()
+    count = project.GetTimelineCount() or 0
+    for index in range(1, count + 1):
+        candidate = project.GetTimelineByIndex(index)
+        name = candidate.GetName() if candidate is not None else ""
+        if name:
+            taken.add(name)
+    base = f"{original_name} (sound copy)"
+    if base not in taken:
+        return base
+    suffix = 2
+    while f"{base} {suffix}" in taken:
+        suffix += 1
+    return f"{base} {suffix}"
+
+
+def _sounds_apply_body(body: dict[str, Any], controller: JobController) -> dict[str, Any]:
+    """Apply sound items to Resolve as a NEW timeline; the original is untouched.
+
+    Reads the named (or current) timeline, places the items with
+    apply_sound_items, and writes `<original> (sound copy)` — which Resolve
+    makes current. Ducking keyframes ride the manifest's Fairlight fallback.
+    """
+    job_id = body.get("jobId", "")
+    if isinstance(job_id, str) and job_id.strip():
+        items = _sounds_job_items(controller, job_id.strip())
+    elif isinstance(body.get("items"), list) and body["items"]:
+        items = _sounds_coerce_items(body["items"], "the request")
+        if not any(item.op in _SOUND_APPLY_OPS for item in items):
+            raise _SoundsApplyError(400, "the request holds no sound items to apply")
+    else:
+        raise _SoundsApplyError(
+            400, "apply needs a finished 'jobId' or a non-empty 'items' list"
+        )
+    try:
+        project, timeline_obj = _resolve_project_timeline(
+            body.get("project"), body.get("timeline")
+        )
+    except _ResolveUnavailable as error:
+        raise _SoundsApplyError(503, str(error)) from error
+    except _ResolveFailed as error:
+        raise _SoundsApplyError(502, str(error)) from error
+    try:
+        from chair_resolve.read import timeline_from_resolve
+        from chair_resolve.write import apply_sound_items, write_timeline
+    except ImportError as error:
+        raise _SoundsApplyError(
+            503, f"chair-adapter-resolve is not importable ({error})"
+        ) from error
+    try:
+        timeline = timeline_from_resolve(_sound_snapshot(project, timeline_obj))
+    except Exception as error:
+        raise _SoundsApplyError(
+            502, f"reading the Resolve timeline failed: {error}"
+        ) from error
+    original_name = str(timeline.get("name") or "")
+    skipped: list[dict[str, str]] = []
+    sound: list[dict[str, Any]] = []
+    for item in items:
+        if item.op in _SOUND_APPLY_OPS:
+            sound.append(item.model_dump(mode="json", by_alias=True))
+        else:
+            skipped.append({
+                "intent": item.id,
+                "reason": f"the sound writer does not place {item.op} items",
+            })
+    try:
+        copy, report = apply_sound_items(timeline, sound)
+    except Exception as error:
+        raise _SoundsApplyError(502, f"placing the sound failed: {error}") from error
+    tracks_added = report.get("tracks_added") or []
+    clips_placed = report.get("clips_placed") or []
+    keyframes = report.get("keyframes") or 0
+    for entry in report.get("skipped") or []:
+        skipped.append({
+            "intent": str(entry.get("id") or "?"),
+            "reason": str(entry.get("reason") or "skipped"),
+        })
+    if not tracks_added and not clips_placed and not keyframes:
+        reasons = "; ".join(entry["reason"] for entry in skipped) or "nothing could be placed"
+        raise _SoundsApplyError(502, f"Resolve added nothing: {reasons}")
+    try:
+        copy["name"] = _free_copy_name(project, original_name)
+    except Exception as error:
+        raise _SoundsApplyError(
+            502, f"listing the Resolve timelines failed: {error}"
+        ) from error
+    try:
+        write_timeline(copy)
+    except Exception as error:
+        raise _SoundsApplyError(502, f"writing the Resolve copy failed: {error}") from error
+    fallbacks = report.get("fallbacks") or []
+    fallback = fallbacks[0].get("reason") if fallbacks else None
+    return {
+        "timeline_name": copy["name"],
+        "original_timeline": original_name,
+        "tracks_added": len(tracks_added),
+        "clips_added": len(clips_placed),
+        "skipped": skipped,
+        "fallback": str(fallback) if fallback else None,
+    }
+
+
+def _sounds_undo_body(body: dict[str, Any]) -> dict[str, Any]:
+    """Undo a sound apply: the original becomes current again, and the copy
+    is deleted only when delete_copy is true. The original's contents are
+    never touched."""
+    copy_name = body.get("timeline_name", "")
+    if not isinstance(copy_name, str) or not copy_name.strip():
+        raise _SoundsApplyError(400, "undo needs the copy 'timeline_name'")
+    original_name = body.get("original_timeline", "")
+    if not isinstance(original_name, str) or not original_name.strip():
+        raise _SoundsApplyError(400, "undo needs the 'original_timeline' to restore")
+    delete_copy = body.get("delete_copy", False)
+    if not isinstance(delete_copy, bool):
+        raise _SoundsApplyError(400, "undo 'delete_copy' must be true or false")
+    copy_name = copy_name.strip()
+    original_name = original_name.strip()
+    if delete_copy and copy_name == original_name:
+        raise _SoundsApplyError(400, "undo refuses to delete the original timeline")
+    try:
+        project = _resolve_project(body.get("project"))
+    except _ResolveUnavailable as error:
+        raise _SoundsApplyError(503, str(error)) from error
+    except _ResolveFailed as error:
+        raise _SoundsApplyError(502, str(error)) from error
+    try:
+        original = _find_timeline_by_name(project, original_name)
+        if original is None:
+            raise _SoundsApplyError(
+                502, f"Timeline {original_name!r} is not in this project."
+            )
+        if not project.SetCurrentTimeline(original):
+            raise _SoundsApplyError(
+                502, f"Resolve would not switch back to {original_name!r}."
+            )
+        deleted = False
+        if delete_copy:
+            copy_obj = _find_timeline_by_name(project, copy_name)
+            if copy_obj is not None:
+                media_pool = project.GetMediaPool()
+                delete = (
+                    getattr(media_pool, "DeleteTimelines", None)
+                    if media_pool is not None else None
+                )
+                if not callable(delete):
+                    raise _SoundsApplyError(
+                        502,
+                        "this Resolve cannot delete timelines by script; "
+                        "delete the copy by hand",
+                    )
+                if not delete([copy_obj]):
+                    raise _SoundsApplyError(
+                        502, f"Resolve would not delete {copy_name!r}."
+                    )
+                deleted = True
+    except _SoundsApplyError:
+        raise
+    except Exception as error:
+        raise _SoundsApplyError(502, f"Resolve scripting failed: {error}") from error
+    return {"current_timeline": original_name, "deleted": deleted}
 
 
 def _effects_status(error: Exception) -> int:

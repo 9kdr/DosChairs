@@ -202,3 +202,20 @@ def test_duck_keyframes_duck_twelve_db_with_ramps() -> None:
     with pytest.raises(ValueError, match="dialogue region"):
         from chair_agent.edit_ops import duck_op
         duck_op("duck-1", "music-1", "Empty.", regions_seconds=[(3.0, 3.0)])
+
+
+def test_changeset_item_accepts_app_spec_ref() -> None:
+    """The app's own effect edit carries specRef; the agent must accept it."""
+    item = ChangesetItem.model_validate({
+        "id": "fx-1", "op": "add_effect", "targetId": "clip-1",
+        "specRef": "fx-rig-1", "rationale": "Bounce the title in.",
+        "status": "pending",
+    })
+    assert item.spec_ref == "fx-rig-1"
+    dumped = item.model_dump(mode="json", by_alias=True, exclude_none=True)
+    assert dumped["specRef"] == "fx-rig-1"
+    changeset = validate_changeset({
+        "schemaVersion": "0.1.0", "id": "cs-1", "baseRevision": "rev-0",
+        "items": [dumped],
+    })
+    assert changeset.items[0].spec_ref == "fx-rig-1"

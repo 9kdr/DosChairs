@@ -23,6 +23,13 @@ PREVIEW_WIDTH = 640
 DEFAULT_SCENE_THRESHOLD = 0.4
 DEFAULT_MIN_SHOT = 0.0
 
+#: Subprocess ceilings: a hung ffmpeg/ffprobe fails the job with a plain
+#: error instead of wedging the worker behind it. Streaming renders get
+#: the longest leash; probes answer in well under a minute.
+FFPROBE_TIMEOUT_SECONDS = 60.0
+FFMPEG_DECODE_TIMEOUT_SECONDS = 300.0
+FFMPEG_RUN_TIMEOUT_SECONDS = 600.0
+
 
 class JobKind(StrEnum):
     SAM3_MASK = "sam3_mask"
@@ -787,29 +794,37 @@ class JobStore:
             raise
         return {**payload, "markers_file": str(dest), "cached": False}
 
-    def _decode_mono(self, source: Path) -> array.array[int]:
-        completed = subprocess.run(
-            [
-                binary("ffmpeg"),
-                "-hide_banner",
-                "-nostdin",
-                "-v",
-                "error",
-                "-i",
-                str(source),
-                "-map",
-                "0:a:0",
-                "-ac",
-                "1",
-                "-ar",
-                str(SAMPLE_RATE),
-                "-f",
-                "s16le",
-                "-",
-            ],
-            check=False,
-            capture_output=True,
-        )
+    def _decode_mono(
+        self, source: Path, *, timeout: float = FFMPEG_DECODE_TIMEOUT_SECONDS,
+    ) -> array.array[int]:
+        try:
+            completed = subprocess.run(
+                [
+                    binary("ffmpeg"),
+                    "-hide_banner",
+                    "-nostdin",
+                    "-v",
+                    "error",
+                    "-i",
+                    str(source),
+                    "-map",
+                    "0:a:0",
+                    "-ac",
+                    "1",
+                    "-ar",
+                    str(SAMPLE_RATE),
+                    "-f",
+                    "s16le",
+                    "-",
+                ],
+                check=False,
+                capture_output=True,
+                timeout=timeout,
+            )
+        except subprocess.TimeoutExpired as error:
+            raise RuntimeError(
+                f"ffmpeg decode timed out after {timeout:g} seconds"
+            ) from error
         if completed.returncode != 0:
             details = _tail(completed.stderr.decode("utf-8", "replace"))
             raise RuntimeError(details or "ffmpeg decode failed")
@@ -933,7 +948,8 @@ class JobStore:
             *args,
         ]
         return self._run_command(
-            job_id, command, lambda line: parse_progress(line, duration), what="ffmpeg"
+            job_id, command, lambda line: parse_progress(line, duration), what="ffmpeg",
+            timeout=FFMPEG_RUN_TIMEOUT_SECONDS,
         )
 
     def _run_runner(self, job_id: str, command: list[str], what: str = "sam3 runner") -> str:
@@ -946,6 +962,7 @@ class JobStore:
         parse: Callable[[str], float | None],
         *,
         what: str,
+        timeout: float | None = None,
     ) -> str:
         try:
             process = subprocess.Popen(
@@ -957,35 +974,59 @@ class JobStore:
             )
         except OSError as exc:
             raise RuntimeError(f"{what} failed to start: {exc}") from exc
-        lines: list[str] = []
-        assert process.stderr is not None
-        for line in process.stderr:
-            lines.append(line)
-            fraction = parse(line)
-            if fraction is not None:
-                self._update(job_id, progress=round(fraction, 4))
-        code = process.wait()
+        expired: list[bool] = []
+        timer: threading.Timer | None = None
+        if timeout is not None:
+            def _expire() -> None:
+                expired.append(True)
+                try:
+                    process.kill()
+                except OSError:
+                    pass
+            timer = threading.Timer(timeout, _expire)
+            timer.daemon = True
+            timer.start()
+        try:
+            lines: list[str] = []
+            assert process.stderr is not None
+            for line in process.stderr:
+                lines.append(line)
+                fraction = parse(line)
+                if fraction is not None:
+                    self._update(job_id, progress=round(fraction, 4))
+            code = process.wait()
+        finally:
+            if timer is not None:
+                timer.cancel()
         log = "".join(lines)
+        if expired:
+            raise RuntimeError(f"{what} timed out after {timeout:g} seconds")
         if code != 0:
             raise RuntimeError(_tail(log) or f"{what} exited {code}")
         return log
 
-    def _probe(self, path: Path) -> dict:
-        completed = subprocess.run(
-            [
-                binary("ffprobe"),
-                "-v",
-                "error",
-                "-print_format",
-                "json",
-                "-show_format",
-                "-show_streams",
-                str(path),
-            ],
-            check=False,
-            capture_output=True,
-            text=True,
-        )
+    def _probe(self, path: Path, *, timeout: float = FFPROBE_TIMEOUT_SECONDS) -> dict:
+        try:
+            completed = subprocess.run(
+                [
+                    binary("ffprobe"),
+                    "-v",
+                    "error",
+                    "-print_format",
+                    "json",
+                    "-show_format",
+                    "-show_streams",
+                    str(path),
+                ],
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+            )
+        except subprocess.TimeoutExpired as error:
+            raise RuntimeError(
+                f"ffprobe timed out after {timeout:g} seconds"
+            ) from error
         if completed.returncode != 0:
             raise RuntimeError(_tail(completed.stderr) or "ffprobe failed")
         return json.loads(completed.stdout)

@@ -2,8 +2,9 @@
 
 Each runner takes a validated Task and returns pending changeset items
 that cite the task's beat. When the model path fails, the runner falls
-back to a beat marker so the crew still lands one pending changeset;
-notes always say which path ran.
+back to a beat marker and marks the output fallback: the orchestrator
+rejects those, so a crew run never reports accepted with nothing real.
+Notes always say which path ran.
 """
 
 from collections.abc import Mapping, Sequence
@@ -20,6 +21,7 @@ class SubagentOutput:
     artifacts: list[str] = field(default_factory=list)
     items: list[ChangesetItem] = field(default_factory=list)
     notes: str = ""
+    fallback: bool = False
 
 
 def _beat_marker(task: Task, what: str) -> ChangesetItem:
@@ -87,7 +89,11 @@ def run_cut(
             items=_stamp(items, task),
             notes="loop.handle_edit",
         )
-    return SubagentOutput(items=[_beat_marker(task, "Cut point")], notes="beat marker (no media)")
+    return SubagentOutput(
+        items=[_beat_marker(task, "Cut point")],
+        notes="beat marker (no media)",
+        fallback=True,
+    )
 
 
 def run_sound(
@@ -116,6 +122,7 @@ def run_sound(
         return SubagentOutput(
             items=[_beat_marker(task, "Sound cue")],
             notes=f"beat marker (pick_cues failed: {error})",
+            fallback=True,
         )
 
 
@@ -136,6 +143,7 @@ def run_motion(task: Task, *, client: Any = None, target_id: str = "timeline-1")
         return SubagentOutput(
             items=[_beat_marker(task, "Motion accent")],
             notes=f"beat marker (generate_module failed: {error})",
+            fallback=True,
         )
 
 
@@ -158,6 +166,7 @@ def run_effects(task: Task, *, client: Any = None, target_id: str = "timeline-1"
         return SubagentOutput(
             items=[_beat_marker(task, "Effect")],
             notes=f"beat marker (generate_effect failed: {error})",
+            fallback=True,
         )
 
 
@@ -185,6 +194,7 @@ def run_color(task: Task, *, target_id: str = "timeline-1") -> SubagentOutput:
         return SubagentOutput(
             items=[_beat_marker(task, "Grade")],
             notes=f"beat marker (grade piece failed: {error})",
+            fallback=True,
         )
 
 
@@ -199,6 +209,7 @@ def run_graphics(task: Task, *, target_id: str = "timeline-1") -> SubagentOutput
         return SubagentOutput(
             items=[_beat_marker(task, "Graphic")],
             notes=f"beat marker (graphics piece failed: {error})",
+            fallback=True,
         )
 
 

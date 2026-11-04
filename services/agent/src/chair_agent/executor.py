@@ -314,8 +314,9 @@ def _place_sfx(
     """Place one SFX file so its transient lands on the moment.
 
     Pre-hit kinds (risers) end on the moment: start = moment - duration.
-    Hit kinds (tape stops) start on it. Missing files and negative starts
-    skip with a plain reason.
+    Hit kinds (tape stops) start on it. A riser longer than the time
+    before the cut trims its head (the peak still lands on the cut).
+    Missing files and negative starts skip with a plain reason.
     """
     entry = sfx.get(kind)
     if entry is None:
@@ -323,16 +324,25 @@ def _place_sfx(
             intent=intent,
             reason=f"no {kind} sound available: add one to the sound library",
         )]
-    duration = entry.duration_seconds
-    start = moment - duration if pre_hit else moment
+    full = entry.duration_seconds
+    start = moment - full if pre_hit else moment
+    duration = full
+    source_start = 0.0
     if pre_hit and start < 0:
         if moment <= 0:
             return [], [SkippedIntent(
                 intent=intent,
-                reason=f"the {kind} is {duration:.1f}s but the cut is at {moment:.2f}s",
+                reason=f"the {kind} is {full:.1f}s but the cut is at {moment:.2f}s",
             )]
+        # Trim the head, keep the peak: the placed tail still ends on the cut.
+        source_start = full - moment
         duration = moment
         start = 0.0
+    if round(duration * rate) <= 0:
+        return [], [SkippedIntent(
+            intent=intent,
+            reason=f"the cut at {moment:.2f}s leaves no room for the {kind}",
+        )]
     clip_id = f"sfx-{kind}-1"
     return [sfx_clip_op(
         f"sfx-{kind}-1", track_id, clip_id,
@@ -346,4 +356,5 @@ def _place_sfx(
         kind=kind,
         source=entry.source,
         license=entry.license,
+        source_start_seconds=round(source_start, 3),
     )], []

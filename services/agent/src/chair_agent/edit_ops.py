@@ -58,6 +58,7 @@ class ChangesetItem(BaseModel):
     op: SchemaOp
     target_id: str | None = Field(default=None, alias="targetId")
     beat_id: str | None = Field(default=None, alias="beatId")
+    spec_ref: str | None = Field(default=None, alias="specRef")
     rationale: str = Field(min_length=1)
     patch: dict[str, Any] | None = None
     fallback: ChangesetFallback | None = None
@@ -129,9 +130,11 @@ def _item(
     patch: dict[str, Any],
     target_id: str | None = None,
     beat_id: str | None = None,
+    spec_ref: str | None = None,
 ) -> ChangesetItem:
     return ChangesetItem(
-        id=id, op=op, targetId=target_id, beatId=beat_id, rationale=rationale, patch=patch
+        id=id, op=op, targetId=target_id, beatId=beat_id, specRef=spec_ref,
+        rationale=rationale, patch=patch,
     )
 
 
@@ -278,17 +281,22 @@ def sfx_clip_op(
     source: str = "synth",
     license: str = "generated",
     beat_id: str | None = None,
+    source_start_seconds: float = 0.0,
 ) -> ChangesetItem:
     """Place one SFX file on the SFX track as a full clip snapshot.
 
     The snapshot carries sourceRange/timelineRange so the desktop applier
     can place it without guessing; kind/gain ride alongside for the
     adapter. Risers end exactly on the cut: pass start = cut - duration.
+    A riser trimmed at the head keeps its peak: pass source_start_seconds
+    so the source range starts inside the file.
     """
     if not media_ref.strip():
         raise ValueError("sfx clip needs a media_ref file path")
     if start_seconds < 0 or duration_seconds <= 0 or rate <= 0:
         raise ValueError("sfx clip needs start_seconds >= 0, duration > 0, rate > 0")
+    if source_start_seconds < 0:
+        raise ValueError("sfx clip needs source_start_seconds >= 0")
     if gain_db > 0:
         raise ValueError("sfx gain stays at or below 0 dB")
     return _item(
@@ -299,7 +307,7 @@ def sfx_clip_op(
                 "name": name,
                 "mediaRef": media_ref.strip(),
                 "sourceRange": {
-                    "start": {"value": 0, "rate": rate},
+                    "start": {"value": round(source_start_seconds * rate), "rate": rate},
                     "duration": {"value": round(duration_seconds * rate), "rate": rate},
                 },
                 "timelineRange": {
