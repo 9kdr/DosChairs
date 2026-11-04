@@ -904,7 +904,7 @@ export function AssetShelf({ className, projectId, frozen = false, transitionLoc
       ref={shelfRef}
       data-transition-lock={transitionLock ? "true" : undefined}
       className={cn(
-        "flex min-h-0 min-w-0 flex-col gap-3 overflow-hidden rounded-card bg-card p-5 text-neutral-100",
+        "flex h-full min-h-0 min-w-0 flex-col gap-3 overflow-hidden rounded-card bg-card p-5 text-neutral-100",
         className,
       )}
     >
