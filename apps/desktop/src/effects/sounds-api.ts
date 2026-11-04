@@ -1,6 +1,6 @@
 /**
  * The sound path to Resolve: POST /sounds/apply writes a finished task's
- * sound items onto a NEW timeline copy, POST /sounds/revert makes the
+ * sound items onto a NEW timeline copy, POST /sounds/undo makes the
  * original current again. The agent owns both routes; until they exist a
  * 404 reads as "not on this agent yet", never as a failure of the task.
  */
@@ -35,7 +35,7 @@ export type SoundRevertInput = {
   originalTimeline: string;
 };
 
-export type SoundReverted = { timeline: string; project: string };
+export type SoundReverted = { timeline: string; deleted: boolean };
 
 type Options = { signal?: AbortSignal; agentUrl?: string; fetchFn?: FetchFn };
 
@@ -137,18 +137,21 @@ export async function revertSound(
   options: Options = {},
 ): Promise<SoundReverted> {
   const payload = await post(
-    "/sounds/revert",
+    "/sounds/undo",
     {
       ...(input.project ? { project: input.project } : {}),
-      ...(input.timeline ? { timeline: input.timeline } : {}),
-      originalTimeline: input.originalTimeline,
+      ...(input.timeline ? { timeline_name: input.timeline } : {}),
+      original_timeline: input.originalTimeline,
     },
     options,
   );
-  if (!isRecord(payload)) throw malformed("revert needs an object");
+  if (!isRecord(payload)) throw malformed("undo needs an object");
   return {
-    timeline: typeof payload.timeline === "string" ? payload.timeline : input.originalTimeline,
-    project: typeof payload.project === "string" ? payload.project : (input.project ?? ""),
+    timeline:
+      typeof payload.current_timeline === "string"
+        ? payload.current_timeline
+        : input.originalTimeline,
+    deleted: payload.deleted === true,
   };
 }
 

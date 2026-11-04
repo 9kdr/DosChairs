@@ -848,8 +848,8 @@ describe("finished sound writes", () => {
     const calls: string[] = [];
     const fetchFn: FetchFn = async (url, init) => {
       calls.push(`${url} ${String(init?.body)}`);
-      if (url.endsWith("/sounds/revert")) {
-        return { ok: true, status: 200, json: async () => ({ timeline: "Demo Cut", project: "" }) };
+      if (url.endsWith("/sounds/undo")) {
+        return { ok: true, status: 200, json: async () => ({ current_timeline: "Demo Cut", deleted: false }) };
       }
       return { ok: true, status: 200, json: async () => appliedBody };
     };
@@ -859,14 +859,14 @@ describe("finished sound writes", () => {
       state: "undone",
       line: "Back on Demo Cut — copy kept",
     });
-    expect(calls[1]).toContain("/sounds/revert");
-    expect(calls[1]).toContain('"originalTimeline":"Demo Cut"');
+    expect(calls[1]).toContain("/sounds/undo");
+    expect(calls[1]).toContain('"original_timeline":"Demo Cut"');
     expect(await redoLandedWrite(task.id, { fetchFn })).toBe(true);
     expect(landedFor(task.id)).toMatchObject({ state: "landed" });
     expect(calls[2]).toContain("/sounds/apply");
   });
 
-  it("keeps Undo available when the revert fails", async () => {
+  it("keeps Undo available when the undo fails", async () => {
     await applyFinishedSound(
       { requestId: "req_sound1", task, job: soundJob() },
       { fetchFn: reply(200, appliedBody) },
