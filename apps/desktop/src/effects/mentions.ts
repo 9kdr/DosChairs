@@ -1,7 +1,7 @@
 /**
- * The `@` in the Effect Maker brief: find the mention under the caret, and
- * swap it for a compact tag once the editor picks a piece. Pure text work,
- * so the menu logic can be tested without a DOM.
+ * The `@` in any input bar: find the mention under the caret so the
+ * picker can offer footage, assets, pieces and plan references. Pure
+ * text work, so the menu logic can be tested without a DOM.
  */
 
 export type Mention = {
@@ -22,14 +22,30 @@ export function findMention(text: string, caret: number): Mention | null {
   return { start: before.length - query.length - 1, end: before.length, query };
 }
 
-/** `Camera Shake` becomes `@CameraShake`: one word the model reads as a name. */
-export function mentionTag(label: string): string {
-  return `@${label.replace(/[^\p{L}\p{N}_-]+/gu, "")}`;
-}
+/** The bar's editor pieces, structurally: text runs and one-slot chips. */
+export type MentionPiece = { type: "text"; value: string } | { type: "ref" };
 
-/** Replace the typed `@query` with the tag and a trailing space; returns the new caret. */
-export function insertMention(text: string, mention: Mention, label: string): { text: string; caret: number } {
-  const tag = `${mentionTag(label)} `;
-  const after = text.slice(mention.end).replace(/^ /, "");
-  return { text: text.slice(0, mention.start) + tag + after, caret: mention.start + tag.length };
+/** One slot per chip: U+FFFC OBJECT REPLACEMENT CHARACTER. */
+const CHIP_SLOT = "\uFFFC";
+
+/**
+ * The text before the caret as the mention finder reads it: text runs
+ * verbatim, each chip as one placeholder slot. Offsets line up with the
+ * editor's caret, so a mention's start/end can replace that range with
+ * the picked chip.
+ */
+export function textBeforeCaret(pieces: readonly MentionPiece[], caret: number): string {
+  let left = Math.max(0, caret);
+  let out = "";
+  for (const piece of pieces) {
+    if (left <= 0) break;
+    if (piece.type === "ref") {
+      out += CHIP_SLOT;
+      left -= 1;
+    } else {
+      out += piece.value.slice(0, left);
+      left -= piece.value.length;
+    }
+  }
+  return out;
 }

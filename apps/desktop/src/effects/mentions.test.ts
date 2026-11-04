@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { findMention, insertMention, mentionTag } from "./mentions";
+import { findMention, textBeforeCaret } from "./mentions";
 
 describe("findMention", () => {
   it("finds a bare @ and what follows it", () => {
@@ -19,23 +19,26 @@ describe("findMention", () => {
   });
 });
 
-describe("insertMention", () => {
-  it("swaps the typed query for a tag and puts the caret after it", () => {
-    const mention = findMention("make @low spring", 9)!;
-    const next = insertMention("make @low spring", mention, "My Lower Third");
-    expect(next.text).toBe("make @MyLowerThird spring");
-    expect(next.caret).toBe("make @MyLowerThird ".length);
+describe("textBeforeCaret", () => {
+  it("reads text runs verbatim up to the caret", () => {
+    const pieces = [
+      { type: "text", value: "make @glo" },
+      { type: "text", value: "w more" },
+    ] as const;
+    expect(textBeforeCaret([...pieces], 9)).toBe("make @glo");
+    expect(textBeforeCaret([...pieces], 3)).toBe("mak");
   });
 
-  it("does not double the space when one follows", () => {
-    const next = insertMention("@ x", { start: 0, end: 1, query: "" }, "Glow Pulse");
-    expect(next.text).toBe("@GlowPulse x");
+  it("counts each chip as one slot so mention offsets line up", () => {
+    const pieces = [{ type: "text", value: "use " }, { type: "ref" }, { type: "text", value: " @a" }] as const;
+    const before = textBeforeCaret([...pieces], 8);
+    expect(before.length).toBe(8);
+    expect(findMention(before, before.length)).toEqual({ start: 6, end: 8, query: "a" });
   });
-});
 
-describe("mentionTag", () => {
-  it("drops spaces and punctuation but keeps letters and digits", () => {
-    expect(mentionTag("Soft Wipe (v2)")).toBe("@SoftWipev2");
-    expect(mentionTag("Lower-third")).toBe("@Lower-third");
+  it("stops at the caret even mid-chip-run", () => {
+    const pieces = [{ type: "text", value: "@" }, { type: "ref" }, { type: "text", value: "x" }] as const;
+    expect(textBeforeCaret([...pieces], 1)).toBe("@");
+    expect(textBeforeCaret([...pieces], 0)).toBe("");
   });
 });
