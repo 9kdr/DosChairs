@@ -228,18 +228,9 @@ class Handler(BaseHTTPRequestHandler):
             self._module_post(*module_route)
             return
         effects_path = urlsplit(self.path).path
-        if effects_path == "/effects/rig/generate":
-            try:
-                body = self._body()
-            except ValueError:
-                self._send(400, _error("invalid_json", "request body must be JSON"))
-                return
-            try:
-                self._send(200, _rig_generate_body(body))
-            except Exception as error:
-                self._send(_rig_status(error), _error("invalid_rig", str(error)))
-            return
-        if effects_path == "/effects/rig/apply":
+        # The generic apply-piece route. /effects/rig/apply is the historical
+        # name the desktop calls; /effects/apply is the same handler.
+        if effects_path in ("/effects/rig/apply", "/effects/apply"):
             try:
                 body = self._body()
             except ValueError:
@@ -252,7 +243,7 @@ class Handler(BaseHTTPRequestHandler):
             except _ResolveFailed as error:
                 self._send(502, _error("resolve_failed", str(error)))
             except Exception as error:
-                self._send(_rig_status(error), _error("invalid_rig", str(error)))
+                self._send(400, _error("invalid_rig", str(error)))
             return
         if effects_path == "/effects/rig/revert":
             try:
@@ -267,7 +258,7 @@ class Handler(BaseHTTPRequestHandler):
             except _ResolveFailed as error:
                 self._send(502, _error("resolve_failed", str(error)))
             except Exception as error:
-                self._send(_rig_status(error), _error("invalid_rig", str(error)))
+                self._send(400, _error("invalid_rig", str(error)))
             return
         if effects_path == "/effects/generate":
             try:
@@ -532,7 +523,7 @@ def _pipeline() -> dict[str, Any]:
 
 
 def _health() -> dict[str, Any]:
-    from chair_agent import cuts, effects, modules, rig, sounds
+    from chair_agent import cuts, effects, modules, sounds
     from chair_agent.client import auth_status_snapshot
     from chair_agent.pieces import macros
 
@@ -551,7 +542,6 @@ def _health() -> dict[str, Any]:
         "sounds": sounds.status_snapshot(),
         "cuts": cuts.status_snapshot(),
         "effects": effects.status_snapshot(),
-        "rig": rig.status_snapshot(),
         "macros": macros.status_snapshot(),
         "modules": modules.status_snapshot() | {"model": modules.module_model()},
         "pipeline": _pipeline(),
@@ -674,37 +664,6 @@ class _ResolveUnavailable(Exception):
 
 class _ResolveFailed(Exception):
     pass
-
-
-def _rig_status(error: Exception) -> int:
-    from chair_agent import rig
-    from chair_agent.rig import InvalidRig
-
-    if isinstance(error, InvalidRig):
-        return rig.error_status(error)
-    return 400
-
-
-def _rig_generate_body(body: dict[str, Any]) -> dict[str, Any]:
-    from chair_agent import rig
-
-    canvas = body.get("canvas", {})
-    if not isinstance(canvas, dict):
-        raise ValueError("generate needs a 'canvas' object with width and height")
-    try:
-        width = int(canvas.get("width", 0))
-        height = int(canvas.get("height", 0))
-        fps = float(body.get("fps", 0))
-        duration_sec = float(body.get("durationSec", 0))
-    except (TypeError, ValueError) as error:
-        raise ValueError(f"bad generate body: {error}") from error
-    return rig.generate_rig(
-        str(body.get("brief", "")),
-        width=width,
-        height=height,
-        fps=fps,
-        duration_sec=duration_sec,
-    )
 
 
 def _resolve_project(project_name: Any) -> Any:
@@ -832,7 +791,6 @@ def _rig_apply_body(body: dict[str, Any]) -> dict[str, Any]:
     add_effect always lands on a NEW comp version: the current one stays
     untouched, and prev_comp_name in the answer is the undo back.
     """
-    from chair_agent import rig  # noqa: F401  (keeps the route's errors typed)
     from chair_agent.effects import InvalidEffect, get_effect
 
     spec = body.get("spec")

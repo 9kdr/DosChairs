@@ -258,9 +258,13 @@ export function renderFrame(
           }
         }
         if (!entry) continue;
+        // The rig bakes squash on text/image carriers as scale/scaley
+        // multipliers (the pair the Resolve Transform reads); Y falls back
+        // to the uniform scale, mirroring the adapter (#294).
         const corners = quadCorners(
           num(r["x"], spec.width / 2), num(r["y"], spec.height / 2),
-          w, h, num(r["rotation"], 0),
+          w * num(r["scale"], 1), h * num(r["scaley"], num(r["scale"], 1)),
+          num(r["rotation"], 0),
         );
         uploadQuad(gl, c, c.tex, "aPos", corners, spec.width, spec.height);
         gl.activeTexture(gl.TEXTURE0);

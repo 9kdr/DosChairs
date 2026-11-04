@@ -8,6 +8,7 @@ export * from "./easing.js";
 export * from "./noise.js";
 export * from "./dither.js";
 export * from "./physics.js";
+export * from "./rig.js";
 export { ShaderPass, boundUniforms } from "./shader.js";
 export type { ShaderPassProps, UniformInput } from "./shader.js";
 export * from "./color.js";
