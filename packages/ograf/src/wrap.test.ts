@@ -135,6 +135,9 @@ describe("ograf wrapper", () => {
     expect(bundle.js).toContain("goToTime");
     expect(bundle.js).toContain("flushSync");
     expect(bundle.js).toContain("Hello");
+    // A seek-only host still gets a frame: first goToTime renders even when
+    // no playAction, stopAction, or schedule ever arrived.
+    expect(bundle.js).toContain("_primed");
     const schema = bundle.manifest["schema"] as { properties: Record<string, unknown> };
     expect(schema.properties["name"]).toMatchObject({ type: "string", default: "world" });
     expect(ebuValidator()(bundle.manifest)).toBe(true);

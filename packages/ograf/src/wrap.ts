@@ -92,6 +92,7 @@ class __WRAP_CLASS__ extends HTMLElement {
     this._root = null;
     this._schedule = [];
     this._currentStep = 0;
+    this._primed = false;
     const shadow = this.attachShadow({ mode: 'open' });
     this._mount = document.createElement('div');
     this._mount.style.cssText = 'position:absolute;inset:0;';
@@ -118,10 +119,20 @@ class __WRAP_CLASS__ extends HTMLElement {
     for (const k of Object.keys(data)) this._props[k] = data[k];
     this._schedule = [];
     this._currentStep = 0;
+    this._primed = false;
     this._t = 0;
     this._frame = 0;
     this._render();
     return { statusCode: 200 };
+  }
+
+  _hide() {
+    if (this._root) {
+      const self = this;
+      flushSync(() => {
+        self._root.render(null);
+      });
+    }
   }
 
   async dispose() {
@@ -134,6 +145,7 @@ class __WRAP_CLASS__ extends HTMLElement {
 
   async playAction(params) {
     const p = params || {};
+    this._primed = true;
     if (p.goto !== undefined && p.goto !== null) {
       this._currentStep = Number(p.goto) || 0;
     } else {
@@ -149,12 +161,8 @@ class __WRAP_CLASS__ extends HTMLElement {
 
   async stopAction(params) {
     this._currentStep = 0;
-    if (this._root) {
-      const self = this;
-      flushSync(() => {
-        self._root.render(null);
-      });
-    }
+    this._primed = true;
+    this._hide();
     return { statusCode: 200 };
   }
 
@@ -194,15 +202,18 @@ class __WRAP_CLASS__ extends HTMLElement {
     else if (lastPlay !== null) seconds = (timestamp - lastPlay) / 1000;
     else seconds = timestamp / 1000;
     const dur = __WRAP_DURATION__;
-    if (this._currentStep === 0 || seconds < 0 || seconds > dur) {
-      if (this._root) {
-        const self = this;
-        flushSync(() => {
-          self._root.render(null);
-        });
-      }
+    if (seconds < 0 || seconds > dur) {
+      this._hide();
       return { statusCode: 200 };
     }
+    if (this._currentStep === 0 && this._primed) {
+      this._hide();
+      return { statusCode: 200 };
+    }
+    // No play, stop, or schedule ever arrived: a seek-only host still gets
+    // the frame. Hosts that follow the lifecycle (Resolve calls playAction
+    // on load) never take this path, so contracted behavior is unchanged.
+    this._currentStep = 1;
     this._t = seconds;
     this._frame = Math.round(seconds * FPS);
     this._render();
@@ -211,6 +222,7 @@ class __WRAP_CLASS__ extends HTMLElement {
 
   async setActionsSchedule(payload) {
     this._schedule = (payload && payload.schedule) || [];
+    if (this._schedule.length > 0) this._primed = true;
     return { statusCode: 200 };
   }
 }
