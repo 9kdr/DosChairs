@@ -1,5 +1,6 @@
 import json
 import re
+import runpy
 from pathlib import Path
 
 from chair_resolve.fusion import (
@@ -12,6 +13,9 @@ from chair_resolve.fusion import (
 )
 from chair_resolve.manifest import MANIFEST
 from chair_resolve.write import add_effect, load_effect_spec, remove_effect
+
+_FAKES = runpy.run_path(str(Path(__file__).with_name("fake_fusion.py")))
+FakeItem = _FAKES["FakeItem"]
 
 FIXTURE = Path(__file__).parents[3] / "fixtures" / "effects" / "bounce-title.effect.json"
 
@@ -167,11 +171,11 @@ def test_add_effect_round_trips_non_ascii_text(tmp_path: Path) -> None:
     spec = _spec()
     title = next(layer for layer in spec["layers"] if layer["id"] == "title")
     title["params"]["string"] = " Jos — Chérie "
-    item = _FakeFusionItem()
+    item = FakeItem()
     op = add_effect(item, spec, cache_dir=tmp_path)
-    assert len(item.imported) == 1
-    text = Path(item.imported[0]).read_text(encoding="utf-8")
-    assert "Jos — Chérie" in text
+    assert item.imported == []
+    text_tool = item.comps[op["comp_name"]].FindTool("Text_title")
+    assert text_tool.values["StyledText"] == " Jos — Chérie "
     assert op["comp_name"] == "Comp 2"
 
 
@@ -180,36 +184,55 @@ def test_manifest_declares_fusion_macro_fallback() -> None:
     assert MANIFEST.fallbacks["fusionMacros"] != ""
 
 
-class _FakeFusionItem:
-    def __init__(self) -> None:
-        self.names = ["Comp 1"]
-        self.imported: list[str] = []
-        self.loaded: list[str] = []
-
-    def GetFusionCompNameList(self) -> list[str]:
-        return list(self.names)
-
-    def ImportFusionComp(self, path: str):
-        self.imported.append(path)
-        self.names.append(f"Comp {len(self.names) + 1}")
-        return object()
-
-    def LoadFusionCompByName(self, name: str) -> bool:
-        self.loaded.append(name)
-        return True
+def test_manifest_declares_api_builds() -> None:
+    assert MANIFEST.capabilities.fusion_build_api is True
+    assert MANIFEST.fallbacks["fusionBuild"] != ""
 
 
-def test_add_effect_imports_new_comp_and_undo_switches_back(tmp_path: Path) -> None:
-    item = _FakeFusionItem()
+def test_add_effect_builds_new_comp_and_undo_switches_back(tmp_path: Path) -> None:
+    item = FakeItem()
     op = add_effect(item, _spec(), cache_dir=tmp_path)
-    assert len(item.imported) == 1
-    assert item.imported[0].startswith(str(tmp_path))
-    assert "chair_" in item.imported[0] and item.imported[0].endswith(".comp")
-    assert "/media/" not in item.imported[0]  # never next to source media
+    assert item.imported == []  # build-by-API writes no .comp file
+    assert list(tmp_path.iterdir()) == []
+    assert op["built_by"] == "api"
+    assert op["comp_path"] is None
     assert op["comp_name"] == "Comp 2"
     assert op["prev_comp_name"] == "Comp 1"
     assert remove_effect(item, op) is True
     assert item.loaded == ["Comp 1"]
+
+
+def test_add_effect_import_fast_path_when_ingested(tmp_path: Path) -> None:
+    """Opt-in fast path: a working import keeps the old file behavior."""
+    spec = _spec()
+    title = next(layer for layer in spec["layers"] if layer["id"] == "title")
+    title["params"]["string"] = " Jos — Chérie "
+    item = FakeItem(ingest_broken=False)
+    op = add_effect(item, spec, cache_dir=tmp_path, use_import=True)
+    assert len(item.imported) == 1
+    assert item.imported[0].startswith(str(tmp_path))
+    assert "chair_" in item.imported[0] and item.imported[0].endswith(".comp")
+    assert "/media/" not in item.imported[0]  # never next to source media
+    text = Path(item.imported[0]).read_text(encoding="utf-8")
+    assert "Jos — Chérie" in text
+    assert text.count("{") == text.count("}")
+    assert op["built_by"] == "import"
+    assert op["comp_path"] == item.imported[0]
+    assert op["comp_name"] == "Comp 2"
+
+
+def test_add_effect_falls_back_to_build_when_import_ingests_nothing(
+    tmp_path: Path,
+) -> None:
+    """Studio 21.1 live behavior: the import lands nothing, the API builds."""
+    item = FakeItem(ingest_broken=True)
+    op = add_effect(item, _spec(), cache_dir=tmp_path, use_import=True)
+    assert len(item.imported) == 1  # the fast path was attempted
+    assert item.deleted == ["Comp 2"]  # its dud version is dropped
+    assert op["built_by"] == "api"
+    assert op["comp_name"] == "Comp 2"
+    assert op["prev_comp_name"] == "Comp 1"
+    assert item.comps["Comp 2"].FindTool("Merge_title") is not None
 
 
 def _look_spec(look: str, params: dict | None = None) -> dict:
@@ -275,10 +298,12 @@ def test_baked_sequence_loads_through_loader(tmp_path: Path) -> None:
     assert f'Filename = "{frame}"' in rendered["text"]
     assert "Length = 1" in rendered["text"]
     assert rendered["paths"] == {"wash": "baked:Loader"}
-    item = _FakeFusionItem()
+    item = FakeItem()
     op = add_effect(item, spec, cache_dir=tmp_path, sequences=sequences)
     assert op["paths"] == {"wash": "baked:Loader"}
-    assert len(item.imported) == 1
+    assert item.imported == []
+    seq = item.comps[op["comp_name"]].FindTool("Seq_wash")
+    assert seq.values["Clip"] == str(frame)
 
 
 def test_macro_falls_back_for_footage_processing_look() -> None:
@@ -288,13 +313,14 @@ def test_macro_falls_back_for_footage_processing_look() -> None:
     assert "GWash_look = Background" in rendered["text"]
 
 
-def test_add_effect_falls_back_without_importing(tmp_path: Path) -> None:
+def test_add_effect_falls_back_without_building(tmp_path: Path) -> None:
     spec = _spec()
     spec["layers"].append({"id": "evil", "type": "shader"})
-    item = _FakeFusionItem()
+    item = FakeItem()
     op = add_effect(item, spec, cache_dir=tmp_path)
     assert op["fallback"]["capability"] == "fusionMacro"
     assert item.imported == []
+    assert item.names == ["Comp 1"]  # no version was created
     assert remove_effect(item, op) is True  # nothing to undo
 
 
@@ -345,7 +371,7 @@ def _write_timeline_with_spec(tmp_path: Path, effects: list[dict]):
 
     timeline = _spec_timeline(effects)
     plan = plan_from_timeline(timeline)
-    item = _FakeFusionItem()
+    item = FakeItem()
 
     class _FakeTimeline:
         def SetSettings(self, settings: dict) -> bool:
@@ -384,7 +410,7 @@ def _write_timeline_with_spec(tmp_path: Path, effects: list[dict]):
     return plan, summary, item
 
 
-def test_spec_effect_plans_and_imports(tmp_path: Path) -> None:
+def test_spec_effect_plans_and_builds(tmp_path: Path) -> None:
     plan, summary, item = _write_timeline_with_spec(
         tmp_path,
         [{"id": "fx-title", "presetName": "Bounce", "params": {"spec": _spec()}}],
@@ -400,7 +426,8 @@ def test_spec_effect_plans_and_imports(tmp_path: Path) -> None:
     ]
     assert summary["fusion"] == 1
     assert summary["skipped"] == 0
-    assert len(item.imported) == 1
+    assert item.imported == []
+    assert len(item.built) == 1
 
 
 def test_shader_spec_skips_with_rendered_clip_fallback(tmp_path: Path) -> None:
@@ -412,7 +439,7 @@ def test_shader_spec_skips_with_rendered_clip_fallback(tmp_path: Path) -> None:
         [{"id": "fx-shader", "presetName": "Shader", "params": {"spec": spec}}]
     )
     plan = plan_from_timeline(timeline)
-    item = _FakeFusionItem()
+    item = FakeItem()
     assert _import_planned_fusion(plan, MANIFEST, item, plan["fusion"][0], tmp_path) is False
     assert item.imported == []
     assert plan["skipped"][0]["id"] == "fx-shader"

@@ -16,7 +16,8 @@ import json
 from pathlib import Path
 from typing import Any
 
-from chair_resolve.fusion import chair_cache_dir, spec_to_comp
+from chair_resolve.fusion import chair_cache_dir, spec_to_comp, spec_to_plan
+from chair_resolve.fusion_build import build_comp, comp_names, current_comp_name, tool_count
 from chair_resolve.manifest import MANIFEST, Manifest
 from chair_resolve.ograf import install_ograf, place_ograf_title
 from chair_resolve.read import FRAME_RATES, TRACK_PREFIX, ResolveClosedError, resolve_app
@@ -290,14 +291,12 @@ def _resolve_effect_spec(entry: dict[str, Any]) -> dict[str, Any]:
     return load_effect_spec(entry)
 
 
-def _current_comp_name(item: Any, names: list[str]) -> str | None:
-    current_fn = getattr(item, "GetCurrentFusionComp", None)
-    current = current_fn() if callable(current_fn) else None
-    if current is not None:
-        attrs = getattr(current, "GetAttrs", lambda: {})()
-        if isinstance(attrs, dict) and attrs.get("COMPS_Name"):
-            return str(attrs["COMPS_Name"])
-    return names[-1] if names else None
+def _ingested(comp: Any) -> bool:
+    """True when an ImportFusionComp actually landed nodes on the comp."""
+    try:
+        return tool_count(comp) > 2  # a bare new comp holds MediaIn + MediaOut
+    except Exception:
+        return False
 
 
 def add_effect(
@@ -308,42 +307,68 @@ def add_effect(
     baked: dict[str, dict[str, list[dict[str, Any]]]] | None = None,
     media: dict[str, Any] | None = None,
     sequences: dict[str, Any] | None = None,
+    use_import: bool = False,
 ) -> dict[str, Any]:
-    """Import an effect spec onto a timeline item as a NEW Fusion comp version.
+    """Apply an effect spec onto a timeline item as a NEW Fusion comp version.
 
-    The comp text goes to Chair's cache folder, never next to source media.
-    ImportFusionComp leaves the previous comp version untouched, so the
-    returned op record carries the previous comp name: pass it to
+    Build-by-API is the default: the node graph goes up tool-by-tool on a
+    fresh comp version, because ImportFusionComp ingests nothing on
+    Studio 21.1 (see #266). The previous comp version stays untouched, so
+    the returned op record carries the previous comp name: pass it to
     remove_effect to switch back (the undo the history needs).
-    A spec the macro node set cannot express is NOT faked: the return is
-    {"effect_id", "fallback": {...}} and nothing is imported.
+    use_import=True tries the .comp file fast path first (written to
+    Chair's cache folder, never next to source media) and falls back to
+    the API build when the import ingests nothing.
+    A spec the node set cannot express is NOT faked: the return is
+    {"effect_id", "fallback": {...}} and nothing is built.
     sequences maps a shader layer id -> {"files": [png, ...]} for baked
     web-render layers, loaded through a Loader node.
     """
-    rendered = spec_to_comp(spec, baked=baked, media=media, sequences=sequences)
-    if "fallback" in rendered:
-        return {"effect_id": spec.get("id"), "fallback": rendered["fallback"]}
-    target = cache_dir if cache_dir is not None else chair_cache_dir()
-    target = Path(target)
-    target.mkdir(parents=True, exist_ok=True)
-    comp_path = target / f"chair_{spec.get('id', 'effect')}.comp"
-    comp_path.write_text(rendered["text"], encoding="utf-8")
-    before = list(getattr(item, "GetFusionCompNameList", lambda: [])() or [])
-    prev = _current_comp_name(item, before)
-    imported = item.ImportFusionComp(str(comp_path))
-    if not imported:
-        raise RuntimeError(f"Studio did not import Fusion comp {comp_path}.")
-    after = list(getattr(item, "GetFusionCompNameList", lambda: [])() or [])
-    added = [name for name in after if name not in before]
-    comp_name = added[-1] if added else (after[-1] if after else None)
-    return {
-        "effect_id": spec.get("id"),
-        "comp_path": str(comp_path),
-        "comp_name": comp_name,
-        "prev_comp_name": prev,
-        "paths": rendered.get("paths", {}),
-        "undo": {"prev_comp_name": prev},
-    }
+    if use_import:
+        rendered = spec_to_comp(spec, baked=baked, media=media, sequences=sequences)
+        if "fallback" in rendered:
+            return {"effect_id": spec.get("id"), "fallback": rendered["fallback"]}
+        target = cache_dir if cache_dir is not None else chair_cache_dir()
+        target = Path(target)
+        target.mkdir(parents=True, exist_ok=True)
+        comp_path = target / f"chair_{spec.get('id', 'effect')}.comp"
+        comp_path.write_text(rendered["text"], encoding="utf-8")
+        before = comp_names(item)
+        prev = current_comp_name(item, before)
+        imported = item.ImportFusionComp(str(comp_path))
+        if imported is not None and _ingested(imported):
+            after = comp_names(item)
+            added = [name for name in after if name not in before]
+            comp_name = added[-1] if added else (after[-1] if after else None)
+            return {
+                "effect_id": spec.get("id"),
+                "comp_path": str(comp_path),
+                "comp_name": comp_name,
+                "prev_comp_name": prev,
+                "paths": rendered.get("paths", {}),
+                "undo": {"prev_comp_name": prev},
+                "built_by": "import",
+            }
+        # The import ingested nothing: drop the dud version it may have
+        # left behind, then fall through to the API build.
+        for dud in [name for name in comp_names(item) if name not in before]:
+            delete = getattr(item, "DeleteFusionCompByName", None)
+            if callable(delete):
+                try:
+                    delete(dud)
+                except Exception:
+                    pass
+    plan = spec_to_plan(spec, baked=baked, media=media, sequences=sequences)
+    if "fallback" in plan:
+        return {"effect_id": spec.get("id"), "fallback": plan["fallback"]}
+    try:
+        resolve = resolve_app()
+    except Exception:
+        resolve = None
+    op = build_comp(item, plan, resolve=resolve)
+    op["effect_id"] = spec.get("id")
+    op["comp_path"] = None
+    return op
 
 
 def _import_planned_fusion(

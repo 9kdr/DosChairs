@@ -6,7 +6,9 @@ from chair_resolve.fusion import (
     rig_frames_to_baked,
     spec_to_comp,
     spec_to_macro,
+    spec_to_plan,
 )
+from chair_resolve.fusion_build import build_comp, layout_plan
 from chair_resolve.manifest import MANIFEST
 from chair_resolve.read import (
     ResolveClosedError,
@@ -38,11 +40,13 @@ __all__ = [
     "ScanResult",
     "ResolveClosedError",
     "add_effect",
+    "build_comp",
     "chair_cache_dir",
     "check_spec",
     "fusion_roots",
     "import_media",
     "install_title_template",
+    "layout_plan",
     "load_effect_spec",
     "media_pool_files",
     "plan_from_timeline",
@@ -52,6 +56,7 @@ __all__ = [
     "scan_fusion",
     "spec_to_comp",
     "spec_to_macro",
+    "spec_to_plan",
     "timeline_from_resolve",
     "write_timeline",
 ]
