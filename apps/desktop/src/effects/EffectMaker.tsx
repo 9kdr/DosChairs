@@ -14,6 +14,7 @@ import {
 import { useEffect, useMemo, useRef, useState, type DragEvent, type KeyboardEvent } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { InfoHint } from "@/components/info-hint";
 import {
   Select,
   SelectItem,
@@ -70,6 +71,8 @@ type Round = {
   state: "running" | "pass" | "fail" | "error" | "info";
   title: string;
   notes: string;
+  /** Long explanation shown in a hover dot after the title, not inline. */
+  hint?: string;
 };
 
 const CANVAS = { width: 1920, height: 1080 };
@@ -232,7 +235,8 @@ export function EffectMaker({
       kind: "note",
       state: "info",
       title: "Sample piece loaded",
-      notes: why ?? "The bundled bouncing title, so the screen works without Muse Spark.",
+      notes: "",
+      hint: why,
     });
   };
 
@@ -262,10 +266,10 @@ export function EffectMaker({
         },
         { signal },
       );
-      patchRound(draft, { state: "pass", title: "Draft written", notes: made.notes || "Muse Spark wrote the piece." });
+      patchRound(draft, { state: "pass", title: "Draft written", notes: made.notes || "" });
       load(made.spec);
       for (let attempt = 1; attempt <= 2; attempt += 1) {
-        const check = addRound({ kind: "check", state: "running", title: `Vision check ${attempt}`, notes: "Comparing a preview frame with the brief." });
+        const check = addRound({ kind: "check", state: "running", title: `Vision check ${attempt}`, notes: "" });
         await wait(250);
         try {
           const frame = previewRef.current?.capture(made.spec.durationSec * 0.55);
@@ -474,7 +478,7 @@ export function EffectMaker({
   }, [controls, rig]);
 
   return (
-    <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 overflow-hidden xl:grid-cols-[minmax(15rem,18rem)_minmax(0,1fr)_minmax(15rem,18rem)]">
+    <div className="grid min-h-0 flex-none grid-cols-1 gap-3 overflow-hidden xl:flex-1 xl:grid-cols-[minmax(15rem,18rem)_minmax(0,1fr)_minmax(15rem,18rem)]">
       {/* Brief and Muse Spark's rounds */}
       <div className="flex min-h-0 flex-col gap-3 overflow-y-auto">
         <section aria-label="Brief" className={cn(CARD, "flex shrink-0 flex-col gap-3 p-4")}>
@@ -553,7 +557,7 @@ export function EffectMaker({
               />
             </div>
             <div className="flex gap-2">
-              <Button type="button" size="sm" className="flex-1" disabled={!prompt.trim() || busy} onClick={() => void generate()}>
+              <Button type="button" size="sm" variant="outline" className="flex-1" disabled={!prompt.trim() || busy} onClick={() => void generate()}>
                 {busy ? <Spinner /> : <WandSparklesIcon />}
                 {busy ? `Drafting… ${elapsed}s` : "Generate"}
               </Button>
@@ -562,35 +566,33 @@ export function EffectMaker({
                   Stop
                 </Button>
               ) : (
-                <Button type="button" size="sm" variant="outline" onClick={() => useSample()}>
+                <Button type="button" size="sm" variant="ghost" onClick={() => useSample()}>
                   Sample
                 </Button>
               )}
             </div>
           </div>
-        </section>
-
-        <section aria-label="Muse Spark activity" className={cn(CARD, "flex min-h-32 flex-1 flex-col gap-2 p-4")}>
+          <div aria-label="Muse Spark activity" className="flex flex-col gap-2 border-t border-white/[0.06] px-1 pt-3">
           <PanelTitle icon={SparklesIcon} title="Muse Spark">
             {busy ? <Badge variant="warning" size="sm">Working</Badge> : null}
           </PanelTitle>
-          {rounds.length === 0 ? (
-            <p className="px-1 text-xs leading-5 text-neutral-500">
-              Each draft and vision check lands here with its notes, so you see why the look changed.
-            </p>
-          ) : (
+          {rounds.length === 0 ? null : (
             <ol ref={roundList} className="flex min-h-0 flex-col gap-2.5 overflow-y-auto px-1" aria-live="polite">
               {rounds.map((round) => (
                 <li key={round.id} className="flex gap-2.5">
                   <span className="mt-0.5 shrink-0"><RoundIcon round={round} /></span>
                   <span className="min-w-0 text-xs leading-5">
-                    <span className="font-medium text-neutral-200">{round.title}</span>
+                    <span className="inline-flex items-center gap-1 font-medium text-neutral-200">
+                      {round.title}
+                      {round.hint ? <InfoHint>{round.hint}</InfoHint> : null}
+                    </span>
                     <span className="block whitespace-pre-line text-neutral-500">{round.notes}</span>
                   </span>
                 </li>
               ))}
             </ol>
           )}
+          </div>
         </section>
       </div>
 
@@ -627,9 +629,9 @@ export function EffectMaker({
           </Button>
         </div>
         {live ? (
-          <PreviewStage ref={previewRef} spec={live} controls={controls} className="min-h-0 flex-1" />
+          <PreviewStage ref={previewRef} spec={live} controls={controls} className="w-full flex-none xl:flex-1" />
         ) : (
-          <div className="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden rounded-[20px] bg-[#101010] ring-1 ring-white/10">
+          <div className="relative flex aspect-video min-h-56 w-full flex-none items-center justify-center overflow-hidden rounded-2xl border border-dashed border-white/12 xl:aspect-auto xl:flex-1">
             <div className="flex max-w-72 flex-col items-center gap-2 px-4 text-center">
               <span className="flex size-12 items-center justify-center rounded-2xl bg-white/[0.05] ring-1 ring-white/10">
                 {busy ? <Spinner className="size-5 text-amber-300" /> : <SparklesIcon className="size-5 text-neutral-300" aria-hidden="true" />}
@@ -637,11 +639,11 @@ export function EffectMaker({
               <p className="text-sm font-medium text-neutral-200">
                 {busy ? `Muse Spark is drafting… ${elapsed}s` : "Describe a look to start"}
               </p>
-              <p className="text-xs leading-5 text-neutral-500">
-                {busy
-                  ? "A real draft takes about 40 seconds. The preview starts the moment the spec lands."
-                  : "Pick a starting point or write your own. The preview plays here, live."}
-              </p>
+              {busy ? null : (
+                <p className="text-xs leading-5 text-neutral-500">
+                  Pick a starting point or write your own.
+                </p>
+              )}
             </div>
           </div>
         )}
@@ -652,29 +654,23 @@ export function EffectMaker({
               <Badge variant={info.fallback ? "warning" : "success"} size="sm" className="mt-0.5">
                 {info.label}
               </Badge>
-              <p className="min-w-0 flex-1 text-neutral-400">
-                <span className="text-neutral-300">{info.fallback ? "Fallback: " : "Why this target: "}</span>
-                {info.reason}
-              </p>
-              {live ? (
-                <span className="shrink-0 pt-0.5 tabular-nums text-neutral-600">
-                  {live.width}×{live.height} · {live.fps} fps
-                </span>
-              ) : null}
+              {info.fallback ? (
+                <p className="min-w-0 flex-1 text-neutral-400">
+                  <span className="text-neutral-300">Fallback: </span>
+                  {info.reason}
+                </p>
+              ) : (
+                <InfoHint>Why this target: {info.reason}</InfoHint>
+              )}
             </div>
-          ) : (
-            <p className="text-xs leading-5 text-neutral-500">
-              The export target and the reason for it show here once a piece exists.
-            </p>
-          )}
+          ) : null}
           <div aria-live="polite" className="flex flex-col gap-2">
             {applied ? (
               <p className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-xl bg-emerald-400/[0.07] px-3 py-2 text-xs text-emerald-200/90 ring-1 ring-emerald-400/20 ring-inset">
                 <CheckCircle2Icon className="size-3.5 shrink-0" aria-hidden="true" />
                 <span className="min-w-0 flex-1">
                   {applied.updated ? "Updated in Resolve" : `Added to ${applied.clip}`}
-                  {applied.comp ? ` as ${applied.comp}` : " as a new comp version"}
-                  {applied.updated ? "." : " — in History, undoable."}
+                  {applied.comp ? ` as ${applied.comp}` : " as a new comp version"}.
                 </span>
                 <Button type="button" size="xs" variant="ghost" onClick={() => void undoApplied()}>
                   <Undo2Icon />

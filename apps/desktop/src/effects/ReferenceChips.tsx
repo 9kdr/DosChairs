@@ -63,12 +63,9 @@ export function PieceTray({
 
   return (
     <div className="flex flex-col gap-1.5">
-      <p className="text-xs text-neutral-500">Pieces — drag one into the brief, or click to add it.</p>
       {pieces === null ? (
         <p className="text-xs text-neutral-600">Loading pieces…</p>
-      ) : pieces.length === 0 ? (
-        <p className="text-xs text-neutral-600">Pieces show up here once the agent is running.</p>
-      ) : (
+      ) : pieces.length === 0 ? null : (
         <ul className="flex flex-wrap gap-1.5" aria-label="Pieces to reference">
           {pieces.map((piece) => (
             <li key={piece.id}>

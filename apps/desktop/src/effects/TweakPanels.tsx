@@ -153,13 +153,11 @@ export function ControlsPanel({
             />
           ))}
         </div>
-      ) : (
+      ) : spec ? (
         <p className="px-1 text-xs leading-5 text-neutral-500">
-          {spec
-            ? "This piece publishes no controls."
-            : "Once a piece exists, what an editor would retitle or recolor shows up here."}
+          This piece publishes no controls.
         </p>
-      )}
+      ) : null}
     </section>
   );
 }
@@ -235,11 +233,7 @@ export function RigPanel({
             </Button>
           </div>
         </>
-      ) : (
-        <p className="px-1 text-xs leading-5 text-neutral-500">
-          {`Spring, swing, tilt and squash appear here when a piece has a rig. They re-simulate as you drag.`}
-        </p>
-      )}
+      ) : null}
     </section>
   );
 }

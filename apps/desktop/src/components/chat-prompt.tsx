@@ -8,8 +8,9 @@ import type {
 } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { Button } from "@/components/ui/button";
-import { Menu, MenuPopup, MenuRadioGroup, MenuRadioItem, MenuTrigger } from "@/components/ui/menu";
+import { Menu, MenuGroup, MenuGroupLabel, MenuPopup, MenuRadioGroup, MenuRadioItem, MenuTrigger } from "@/components/ui/menu";
 import { acceptsChairRef, readChairRefs, type ChairRef } from "@/lib/chair-ref";
+import { useServiceHealth } from "@/lib/services/useServices";
 import { cn } from "@/lib/utils";
 import { filterActions, type Action } from "@/orchestrator/actions";
 import { enabledModels, PROVIDERS, type ProviderId } from "@/settings/providers";
@@ -24,7 +25,8 @@ const ZWSP = "\u200B";
 
 /**
  * Orchestrator picker options: enabled models from saved keys of enabled providers.
- * Providers with no key or switched off add nothing.
+ * A key the agent reports live in its environment (`envKeys`, from /health)
+ * counts like a saved key. Providers with no key or switched off add nothing.
  * Invented presets are removed.
  */
 export function orchestratorOptions(
@@ -33,11 +35,14 @@ export function orchestratorOptions(
     enabled?: Record<ProviderId, boolean>;
     customModels?: Record<ProviderId, string[]>;
     disabledModels?: Record<ProviderId, string[]>;
+    /** Key presence per provider from the agent's /health, never the values. */
+    envKeys?: Record<string, boolean>;
   },
 ): string[] {
   return PROVIDERS.filter(
     (provider) =>
-      keys[provider.id] != null && opts?.enabled?.[provider.id] !== false,
+      (keys[provider.id] != null || opts?.envKeys?.[provider.id] === true) &&
+      opts?.enabled?.[provider.id] !== false,
   ).flatMap((provider) =>
     enabledModels({
       provider: provider.id,
@@ -47,12 +52,50 @@ export function orchestratorOptions(
   );
 }
 
-/** The stored pick when it is still offered, else the first available model, or null. */
+/**
+ * Short trigger label for a picker option: the human model name, no
+ * provider suffix. Unknown ids pass through unchanged.
+ */
+export function orchestratorLabel(option: string): string {
+  const id = option.replace(/ \([^()]*\)$/, "");
+  const family = /^muse-([a-z]+)/.exec(id)?.[1];
+  if (family == null) return id;
+  return `Muse ${family.charAt(0).toUpperCase()}${family.slice(1)}`;
+}
+
+export type OrchestratorGroup = { provider: string; items: string[] };
+
+/**
+ * Picker options grouped per provider for the open menu: each group renders
+ * under a coss Menu group label (e.g. "Meta") instead of repeating the
+ * parenthesized suffix on every row. Order follows the options.
+ */
+export function orchestratorGroups(options: readonly string[]): OrchestratorGroup[] {
+  const groups: OrchestratorGroup[] = [];
+  for (const option of options) {
+    const provider = / \(([^()]*)\)$/.exec(option)?.[1] ?? "Other";
+    const last = groups[groups.length - 1];
+    if (last != null && last.provider === provider) {
+      last.items.push(option);
+    } else {
+      groups.push({ provider, items: [option] });
+    }
+  }
+  return groups;
+}
+
+/** The stored pick when still offered, else the agent's planner model when offered, else the first available model, or null. */
 export function resolveOrchestrator(
   stored: string | null,
   options: readonly string[],
+  planner?: string | null,
 ): string | null {
   if (stored != null && options.includes(stored)) return stored;
+  const planned =
+    planner == null
+      ? undefined
+      : options.find((opt) => opt === planner || opt.startsWith(`${planner} (`));
+  if (planned != null && !planned.endsWith("(Anthropic)")) return planned;
   const firstSupported = options.find((opt) => !opt.endsWith("(Anthropic)"));
   return firstSupported ?? options[0] ?? null;
 }
@@ -219,7 +262,7 @@ const CHIP_TONE: Record<ChipTone, string> = {
   video: "bg-info/15 text-info-foreground ring-1 ring-info/40",
   image: "bg-warning/15 text-warning-foreground ring-1 ring-warning/40",
   audio: "bg-success/15 text-success-foreground ring-1 ring-success/40",
-  task: "bg-violet-400/15 text-violet-300 ring-1 ring-violet-300/40",
+  task: "bg-violet-400/15 text-violet-300 ring-1 ring-violet-300/40", // taste-skill-ignore: task-ref chip tone matches the colour-lane ink; neutral would merge it with piece chips.
   piece: "bg-white/10 text-neutral-100 ring-1 ring-white/15",
 };
 
@@ -361,6 +404,10 @@ function commandText(parts: readonly Piece[], key: string) {
   return rest.length > 0 ? `${key} ${rest}` : key;
 }
 
+/** The model pick reads as text with a chevron, not a button. Shared by the trigger and the key CTA. */
+const MODEL_TRIGGER_CLASS =
+  "max-w-44 gap-1 px-1.5 font-normal text-muted-foreground hover:bg-transparent hover:text-neutral-200";
+
 /**
  * Command bar for the open project. A click expands the bar. The project
  * view behind it stays where it is.
@@ -377,27 +424,33 @@ export function ChatPrompt({
 }: ChatPromptProps) {
   const [parts, setParts] = useState<Piece[]>(() => normalize([]));
   const [model, setModel] = useState<string | null>(null);
-  // Orchestrator pick: real models from saved keys of enabled providers.
-  // The choice persists in app settings.
+  // Orchestrator pick: real models from saved keys of enabled providers,
+  // plus keys the agent reports live in its environment. Same health read
+  // the shell header uses; the "Add a model key" chip shows only when no
+  // provider has a key anywhere.
   const { settings, loaded, saveOrchestrator } = useSettings();
+  const { agentHealth } = useServiceHealth();
   const options = useMemo(
     () =>
       orchestratorOptions(settings.keys, {
         enabled: settings.enabled,
         customModels: settings.customModels,
         disabledModels: settings.disabledModels,
+        envKeys: agentHealth?.keys_configured,
       }),
     [
       settings.keys,
       settings.enabled,
       settings.customModels,
       settings.disabledModels,
+      agentHealth?.keys_configured,
     ],
   );
+  const plannerModel = agentHealth?.models?.planner ?? null;
   useEffect(() => {
     if (!loaded) return;
-    setModel(resolveOrchestrator(settings.orchestrator, options));
-  }, [loaded, settings.orchestrator, options]);
+    setModel(resolveOrchestrator(settings.orchestrator, options, plannerModel));
+  }, [loaded, settings.orchestrator, options, plannerModel]);
   const pickModel = (value: string | null) => {
     if (value == null || !options.includes(value)) return;
     setModel(value);
@@ -439,6 +492,9 @@ export function ChatPrompt({
 
   const draft = serialize(parts);
   const plain = plainText(parts);
+  // Ready to send: something to send, and a model to send with. Drives
+  // both the real gate (`disabled`) and the muted-until-ready look.
+  const sendReady = (draft.trim().length > 0 || files.length > 0) && options.length > 0;
 
   // A picked suggestion fills the composer once, ready to send or edit.
   const filledSuggestion = useRef<number | null>(null);
@@ -966,8 +1022,7 @@ export function ChatPrompt({
       <div
         className={cn(
           "absolute inset-0 overflow-hidden",
-          "bg-card/95 shadow-rim backdrop-blur-md",
-          "supports-[backdrop-filter]:bg-card/88",
+          "bg-card shadow-rim",
           "focus-within:ring-1 focus-within:ring-white/15",
           dragOver && "bg-surface-raised! ring-2 ring-white/20",
         )}
@@ -1031,7 +1086,7 @@ export function ChatPrompt({
                   "block min-h-[22px] border-0 bg-transparent text-sm leading-[22px] text-neutral-200 outline-none",
                     open
                     ? "w-full min-w-0 px-4 pt-3 pr-5 pb-1 whitespace-pre-wrap break-words"
-                    : "min-w-0 flex-1 overflow-x-clip overflow-y-hidden py-3 pr-10 pl-4 whitespace-nowrap [mask-image:linear-gradient(to_right,black_calc(100%-2.5rem),transparent)]",
+                    : "min-w-0 flex-1 overflow-x-clip overflow-y-hidden py-3 pr-10 pl-4 whitespace-nowrap [mask-image:linear-gradient(to_right,black_calc(100%-2.5rem),transparent)]", // taste-skill-ignore: fade mask clips the closed-bar text, not a fill.
                 )}
                 onFocus={() => {
                   onOpen();
@@ -1092,8 +1147,9 @@ export function ChatPrompt({
                       <span ref={actionsRef} className="inline-flex">
                         <Button
                           type="button"
-                          size="sm"
+                          size="icon-sm"
                           variant="ghost"
+                          aria-label="Actions"
                           aria-haspopup="listbox"
                           aria-expanded={actionsOpen}
                           aria-controls={listId}
@@ -1105,7 +1161,6 @@ export function ChatPrompt({
                           }}
                         >
                           <Slash />
-                          Actions
                         </Button>
                       </span>
                     )}
@@ -1137,7 +1192,7 @@ export function ChatPrompt({
                         type="button"
                         size="sm"
                         variant="ghost"
-                        className="max-w-44"
+                        className={MODEL_TRIGGER_CLASS}
                         onClick={() => onOpenSettings?.()}
                       >
                         <KeyRound />
@@ -1157,12 +1212,12 @@ export function ChatPrompt({
                               type="button"
                               size="sm"
                               variant="ghost"
-                              className="max-w-44"
+                              className={MODEL_TRIGGER_CLASS}
                             />
                           }
                         >
                           <span className="truncate max-[480px]:hidden">
-                            {model ?? "Select model"}
+                            {model == null ? "Select model" : orchestratorLabel(model)}
                           </span>
                           <ChevronDown />
                         </MenuTrigger>
@@ -1178,24 +1233,29 @@ export function ChatPrompt({
                               editorRef.current?.focus();
                             }}
                           >
-                            {options.map((item) => {
-                              const isUnsupported = item.endsWith("(Anthropic)");
-                              return (
-                                <MenuRadioItem
-                                  key={item}
-                                  value={item}
-                                  disabled={isUnsupported}
-                                  closeOnClick={!isUnsupported}
-                                >
-                                  <span>{item}</span>
-                                  {isUnsupported ? (
-                                    <span className="ml-1 text-xs text-neutral-500">
-                                      (unsupported)
-                                    </span>
-                                  ) : null}
-                                </MenuRadioItem>
-                              );
-                            })}
+                            {orchestratorGroups(options).map((group) => (
+                              <MenuGroup key={group.provider}>
+                                <MenuGroupLabel>{group.provider}</MenuGroupLabel>
+                                {group.items.map((item) => {
+                                  const isUnsupported = item.endsWith("(Anthropic)");
+                                  return (
+                                    <MenuRadioItem
+                                      key={item}
+                                      value={item}
+                                      disabled={isUnsupported}
+                                      closeOnClick={!isUnsupported}
+                                    >
+                                      <span>{orchestratorLabel(item)}</span>
+                                      {isUnsupported ? (
+                                        <span className="ml-1 text-xs text-neutral-500">
+                                          (unsupported)
+                                        </span>
+                                      ) : null}
+                                    </MenuRadioItem>
+                                  );
+                                })}
+                              </MenuGroup>
+                            ))}
                           </MenuRadioGroup>
                         </MenuPopup>
                       </Menu>
@@ -1214,7 +1274,12 @@ export function ChatPrompt({
                       size="icon-sm"
                       variant="send"
                       aria-label="Send"
-                      disabled={(!draft.trim() && files.length === 0) || options.length === 0}
+                      disabled={!sendReady}
+                      className={
+                        sendReady
+                          ? undefined
+                          : "bg-white/[0.07] text-neutral-500 hover:bg-white/[0.07] disabled:opacity-100"
+                      }
                     >
                       <ArrowUp />
                     </Button>

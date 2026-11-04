@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { orchestratorOptions, resolveOrchestrator } from "./chat-prompt";
+import { orchestratorGroups, orchestratorLabel, orchestratorOptions, resolveOrchestrator } from "./chat-prompt";
 import type { ProviderId } from "../settings/providers";
 
 const NO_KEYS: Record<ProviderId, string | null> = {
@@ -64,6 +64,35 @@ describe("orchestrator picker", () => {
     expect(options).toEqual(["muse-wonder-1.0 (Meta)"]);
   });
 
+  it("counts a live environment key like a saved key", () => {
+    const options = orchestratorOptions(NO_KEYS, {
+      enabled: ALL_ON,
+      envKeys: { meta: true, openai: false, anthropic: false },
+    });
+    expect(options).toEqual([
+      "muse-wonder-1.0 (Meta)",
+      "muse-spark-1 (Meta)",
+    ]);
+  });
+
+  it("shows no options when no provider has a key anywhere", () => {
+    expect(
+      orchestratorOptions(NO_KEYS, {
+        enabled: ALL_ON,
+        envKeys: { meta: false, openai: false, anthropic: false },
+      }),
+    ).toEqual([]);
+    expect(orchestratorOptions(NO_KEYS, { enabled: ALL_ON })).toEqual([]);
+  });
+
+  it("hides an environment key for a provider that is switched off", () => {
+    const options = orchestratorOptions(NO_KEYS, {
+      enabled: { ...ALL_ON, meta: false },
+      envKeys: { meta: true },
+    });
+    expect(options).toEqual([]);
+  });
+
   it("hides a provider that is switched off", () => {
     const options = orchestratorOptions(
       { ...NO_KEYS, meta: "key" },
@@ -82,5 +111,37 @@ describe("orchestrator picker", () => {
     expect(resolveOrchestrator("muse-spark-1 (Meta)", orchestratorOptions(NO_KEYS))).toBe(null);
     expect(resolveOrchestrator(null, options)).toBe("muse-wonder-1.0 (Meta)");
     expect(resolveOrchestrator(null, [])).toBe(null);
+  });
+
+  it("shows a short label with no provider suffix, unknown ids pass through", () => {
+    expect(orchestratorLabel("muse-spark-1 (Meta)")).toBe("Muse Spark");
+    expect(orchestratorLabel("muse-wonder-1.0 (Meta)")).toBe("Muse Wonder");
+    expect(orchestratorLabel("gpt-x (OpenAI)")).toBe("gpt-x");
+  });
+
+  it("groups options per provider for the menu group labels", () => {
+    const options = orchestratorOptions(
+      { ...NO_KEYS, meta: "key", openai: "sk-x" },
+      {
+        enabled: ALL_ON,
+        customModels: { ...NO_CUSTOM, openai: ["gpt-x"] },
+        disabledModels: NONE_OFF,
+      },
+    );
+    expect(orchestratorGroups(options)).toEqual([
+      { provider: "Meta", items: ["muse-wonder-1.0 (Meta)", "muse-spark-1 (Meta)"] },
+      { provider: "OpenAI", items: ["gpt-x (OpenAI)"] },
+    ]);
+    expect(orchestratorGroups([])).toEqual([]);
+  });
+
+  it("prefers the agent planner when nothing is saved, a saved choice still wins", () => {
+    const options = orchestratorOptions({ ...NO_KEYS, meta: "key" });
+    expect(resolveOrchestrator(null, options, "muse-spark-1")).toBe("muse-spark-1 (Meta)");
+    expect(resolveOrchestrator(null, options, "gpt-x")).toBe("muse-wonder-1.0 (Meta)");
+    expect(resolveOrchestrator(null, options, null)).toBe("muse-wonder-1.0 (Meta)");
+    expect(resolveOrchestrator("muse-wonder-1.0 (Meta)", options, "muse-spark-1")).toBe(
+      "muse-wonder-1.0 (Meta)",
+    );
   });
 });
