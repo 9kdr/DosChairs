@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { DragEvent, KeyboardEvent, MouseEvent, PointerEvent } from "react";
+import type { DragEvent, KeyboardEvent, MouseEvent, PointerEvent, ReactNode } from "react";
 import {
   ArrowUpRight,
   Check,
@@ -12,14 +12,15 @@ import {
   Undo2,
 } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
-import { DitherShader } from "@/lib/dither";
 import type { DitherColor } from "@/lib/dither";
 import { Button } from "@/components/ui/button";
 import { SleepyChair } from "@/components/sleepy-chair/sleepy-chair";
 import { InfoHint } from "@/components/info-hint";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
+import { DitherShader } from "@/lib/dither";
 import { loadJson, saveJson } from "@/lib/storage";
+import { setPillDragImage } from "@/lib/drag-pill";
 import { clockTime, historyForTask, opLabel, type HistoryEntry } from "../project/store";
 import { activityForTask } from "./TaskActivity";
 import type { Suggestion } from "./suggestions";
@@ -213,7 +214,6 @@ float field(vec2 uv, vec2 res, float t) {
 
 function TaskTile({
   task,
-  seed,
   frozen,
   finished,
   expanded,
@@ -227,7 +227,6 @@ function TaskTile({
   onRedoResolve,
 }: {
   task: RunningTask;
-  seed: number;
   frozen: boolean;
   /** Finished tiles (Recent) never dither; only working tiles do. */
   finished: boolean;
@@ -244,7 +243,6 @@ function TaskTile({
   const reduce = useReducedMotion();
   const isDraggingRef = useRef(false);
   const dragTimeoutRef = useRef<number | null>(null);
-  const dragGhostRef = useRef<HTMLDivElement | null>(null);
   const rootRef = useRef<HTMLDivElement | null>(null);
   const startPosRef = useRef<{ x: number; y: number } | null>(null);
   const upPosRef = useRef<{ x: number; y: number } | null>(null);
@@ -254,8 +252,6 @@ function TaskTile({
       if (dragTimeoutRef.current !== null) {
         window.clearTimeout(dragTimeoutRef.current);
       }
-      dragGhostRef.current?.remove();
-      dragGhostRef.current = null;
     };
   }, []);
 
@@ -272,34 +268,7 @@ function TaskTile({
     );
     // Same pill ghost as the shelf's asset drag: lane dot plus label.
     rootRef.current?.setAttribute("data-dragging", "");
-    dragGhostRef.current?.remove();
-    const ghost = document.createElement("div");
-    const mark = document.createElement("span");
-    mark.style.cssText = `width:8px;height:8px;border-radius:999px;background:${LANE_DOT[task.lane]};flex:none`;
-    const name = document.createElement("span");
-    name.textContent = task.name.length > 28 ? `${task.name.slice(0, 18)}…` : task.name;
-    name.style.cssText = "overflow:hidden;text-overflow:ellipsis;white-space:nowrap";
-    ghost.append(mark, name);
-    ghost.style.cssText = [
-      "position:fixed",
-      "top:-1000px",
-      "left:0",
-      "z-index:80",
-      "display:inline-flex",
-      "align-items:center",
-      "gap:8px",
-      "max-width:220px",
-      "padding:6px 10px",
-      "border-radius:10px",
-      "border:1px solid rgb(255 255 255 / 12%)",
-      "background:#2a2a2a",
-      "color:#f5f5f5",
-      "font:500 13px/1.2 ui-sans-serif,system-ui,sans-serif",
-      "box-shadow:inset 0 1px 0 rgb(255 255 255 / 10%), 0 10px 24px rgb(0 0 0 / 35%)",
-    ].join(";");
-    document.body.appendChild(ghost);
-    dragGhostRef.current = ghost;
-    event.dataTransfer.setDragImage(ghost, 16, 16);
+    setPillDragImage(event.dataTransfer, task.name, LANE_DOT[task.lane]);
   };
 
   const handleDragEnd = () => {
@@ -307,8 +276,6 @@ function TaskTile({
       window.clearTimeout(dragTimeoutRef.current);
     }
     rootRef.current?.removeAttribute("data-dragging");
-    dragGhostRef.current?.remove();
-    dragGhostRef.current = null;
     dragTimeoutRef.current = window.setTimeout(() => {
       isDraggingRef.current = false;
       dragTimeoutRef.current = null;
@@ -398,6 +365,8 @@ function TaskTile({
   // write that failed. A finished agent turn never resubmits.
   const retryable = liveSubmitError(task.id) !== undefined || landed?.state === "failed";
   const showDither = !finished && !failed;
+  const still = frozen || Boolean(reduce);
+  const ditherSeed = [...task.id].reduce((sum, ch) => sum + ch.charCodeAt(0), 0) % 97;
   const seen = finished && isTaskSeen(task.projectId, task.id);
   const activity = activityForTask(task);
   // Finished tiles show the flow steps as done; the outcome already sits in
@@ -464,28 +433,49 @@ function TaskTile({
         className="dark group relative cursor-pointer overflow-hidden rounded-2xl bg-surface-raised outline-none transition-colors hover:bg-neutral-800 focus-visible:ring-2 focus-visible:ring-ring data-[dragging]:opacity-64"
       >
         {showDither ? (
-          // The dither bleeds in from the right edge and is clipped by the
-          // tile's rounded corners. Its left edge fades out, and the text
-          // column below keeps clear of it, so it never sits under a title.
-          <DitherShader
-            field={TASK_FIELD}
-            palette={["transparent", LANE_INK[task.lane]]}
-            uniforms={{ taskSeed: seed }}
-            speed={0.5}
-            animate={!frozen && !reduce}
-            suspended={frozen || Boolean(reduce)}
-            stillTime={1.6}
-            cell={3}
-            className="pointer-events-none absolute inset-y-0 right-0 w-[40%] max-w-[360px] opacity-45"
-            style={{
-              maskImage: "linear-gradient(to right, transparent 0%, #000 55%)", // taste-skill-ignore: mask fades the dither's left edge so it bleeds in from the tile's right edge, not a fill.
-              WebkitMaskImage: "linear-gradient(to right, transparent 0%, #000 55%)", // taste-skill-ignore: mask fades the dither's left edge so it bleeds in from the tile's right edge, not a fill.
-            }}
-          />
+          // A calm scan band: a soft lane-tinted wash drifts across the tile
+          // behind the text, with a thin shimmer along the bottom edge.
+          // Reduced motion (or a frozen board) keeps both still.
+          <div aria-hidden="true" className="pointer-events-none absolute inset-0 overflow-hidden rounded-[inherit]">
+            {/* Soft wash plus the pixel dither, both in the right ~40% and fading left. */}
+            <div
+              className="absolute inset-y-0 right-0 w-2/5 opacity-[0.1]"
+              style={{ background: `linear-gradient(270deg, ${LANE_DOT[task.lane]}, transparent)` }} // taste-skill-ignore: soft lane-tinted wash at the tile's right edge, fades left, never under the title.
+            />
+            <DitherShader
+              field={TASK_FIELD}
+              palette={["transparent", LANE_INK[task.lane]]}
+              uniforms={{ taskSeed: ditherSeed }}
+              speed={0.4}
+              animate={!still}
+              suspended={still}
+              stillTime={1.6}
+              cell={3}
+              className="absolute inset-y-0 right-0 w-2/5 max-w-[360px] opacity-30"
+              style={{
+                maskImage: "linear-gradient(to right, transparent 0%, #000 70%)", // taste-skill-ignore: mask fades the dither's left edge so it never reaches the title.
+                WebkitMaskImage: "linear-gradient(to right, transparent 0%, #000 70%)", // taste-skill-ignore: mask fades the dither's left edge so it never reaches the title.
+              }}
+            />
+            <motion.div
+              className="absolute inset-y-0 left-0 w-2/5 opacity-[0.07]"
+              style={{ background: `linear-gradient(90deg, transparent, ${LANE_DOT[task.lane]}, transparent)` }} // taste-skill-ignore: soft lane-tinted scan band behind the text, not a fill.
+              initial={{ x: "150%" }}
+              animate={still ? { x: "150%" } : { x: ["-100%", "260%"] }}
+              transition={{ duration: 4.5, ease: "easeInOut", repeat: Infinity, repeatDelay: 0.8 }}
+            />
+            <motion.div
+              className="absolute bottom-0 left-0 h-px w-1/3 opacity-70"
+              style={{ background: `linear-gradient(90deg, transparent, ${LANE_DOT[task.lane]}, transparent)` }} // taste-skill-ignore: thin progress shimmer in the lane colour.
+              initial={{ x: "100%" }}
+              animate={still ? { x: "100%" } : { x: ["-100%", "300%"] }}
+              transition={{ duration: 2.6, ease: "linear", repeat: Infinity }}
+            />
+          </div>
         ) : null}
         <div className="relative flex flex-col gap-2 px-4 py-3">
           <div className="flex items-center justify-between gap-3">
-            <div className={cn("min-w-0 flex-1", showDither && "pr-6 @max-[620px]:pr-0")}>
+            <div className="min-w-0 flex-1">
               <p className="truncate text-title font-medium text-neutral-100" title={task.name}>
                 {task.name}
               </p>
@@ -556,7 +546,7 @@ function TaskTile({
                         open();
                       }}
                       onKeyDown={(event) => event.stopPropagation()}
-                      className={cn(tileActionClass, showDither && "bg-black/40 hover:bg-black/55")}
+                      className={tileActionClass}
                     />
                   }
                 >
@@ -665,7 +655,11 @@ export function RunningTasks({
   const toggle = (id: string) => setExpandedId((current) => (current === id ? null : id));
   // Both groups: Working left, Recent right. One group alone fills the
   // card as a grid with one column per tile, so no half-empty rows.
-  const split = working.length > 0 && recent.length > 0;
+  const bothGroups = working.length > 0 && recent.length > 0;
+  // Recent folded away: Working takes the full row and Recent shrinks to a
+  // toggle on Working's header line.
+  const folded = bothGroups && recentCollapsed;
+  const split = bothGroups && !recentCollapsed;
   const gridFor = (count: number) =>
     split
       ? "grid-cols-1"
@@ -674,11 +668,10 @@ export function RunningTasks({
         : count === 2
           ? "grid-cols-1 @min-[620px]:grid-cols-2"
           : "grid-cols-1 @min-[620px]:grid-cols-2 @min-[960px]:grid-cols-3";
-  const tile = (task: RunningTask, seed: number, finished: boolean) => (
+  const tile = (task: RunningTask, finished: boolean) => (
     <TaskTile
       key={task.id}
       task={task}
-      seed={seed}
       frozen={frozen}
       finished={finished}
       expanded={expandedId === task.id}
@@ -695,10 +688,29 @@ export function RunningTasks({
       onRedoResolve={onRedoResolve ? () => onRedoResolve(task) : undefined}
     />
   );
-  const groupLabel = (label: string, count: number) => (
+  const recentToggle = (className?: string) => (
+    <button
+      type="button"
+      aria-expanded={!recentCollapsed}
+      aria-controls="recent-tasks"
+      onClick={toggleRecent}
+      // Plain template, not cn(): tailwind-merge would drop text-meta next to
+      // text-muted-foreground and the label would grow past "Working N".
+      className={`flex items-center gap-1.5 rounded-md px-1 py-0.5 text-meta font-medium text-muted-foreground outline-none transition-colors hover:text-neutral-100 focus-visible:ring-2 focus-visible:ring-ring ${className ?? ""}`}
+    >
+      <ChevronDown
+        aria-hidden="true"
+        className={`size-3.5 text-muted-foreground transition-transform ${recentCollapsed ? "-rotate-90" : ""}`}
+      />
+      Recent
+      <span className="tabular-nums text-neutral-600">{recent.length}</span>
+    </button>
+  );
+  const groupLabel = (label: string, count: number, trailing?: ReactNode) => (
     <div className="flex items-center gap-2 px-1 pb-2">
       <h3 className="text-meta font-medium text-muted-foreground">{label}</h3>
       <span className="text-meta tabular-nums text-neutral-600">{count}</span>
+      {trailing}
     </div>
   );
   return (
@@ -762,33 +774,20 @@ export function RunningTasks({
         >
           {working.length > 0 ? (
             <section aria-label="Working" className="min-w-0">
-              {groupLabel("Working", working.length)}
+              {groupLabel("Working", working.length, folded ? recentToggle("ml-auto") : undefined)}
               <div className={cn("grid gap-2", gridFor(working.length))}>
-                {working.map((task, index) => tile(task, index + 1, false))}
+                {working.map((task) => tile(task, false))}
               </div>
             </section>
           ) : null}
           {recent.length > 0 ? (
-            <section aria-label="Recent" className="min-w-0">
-              <button
-                type="button"
-                aria-expanded={!recentCollapsed}
-                aria-controls="recent-tasks"
-                onClick={toggleRecent}
-                className="-ml-1 mb-2 flex items-center gap-1.5 rounded-md px-1 py-0.5 text-meta font-medium text-muted-foreground outline-none transition-colors hover:text-neutral-100 focus-visible:ring-2 focus-visible:ring-ring"
-              >
-                <ChevronDown
-                  aria-hidden="true"
-                  className={cn("size-3.5 transition-transform", recentCollapsed && "-rotate-90")}
-                />
-                Recent
-                <span className="tabular-nums text-neutral-600">{recent.length}</span>
-              </button>
+            <section aria-label="Recent" className={cn("min-w-0", folded && "hidden")}>
+              {folded ? null : recentToggle("-ml-1 mb-2")}
               <div
                 id="recent-tasks"
                 className={cn(recentCollapsed ? "hidden" : "grid gap-2", !recentCollapsed && gridFor(recent.length))}
               >
-                {recent.map((task, index) => tile(task, 101 + index, true))}
+                {recent.map((task) => tile(task, true))}
               </div>
             </section>
           ) : null}

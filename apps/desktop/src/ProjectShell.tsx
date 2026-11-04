@@ -67,15 +67,13 @@ function cutSummary(timeline: Timeline | null): string | null {
 
 /** Main-area pages: the board, or one full page with a Back button. */
 type Page = "board" | "maker" | "history";
-type SideTab = "plan" | "shelf";
-/** Narrow windows switch the single column between tasks, plan, and shelf. */
-type NarrowTab = "tasks" | SideTab;
+/** Narrow windows switch the single column between Home (tasks + shelf) and the plan. */
+type NarrowTab = "home" | "plan";
 type PlanMode = "edit" | "talk";
 
 /** The dashboard: tasks on top, Plan and Shelf below on one canvas. */
 export function ProjectShell({ projectId, projectName, editorId, onHome }: ProjectShellProps) {
   const [page, setPage] = useState<Page>("board");
-  const [sideTab, setSideTab] = useState<SideTab>("plan");
   const project = useProject(projectId, projectName);
   const [command, setCommand] = useState<{ id: number; text: string } | null>(null);
   const [createdTasks, setCreatedTasks] = useState<RunningTask[]>([]);
@@ -88,7 +86,7 @@ export function ProjectShell({ projectId, projectName, editorId, onHome }: Proje
   const [suggestion, setSuggestion] = useState<{ id: number; text: string } | null>(null);
   // The structured plan, mirrored up from the Plan card so suggestions follow it.
   const [plan, setPlan] = useState<ProjectPlan | null>(null);
-  const [narrowTab, setNarrowTab] = useState<NarrowTab>("tasks");
+  const [narrowTab, setNarrowTab] = useState<NarrowTab>("home");
   // Bumped after card Undo/Redo/Retry so the rows repaint at once, not next poll.
   const [liveNonce, setLiveNonce] = useState(0);
   const liveTasks = useLiveTasks(createdTasks, liveNonce);
@@ -117,7 +115,7 @@ export function ProjectShell({ projectId, projectName, editorId, onHome }: Proje
     if (action.key === "brief") {
       setPlanMode("edit");
       setPlanOpen(true);
-      setSideTab("plan");
+      setNarrowTab("plan");
       setNotice(null);
       return;
     }
@@ -255,7 +253,7 @@ export function ProjectShell({ projectId, projectName, editorId, onHome }: Proje
   // Narrow windows get one underline switch instead of two columns.
   // The task thread owns the whole narrow screen, like before.
   const showNarrowTabs = showSide && !taskChat;
-  const narrowShowsPanel = showNarrowTabs && narrowTab !== "tasks";
+  const narrowShowsPanel = showNarrowTabs && narrowTab === "plan";
   const allTasks = [...workingTasks, ...recentTasks];
   const suggestions = suggestionsFor({ plan, tasks: allTasks });
 
@@ -382,18 +380,16 @@ export function ProjectShell({ projectId, projectName, editorId, onHome }: Proje
             onValueChange={(value) => {
               const next = value as NarrowTab;
               setNarrowTab(next);
-              if (next !== "tasks") setSideTab(next);
             }}
             className="@min-[761px]:hidden w-full shrink-0"
           >
             <TabsList
               variant="underline"
               size="sm"
-              className="grid w-full grid-cols-3 border-b border-line"
+              className="grid w-full grid-cols-2 border-b border-line"
             >
-              <TabsTab value="tasks">Tasks</TabsTab>
+              <TabsTab value="home">Home</TabsTab>
               <TabsTab value="plan">Plan</TabsTab>
-              <TabsTab value="shelf">Shelf</TabsTab>
             </TabsList>
           </Tabs>
         ) : null}
@@ -434,9 +430,9 @@ export function ProjectShell({ projectId, projectName, editorId, onHome }: Proje
           ) : page === "board" ? (
             <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden">
               <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
-                <div className="mx-auto flex min-h-full w-full flex-col gap-3 pt-2 pb-4">
+                <div className="mx-auto flex min-h-full w-full flex-col gap-3 pt-2 pb-4 @min-[1000px]:h-full">
                   {tasksList}
-                  <div className="grid grid-cols-1 gap-3 @min-[1000px]:max-h-[560px] @min-[1000px]:min-h-[340px] @min-[1000px]:flex-1 @min-[1000px]:grid-cols-12 @min-[1000px]:grid-rows-1">
+                  <div className="grid grid-cols-1 gap-3 @min-[1000px]:max-h-[560px] @min-[1000px]:min-h-[340px] @min-[1000px]:flex-1 @min-[1000px]:grid-cols-12 @min-[1000px]:grid-rows-[minmax(0,1fr)]">
                     <section
                       aria-label="Plan"
                       className="flex min-h-0 flex-col rounded-card bg-card p-4 text-neutral-100 @max-[760px]:hidden @min-[1000px]:col-span-7"
@@ -445,14 +441,14 @@ export function ProjectShell({ projectId, projectName, editorId, onHome }: Proje
                     </section>
                     <section
                       aria-label="Shelf"
-                      className="flex h-[420px] min-h-0 flex-col rounded-card bg-card p-4 text-neutral-100 @max-[760px]:hidden @min-[1000px]:col-span-5 @min-[1000px]:h-auto"
+                      className="flex h-[420px] min-h-0 flex-col rounded-card bg-card p-4 text-neutral-100 @min-[1000px]:col-span-5 @min-[1000px]:h-auto"
                     >
                       {shelfPane}
                     </section>
                   </div>
                 </div>
               </div>
-              <div className="mx-auto flex w-full max-w-3xl shrink-0 flex-col gap-2 @max-[760px]:max-w-none">
+              <div className="mx-auto flex w-full max-w-3xl shrink-0 flex-col gap-2 pb-2 @max-[760px]:max-w-none">
                 {hasTasks && suggestions.length > 0 ? (
                   <div
                     className="flex flex-wrap gap-1.5 px-1"
@@ -533,7 +529,7 @@ export function ProjectShell({ projectId, projectName, editorId, onHome }: Proje
               className="flex min-h-0 w-full min-w-0 flex-1 flex-col overflow-hidden rounded-card bg-card p-4 text-neutral-100 @min-[761px]:hidden"
             >
               <div className="min-h-0 flex-1 overflow-hidden">
-                {sideTab === "plan" ? planPane : shelfPane}
+                {planPane}
               </div>
             </aside>
           ) : null}

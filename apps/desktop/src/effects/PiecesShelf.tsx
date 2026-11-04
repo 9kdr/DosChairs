@@ -12,6 +12,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsList, TabsTab } from "@/components/ui/tabs";
 import { writeChairRefs } from "@/lib/chair-ref";
+import { setPillDragImage } from "@/lib/drag-pill";
 import { cn } from "@/lib/utils";
 import type { ChangesetItem } from "@chair/timeline-ir";
 import type { PieceLanding } from "./effect-model";
@@ -310,9 +311,10 @@ function PieceRow({
             onToggle();
           }
         }}
-        onDragStart={(event) =>
-          writeChairRefs(event.dataTransfer, [{ kind: "piece", id: piece.id, label: piece.name }])
-        }
+        onDragStart={(event) => {
+          writeChairRefs(event.dataTransfer, [{ kind: "piece", id: piece.id, label: piece.name }]);
+          setPillDragImage(event.dataTransfer, piece.name, "#a3a3a3");
+        }}
         className="flex w-full cursor-grab items-center gap-2.5 rounded-2xl px-3 py-2 text-left outline-none active:cursor-grabbing focus-visible:ring-2 focus-visible:ring-ring"
       >
         <span

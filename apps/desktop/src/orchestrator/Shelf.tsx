@@ -28,6 +28,7 @@ import {
 } from "@/effects/pieces-api";
 import { cn } from "@/lib/utils";
 import { writeChairRefs } from "@/lib/chair-ref";
+import { setPillDragImage } from "@/lib/drag-pill";
 import type { PieceLanding } from "@/effects/effect-model";
 import {
   fileToBase64,
@@ -501,7 +502,10 @@ function ShelfRow({
             onActivate();
           }
         }}
-        onDragStart={(event) => writeChairRefs(event.dataTransfer, refs)}
+        onDragStart={(event) => {
+          writeChairRefs(event.dataTransfer, refs);
+          setPillDragImage(event.dataTransfer, refs[0]?.label ?? name, "#a3a3a3");
+        }}
         className="flex w-full cursor-grab items-center gap-3 rounded-xl px-2 py-1.5 text-left outline-none active:cursor-grabbing focus-visible:ring-2 focus-visible:ring-ring"
       >
         <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-white/[0.06] text-neutral-400">
