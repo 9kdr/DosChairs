@@ -336,14 +336,13 @@ def add_effect(
         before = comp_names(item)
         prev = current_comp_name(item, before)
         imported = item.ImportFusionComp(str(comp_path))
-        if imported is not None and _ingested(imported):
-            after = comp_names(item)
-            added = [name for name in after if name not in before]
-            comp_name = added[-1] if added else (after[-1] if after else None)
+        after = comp_names(item)
+        added = [name for name in after if name not in before]
+        if imported is not None and added and _ingested(imported):
             return {
                 "effect_id": spec.get("id"),
                 "comp_path": str(comp_path),
-                "comp_name": comp_name,
+                "comp_name": added[-1],
                 "prev_comp_name": prev,
                 "paths": rendered.get("paths", {}),
                 "undo": {"prev_comp_name": prev},
@@ -380,8 +379,19 @@ def _import_planned_fusion(
 ) -> bool:
     """Import one planned fusion entry. False when it fell back to skipped."""
     if "comp_path" in fusion:
-        item.ImportFusionComp(fusion["comp_path"])
-        return True
+        imported = item.ImportFusionComp(fusion["comp_path"])
+        if imported is not None and _ingested(imported):
+            return True
+        fallback = manifest.fallbacks.get("fusionComps", "Fusion comps are disabled.")
+        plan["skipped"].append(
+            {
+                "kind": "effect",
+                "id": fusion["effect_id"],
+                "reason": f"Effect {fusion['effect_id']!r} ({fusion['preset']!r}): "
+                f"Studio ingested nothing from {fusion['comp_path']!r}; {fallback}",
+            }
+        )
+        return False
     op = add_effect(item, _resolve_effect_spec(fusion), cache_dir=cache_dir)
     if "fallback" in op:
         fallback = manifest.fallbacks.get("fusionMacros", "rendered clip instead")

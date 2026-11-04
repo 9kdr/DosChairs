@@ -4,6 +4,7 @@ import re
 import runpy
 from pathlib import Path
 
+import pytest
 from chair_resolve.fusion import spec_to_comp, spec_to_plan
 from chair_resolve.fusion_build import arrange, build_comp, layout_plan, spline_table
 from chair_resolve.write import remove_effect
@@ -133,6 +134,16 @@ def test_build_without_layout_skips_flow() -> None:
     assert item.comps["Comp 2"].flow.positions == {}
 
 
+def test_build_starts_from_edit_page() -> None:
+    """Live: comp calls answered from the Color page are duds."""
+    import types
+
+    pages: list[str] = []
+    resolve = types.SimpleNamespace(OpenPage=lambda page: pages.append(page))
+    build_comp(FakeItem(), spec_to_plan(_spec()), resolve=resolve)
+    assert pages[0] == "edit"
+
+
 def _rich_spec() -> dict:
     spec = _spec()
     spec["layers"].append({
@@ -215,6 +226,66 @@ def test_build_absorbs_modifier_seed_key() -> None:
     spline = item.comps[op["comp_name"]].FindTool("Xf_ballXYY")
     assert sorted(spline.keys) == [0, 15, 30]
     assert spline.keys[0] == {1: spline.keys[15][1]}
+
+
+def _item_with(comp_cls):
+    class _CustomItem(FakeItem):
+        def AddFusionComp(self):
+            comp = comp_cls()
+            self.names.append(f"Comp {len(self.names) + 1}")
+            self.comps[self.names[-1]] = comp
+            self.built.append(comp)
+            return comp
+
+    return _CustomItem()
+
+
+def test_build_fails_when_no_comp_created() -> None:
+    """Sweep #2: never report success on a no-op."""
+
+    class _NoCompItem(FakeItem):
+        def AddFusionComp(self):
+            return None
+
+    with pytest.raises(RuntimeError, match="did not create"):
+        build_comp(_NoCompItem(), spec_to_plan(_spec()))
+
+
+def test_build_fails_when_version_list_does_not_grow() -> None:
+    """Sweep #2: no new name, no success report."""
+
+    class _FrozenNamesItem(FakeItem):
+        def AddFusionComp(self):
+            comp = FakeComp()
+            self.built.append(comp)
+            return comp
+
+    with pytest.raises(RuntimeError, match="did not add a comp version"):
+        build_comp(_FrozenNamesItem(), spec_to_plan(_spec()))
+
+
+def test_build_fails_when_tool_goes_missing() -> None:
+    """Sweep #2: count and name check after the build."""
+
+    class _DroppingComp(FakeComp):
+        def FindTool(self, name):
+            if name == "Merge_bg":
+                return None
+            return super().FindTool(name)
+
+    with pytest.raises(RuntimeError, match="dropped 1 tool.*Merge_bg"):
+        build_comp(_item_with(_DroppingComp), spec_to_plan(_spec()))
+
+
+def test_build_fails_when_add_tool_refused() -> None:
+    class _RefusingComp(FakeComp):
+        def AddTool(self, registry):
+            if registry == "Merge":
+                return None
+            return super().AddTool(registry)
+
+    with pytest.raises(RuntimeError, match="could not add tool"):
+        build_comp(_item_with(_RefusingComp), spec_to_plan(_spec()))
 
 
 def test_arrange_needs_a_frame() -> None:

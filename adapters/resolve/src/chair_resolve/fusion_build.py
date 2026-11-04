@@ -114,12 +114,25 @@ def build_comp(
     """
     before = comp_names(item)
     prev = current_comp_name(item, before)
+    if resolve is not None:
+        # Comp calls answered from another page are duds (AddFusionComp
+        # returns None on the Color page), so start from the Edit page.
+        try:
+            resolve.OpenPage("edit")
+        except Exception:
+            pass
     comp = item.AddFusionComp()
     if comp is None:
         raise RuntimeError("Studio did not create a new Fusion comp version.")
     after = comp_names(item)
     added = [name for name in after if name not in before]
-    comp_name = added[-1] if added else (after[-1] if after else None)
+    if not added:
+        raise RuntimeError(
+            "Studio did not add a comp version for this build: the version "
+            "list did not grow, so there is nothing to undo to."
+        )
+    comp_name = added[-1]
+    tools_before = tool_count(comp)
     _call(comp, "Lock")
     _call(comp, "StartUndo", "chair build")
     try:
@@ -157,7 +170,7 @@ def build_comp(
         for entry in plan["tools"]:
             tool = tools[entry["name"]]
             for input_id, keys in entry["splines"].items():
-                spline = _add_spline(comp, tool, input_id)
+                spline = _add_spline(comp, tool, entry["name"], input_id)
                 table = spline_table(keys)
                 spline.SetKeyFrames(table)
                 attrs = spline.GetAttrs() or {}
@@ -168,6 +181,7 @@ def build_comp(
         arranged = (
             arrange(comp, item, comp_name, tools, positions, resolve) if layout else False
         )
+        _prove_landed(comp, plan, tools_before)
     finally:
         _call(comp, "EndUndo", True)
         _call(comp, "Unlock")
@@ -185,6 +199,23 @@ def build_comp(
     }
 
 
+def _prove_landed(comp: Any, plan: dict[str, Any], tools_before: int) -> None:
+    """Fail loudly when the build landed nothing. Never a quiet no-op."""
+    tools_after = tool_count(comp)
+    if tools_after <= tools_before:
+        raise RuntimeError(
+            f"Studio built no tools: the comp still holds {tools_after} "
+            f"(nothing was added)."
+        )
+    missing = [
+        entry["name"] for entry in plan["tools"] if comp.FindTool(entry["name"]) is None
+    ]
+    if missing:
+        raise RuntimeError(
+            f"Studio dropped {len(missing)} tools: {', '.join(missing)}."
+        )
+
+
 def _set_values(tool: Any, entry: dict[str, Any]) -> None:
     for input_id, value in entry["values"].items():
         if isinstance(value, list):
@@ -197,14 +228,35 @@ def _set_values(tool: Any, entry: dict[str, Any]) -> None:
         }
 
 
-def _add_spline(comp: Any, tool: Any, input_id: str) -> Any:
-    """Animate one input; return the modifier spline AddModifier created."""
-    known = set(_tool_ids(comp))
+def _tool_name(tool: Any) -> str:
+    try:
+        attrs = tool.GetAttrs() or {}
+    except Exception:
+        return ""
+    return str(attrs.get("TOOLS_Name", ""))
+
+
+def _add_spline(comp: Any, tool: Any, tool_name: str, input_id: str) -> Any:
+    """Animate one input; return the modifier spline AddModifier created.
+
+    Found by name, not by tool-list position: GetToolList keys shift
+    between calls, but the spline is always the one newcomer, usually
+    named {tool}{input} (XYPath variants gain a numeric suffix).
+    """
+    known = {_tool_name(existing) for existing in _tool_ids(comp).values()}
     tool.AddModifier(input_id, "BezierSpline")
-    fresh = [key for key in _tool_ids(comp) if key not in known]
-    if not fresh:
+    newcomers = [
+        cand
+        for cand in _tool_ids(comp).values()
+        if _tool_name(cand) and _tool_name(cand) not in known
+    ]
+    if not newcomers:
         raise RuntimeError(f"AddModifier added no spline for {input_id}.")
-    return _tool_ids(comp)[fresh[0]]
+    prefix = f"{tool_name}{input_id}"
+    for cand in newcomers:
+        if _tool_name(cand).startswith(prefix):
+            return cand
+    return newcomers[0]
 
 
 def arrange(

@@ -235,6 +235,24 @@ def test_add_effect_falls_back_to_build_when_import_ingests_nothing(
     assert item.comps["Comp 2"].FindTool("Merge_title") is not None
 
 
+def test_add_effect_falls_back_when_import_adds_no_version(tmp_path: Path) -> None:
+    """Sweep #2: tools without a version name still fall back to the build."""
+
+    class _UnnamedItem(FakeItem):
+        def ImportFusionComp(self, path: str):
+            comp = _FAKES["FakeComp"]()
+            comp.AddTool("Background")
+            comp.AddTool("Merge")
+            comp.AddTool("Transform")
+            self.imported.append(path)
+            return comp
+
+    item = _UnnamedItem()
+    op = add_effect(item, _spec(), cache_dir=tmp_path, use_import=True)
+    assert op["built_by"] == "api"
+    assert op["comp_name"] == "Comp 2"
+
+
 def _look_spec(look: str, params: dict | None = None) -> dict:
     spec = _spec()
     layer: dict = {"id": "look", "type": "shader", "params": {"look": look}}
