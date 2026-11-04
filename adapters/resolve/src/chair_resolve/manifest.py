@@ -7,6 +7,7 @@ class Capabilities(BaseModel):
     keyframes: bool
     fusion_comps: bool
     fusion_macros: bool = True
+    ograf_titles: bool = True
     adjustment_layers: bool
     markers: bool
     subtitles: bool
@@ -29,6 +30,8 @@ MANIFEST = Manifest(
     capabilities=Capabilities(
         keyframes=True,
         fusion_comps=True,
+        fusion_macros=True,
+        ograf_titles=True,
         adjustment_layers=True,
         markers=True,
         subtitles=True,
@@ -43,5 +46,6 @@ MANIFEST = Manifest(
         "adjustmentLayers": "add an adjustment clip in Studio by hand",
         "speedChanges": "retime the clip in Studio by hand",
         "fusionMacros": "render the effect to a clip and place it by hand",
+        "ografTitles": "install with install_ograf, then drag from Effects > Titles > OGraf",
     },
 )

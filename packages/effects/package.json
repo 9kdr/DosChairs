@@ -16,5 +16,10 @@
     "ajv": "^8.17.1",
     "typescript": "^7.0.2",
     "vitest": "^5.0.5"
+  },
+  "dependencies": {
+    "@chair/ograf": "workspace:^",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
   }
 }
