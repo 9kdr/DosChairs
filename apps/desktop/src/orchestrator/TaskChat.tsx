@@ -36,6 +36,7 @@ export function TaskChat({
   onSend,
   onUndoRequest,
   onUndoEntry,
+  onOpenSettings,
 }: {
   task: RunningTask;
   note: TaskNote | null;
@@ -45,6 +46,8 @@ export function TaskChat({
   /** Propose rewinding the task's tail; answers the undo prompt. */
   onUndoRequest?: (task: RunningTask) => string;
   onUndoEntry?: (entry: HistoryEntry) => void;
+  /** Where the composer's "Add a model key" goes. */
+  onOpenSettings?: () => void;
 }) {
   const entries = historyForTask(history, task.id);
   const resolveLocalReply = useCallback(
@@ -157,6 +160,7 @@ export function TaskChat({
               placeholder={`Message about ${task.name}…`}
               onOpen={() => {}}
               onClose={() => {}}
+              onOpenSettings={onOpenSettings}
               onSend={(draft) => {
                 // The composer only sends with text or files; stash the
                 // whole draft so the note pairs its files and model back.

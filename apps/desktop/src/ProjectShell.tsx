@@ -1,9 +1,10 @@
-import { BlocksIcon, HomeIcon, MessageSquareIcon } from "lucide-react";
+import { ArrowLeft, BlocksIcon, HomeIcon, MessageSquareIcon } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { ChatPrompt } from "@/components/chat-prompt";
 import { ServiceStatus } from "@/components/service-status";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTab } from "@/components/ui/tabs";
+import type { Timeline } from "@chair/timeline-ir";
 import {
   Tooltip,
   TooltipCreateHandle,
@@ -26,6 +27,7 @@ import { setupTask } from "./orchestrator/taskSetup";
 import { useLiveTasks } from "./orchestrator/taskThread";
 import { HistoryCard } from "./project/HistoryCard";
 import { historyForTask, useProject } from "./project/store";
+import { SettingsScreen } from "./settings/SettingsScreen";
 import { useSettings } from "./settings/useSettings";
 
 /** Same field as the home gallery (`HomeScreen`). */
@@ -48,6 +50,45 @@ type DockTipPayload = { label: string };
 
 const dockTooltip = TooltipCreateHandle<DockTipPayload>();
 
+/** Suggested prompts that fill the composer on the empty board. */
+const SUGGESTIONS = [
+  "Trim the silences",
+  "Riser into the montage",
+  "Duck music under my voice",
+  "Make a dither title piece",
+];
+
+function formatCutDuration(totalSeconds: number): string {
+  const total = Math.max(0, Math.round(totalSeconds));
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  const seconds = total % 60;
+  if (hours > 0) {
+    return `${hours}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+  }
+  return `${minutes}:${String(seconds).padStart(2, "0")}`;
+}
+
+/** Compact cut line for the header from the timeline the store already has. */
+function cutSummary(timeline: Timeline | null): string | null {
+  if (!timeline) return null;
+  let clips = 0;
+  let seconds = 0;
+  for (const track of timeline.tracks) {
+    clips += track.clips.length;
+    for (const clip of track.clips) {
+      const { start, duration } = clip.timelineRange;
+      const end =
+        (start.rate ? start.value / start.rate : 0) +
+        (duration.rate ? duration.value / duration.rate : 0);
+      if (end > seconds) seconds = end;
+    }
+  }
+  const trackBit = timeline.tracks.length === 1 ? "1 track" : `${timeline.tracks.length} tracks`;
+  const clipBit = clips === 1 ? "1 clip" : `${clips} clips`;
+  return `${trackBit} · ${clipBit} · ${formatCutDuration(seconds)}`;
+}
+
 type SectionId = (typeof SECTIONS)[number]["id"];
 type SideTab = "plan" | "shelf" | "history";
 type PlanMode = "edit" | "talk";
@@ -55,7 +96,7 @@ type PlanMode = "edit" | "talk";
 /** Chat in the center, Plan/Shelf/History in the side panel. */
 export function ProjectShell({ projectId, projectName, editorId, onHome }: ProjectShellProps) {
   const [section, setSection] = useState<SectionId>("chat");
-  const [sideTab, setSideTab] = useState<SideTab>("shelf");
+  const [sideTab, setSideTab] = useState<SideTab>("plan");
   const { settings } = useSettings();
   const project = useProject(projectId, projectName, { applyMode: settings.applyMode });
   const [command, setCommand] = useState<{ id: number; text: string } | null>(null);
@@ -65,8 +106,17 @@ export function ProjectShell({ projectId, projectName, editorId, onHome }: Proje
   const [planOpen, setPlanOpen] = useState(false);
   const [planMode, setPlanMode] = useState<PlanMode>("edit");
   const [notice, setNotice] = useState<string | null>(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [suggestion, setSuggestion] = useState<{ id: number; text: string } | null>(null);
   const liveTasks = useLiveTasks(createdTasks);
   const seen = useRef(0);
+  // The panel opens on Plan with no tasks and on History once one exists,
+  // until the person picks a tab themselves.
+  const sideTouched = useRef(false);
+  useEffect(() => {
+    if (sideTouched.current) return;
+    setSideTab(createdTasks.length > 0 ? "history" : "plan");
+  }, [createdTasks.length]);
 
   useEffect(() => {
     if (!command || seen.current === command.id) return;
@@ -102,6 +152,8 @@ export function ProjectShell({ projectId, projectName, editorId, onHome }: Proje
     if (action.slot) setNotice(`${action.key}: ${action.slot}`);
   }, [command, projectId]);
 
+  const cutBits = cutSummary(project.timeline);
+
   /** Clips an effect-kind piece can land on: every video-track clip in the cut. */
   const effectClips =
     project.timeline?.tracks
@@ -124,6 +176,10 @@ export function ProjectShell({ projectId, projectName, editorId, onHome }: Proje
     setTaskNote(null);
     setTaskChat(task);
   };
+
+  // The Piece Maker takes the full width: the side panel steps aside while
+  // the Pieces section (or Settings) owns the screen.
+  const showSide = section !== "pieces" && !settingsOpen;
 
   return (
     <section
@@ -153,13 +209,34 @@ export function ProjectShell({ projectId, projectName, editorId, onHome }: Proje
         <h1 className="min-w-0 truncate text-sm font-medium text-neutral-200">
           {projectName}
         </h1>
+        {cutBits ? (
+          <span className="hidden shrink-0 text-xs tabular-nums text-neutral-500 md:block">
+            {cutBits}
+          </span>
+        ) : null}
         <div className="ml-auto flex shrink-0 items-center">
           <ServiceStatus />
         </div>
       </header>
       <div className="flex min-h-0 flex-1 gap-3 px-3 pb-3">
         <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-          {taskChat ? (
+          {settingsOpen ? (
+            <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-2 py-2 overscroll-contain">
+              <div className="mx-auto flex w-full max-w-4xl shrink-0">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  aria-label="Back to project"
+                  onClick={() => setSettingsOpen(false)}
+                >
+                  <ArrowLeft />
+                  Back
+                </Button>
+              </div>
+              <SettingsScreen onBack={() => setSettingsOpen(false)} />
+            </div>
+          ) : taskChat ? (
             <TaskChat
               task={taskChat}
               note={taskNote}
@@ -171,6 +248,7 @@ export function ProjectShell({ projectId, projectName, editorId, onHome }: Proje
               onSend={(text) => setTaskNote({ id: Date.now(), text })}
               onUndoRequest={requestTaskUndo}
               onUndoEntry={(entry) => project.undoToHere(entry.itemId)}
+              onOpenSettings={() => setSettingsOpen(true)}
             />
           ) : section === "chat" ? (
             <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden">
@@ -192,13 +270,29 @@ export function ProjectShell({ projectId, projectName, editorId, onHome }: Proje
                   ) : null}
                 </div>
               </div>
-              <div className="mx-auto w-full max-w-3xl shrink-0 pb-20">
+              <div className="mx-auto flex w-full max-w-3xl shrink-0 flex-col gap-2 pb-20">
+                {createdTasks.length === 0 ? (
+                  <div className="flex flex-wrap gap-1.5 px-1" role="group" aria-label="Suggested prompts">
+                    {SUGGESTIONS.map((text) => (
+                      <button
+                        key={text}
+                        type="button"
+                        onClick={() => setSuggestion({ id: Date.now(), text })}
+                        className="rounded-full bg-white/[0.06] px-2.5 py-1 text-xs text-neutral-300 ring-1 ring-white/10 transition-colors hover:bg-white/[0.1] hover:text-neutral-100 focus-visible:ring-2 focus-visible:ring-ring"
+                      >
+                        {text}
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
                 <ChatPrompt
                   open
                   wide
                   placeholder="Tell Chair what to cut…"
+                  suggestion={suggestion}
                   onOpen={() => {}}
                   onClose={() => {}}
+                  onOpenSettings={() => setSettingsOpen(true)}
                   onSend={(draft) => {
                     if (draft.text.trim()) {
                       setCommand({ id: Date.now(), text: draft.text });
@@ -217,11 +311,18 @@ export function ProjectShell({ projectId, projectName, editorId, onHome }: Proje
             />
           )}
         </main>
+        {showSide ? (
         <aside
           aria-label="Project panel"
           className="flex min-h-0 w-80 shrink-0 flex-col overflow-hidden rounded-[28px] bg-[#1a1a1a] p-4 text-neutral-100 shadow-raised ring-1 ring-white/8 xl:w-96"
         >
-          <Tabs value={sideTab} onValueChange={(value) => setSideTab(value as SideTab)}>
+          <Tabs
+            value={sideTab}
+            onValueChange={(value) => {
+              sideTouched.current = true;
+              setSideTab(value as SideTab);
+            }}
+          >
             <TabsList size="sm" className="grid w-full shrink-0 grid-cols-3">
               <TabsTab value="plan">Plan</TabsTab>
               <TabsTab value="shelf">Shelf</TabsTab>
@@ -262,6 +363,7 @@ export function ProjectShell({ projectId, projectName, editorId, onHome }: Proje
             )}
           </div>
         </aside>
+        ) : null}
       </div>
       <div
         aria-hidden="true"
@@ -309,12 +411,14 @@ export function ProjectShell({ projectId, projectName, editorId, onHome }: Proje
           </Tooltip>
         </nav>
       </TooltipProvider>
-      <div className="pointer-events-none absolute bottom-5 left-5 z-20 flex items-center gap-2.5 text-neutral-400">
-        <ChairMark className="h-8 w-auto text-neutral-200" />
-        <span className="text-base font-medium tracking-wide text-neutral-200">
-          Chair
-        </span>
-      </div>
+      {taskChat ? null : (
+        <div className="pointer-events-none absolute bottom-5 left-5 z-20 flex items-center gap-2.5 text-neutral-400">
+          <ChairMark className="h-8 w-auto text-neutral-200" />
+          <span className="text-base font-medium tracking-wide text-neutral-200">
+            Chair
+          </span>
+        </div>
+      )}
     </section>
   );
 }
