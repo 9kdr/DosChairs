@@ -142,8 +142,11 @@ def test_complete_model_uses_the_named_model() -> None:
         return httpx.Response(200, json={"choices": [{"message": {"content": "hi"}}]})
 
     client = ModelClient(
-        models=RoleModels(planner="muse-wonder-1.0", executor="muse-spark-1", verifier="muse-spark-1"),
-        transport=HttpxTransport("https://example.test/v1", client=httpx.Client(transport=httpx.MockTransport(handler))),
+        models=RoleModels(
+            planner="muse-wonder-1.0", executor="muse-spark-1", verifier="muse-spark-1"),
+        transport=HttpxTransport(
+            "https://example.test/v1",
+            client=httpx.Client(transport=httpx.MockTransport(handler))),
         api_key="test-key",
     )
     completion = client.complete_model("muse-wonder-2", [Message(role="user", content="go")])

@@ -77,7 +77,10 @@ def reset_status() -> None:
 
 def build_brief(task: Task, beat_label: str, client: ModelClient | None) -> str:
     """One short Spark call turns the task into a subagent brief."""
-    fallback = f"{task.section}: {task.goal} (beat {task.beat_id}: {beat_label}). Done when: {task.acceptance or task.goal}."
+    fallback = (
+        f"{task.section}: {task.goal} (beat {task.beat_id}: {beat_label}). "
+        f"Done when: {task.acceptance or task.goal}."
+    )
     if client is None:
         return fallback
     try:
@@ -135,23 +138,25 @@ def run_task(
         return TaskResult(task_id=task.id, section=task.section, verdict="rejected", error=error)
     brief = build_brief(task, beat_label, client)
     attempt_notes: list[str] = []
+    current = task
     for attempt in ("first", "retry"):
-        prompt = brief if attempt == "first" else f"{brief}\nPrevious attempt failed: {'; '.join(attempt_notes)}"
         try:
             if task.section == "cut":
-                output = runner(task, client=client, target_id=target_id, media=media)  # type: ignore[call-arg]
+                output = runner(current, client=client, target_id=target_id, media=media)  # type: ignore[call-arg]
             elif task.section == "sound":
-                output = runner(task, client=client, beat_times=beat_times)  # type: ignore[call-arg]
+                output = runner(current, client=client, beat_times=beat_times)  # type: ignore[call-arg]
             elif task.section in ("color", "graphics"):
-                output = runner(task, target_id=target_id)  # type: ignore[call-arg]
+                output = runner(current, target_id=target_id)  # type: ignore[call-arg]
             else:
-                output = runner(task, client=client, target_id=target_id)  # type: ignore[call-arg]
+                output = runner(current, client=client, target_id=target_id)  # type: ignore[call-arg]
         except Exception as error:
             attempt_notes.append(f"{attempt} raised {type(error).__name__}: {error}")
+            current = task.model_copy(update={"goal": f"{task.goal} (retry: {error})"})
             continue
         problems = section_verify(task, output.items)
         if problems:
             attempt_notes.append(f"{attempt} failed verify: {'; '.join(problems)}")
+            current = task.model_copy(update={"goal": f"{task.goal} (retry: {problems[-1]})"})
             continue
         latency = round((time.perf_counter() - started) * 1000, 1)
         _note(section=task.section, done=True, latency_ms=latency)
@@ -280,7 +285,12 @@ def run_crew(
 
 def _beat_times(plan: Any) -> list[float]:
     times: list[float] = []
-    raw: Any = plan.beats if hasattr(plan, "beats") else (plan.get("beats") if isinstance(plan, Mapping) else None)
+    if hasattr(plan, "beats"):
+        raw: Any = plan.beats
+    elif isinstance(plan, Mapping):
+        raw = plan.get("beats")
+    else:
+        raw = None
     if isinstance(raw, list):
         for entry in raw:
             moment = getattr(entry, "start_sec", None)
@@ -316,5 +326,6 @@ def handle_direct(job: Any) -> Any:
         artifacts=[],
         ops=[item.model_dump(mode="json", by_alias=True) for item in run.changeset.items],
         planner="crew",
-        message=f"crew {verdict}: {len(run.tasks)} tasks, {'; '.join(run.verdict.reasons) or 'all beats covered'}",
+        message=(f"crew {verdict}: {len(run.tasks)} tasks, "
+                 f"{'; '.join(run.verdict.reasons) or 'all beats covered'}"),
     )

@@ -6,10 +6,10 @@ back to a beat marker so the crew still lands one pending changeset;
 notes always say which path ran.
 """
 
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
-from collections.abc import Mapping, Sequence
 
 from chair_agent.crew.command import Task
 from chair_agent.edit_ops import ChangesetItem, marker_op
@@ -125,7 +125,8 @@ def run_motion(task: Task, *, client: Any = None, target_id: str = "timeline-1")
             rationale=f"Motion module {record.id}: {task.goal}",
             patch={"moduleId": record.id, "effect": "motion-module"},
         )
-        return SubagentOutput(items=_stamp([item], task), notes=f"modules.generate_module ({record.id})")
+        out = _stamp([item], task)
+        return SubagentOutput(items=out, notes=f"modules.generate_module ({record.id})")
     except Exception as error:
         return SubagentOutput(
             items=[_beat_marker(task, "Motion accent")],
@@ -146,7 +147,8 @@ def run_effects(task: Task, *, client: Any = None, target_id: str = "timeline-1"
             rationale=f"Effect {record.id}: {task.goal}",
             patch={"effectId": record.id},
         )
-        return SubagentOutput(items=_stamp([item], task), notes=f"effects.generate_effect ({record.id})")
+        out = _stamp([item], task)
+        return SubagentOutput(items=out, notes=f"effects.generate_effect ({record.id})")
     except Exception as error:
         return SubagentOutput(
             items=[_beat_marker(task, "Effect")],

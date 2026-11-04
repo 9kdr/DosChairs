@@ -88,7 +88,7 @@ def plan_beats(plan: Any) -> list[dict[str, str]]:
     beats: list[dict[str, str]] = []
     for entry in raw_beats:
         if hasattr(entry, "id"):
-            beat_id = getattr(entry, "id")
+            beat_id = entry.id
             label = str(getattr(entry, "intent", "") or getattr(entry, "goal", "") or beat_id)
         elif isinstance(entry, Mapping) and isinstance(entry.get("id"), str):
             beat_id = entry["id"]

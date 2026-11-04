@@ -9,7 +9,6 @@ from typing import Any
 from urllib.parse import unquote, urlsplit
 
 from chair_agent.assets import EditorUnlinkedError, build_assets, import_asset
-from chair_agent.crew import handle_direct
 from chair_agent.client import (
     build_client,
     configured_models,
@@ -17,6 +16,7 @@ from chair_agent.client import (
     load_settings,
     set_key,
 )
+from chair_agent.crew import handle_direct
 from chair_agent.jobs import (
     Job,
     JobConflict,
@@ -32,7 +32,9 @@ from chair_agent.projects import detect_projects
 from chair_agent.review import ReviewUnavailable, build_review
 from chair_agent.transcribe import handle_transcribe
 
-HANDLERS: dict[str, TaskHandler] = {"transcribe": handle_transcribe, "edit": handle_edit, "direct": handle_direct}
+HANDLERS: dict[str, TaskHandler] = {
+    "transcribe": handle_transcribe, "edit": handle_edit, "direct": handle_direct,
+}
 
 
 class Handler(BaseHTTPRequestHandler):
