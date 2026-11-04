@@ -112,3 +112,16 @@ def test_find_board_item_resolves_id_and_title(isolated) -> None:
     assert by_title["id"] == "style-x"
     with pytest.raises(PlanError):
         digest_item(PROJECT, "missing", client=FakeClient(DIGEST_JSON))
+
+
+def test_find_piece_resolves_board_ref_for_effect_briefs(isolated) -> None:
+    from chair_agent.pieces import macros
+
+    save_front(PROJECT, FRONT)
+    digest_item(PROJECT, "style-x", client=FakeClient(DIGEST_JSON))
+    piece = macros.find_piece("board:style-x")
+    assert piece is not None and piece["origin"] == "board"
+    note = macros.references_note([{"id": "board:style-x", "label": "@style-x"}])
+    assert "warm and quiet" in note
+    assert "https://example.com/still.jpg" in note
+    assert "@Warm morning grade" in note

@@ -230,6 +230,18 @@ def save_front(
     return plan
 
 
+def set_status(
+    project_id: str, status: Any, env: Mapping[str, str] | None = None
+) -> ProjectPlan:
+    """Flip a plan between draft and ready; anything else is rejected."""
+    if status not in ("draft", "ready"):
+        raise PlanError("plan status must be 'draft' or 'ready'")
+    plan = load_plan(project_id, env)
+    updated = validate_project_plan({**_dump(plan), "status": status})
+    _save(updated, env)
+    return updated
+
+
 def _planner_client(client: ModelClient | None) -> ModelClient:
     if client is not None:
         return client
