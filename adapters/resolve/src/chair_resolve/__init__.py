@@ -14,6 +14,13 @@ from chair_resolve.read import (
     read_current_timeline,
     timeline_from_resolve,
 )
+from chair_resolve.templates import (
+    FusionRoot,
+    MacroPiece,
+    ScanResult,
+    fusion_roots,
+    scan_fusion,
+)
 from chair_resolve.write import (
     add_effect,
     import_media,
@@ -26,10 +33,14 @@ from chair_resolve.write import (
 __all__ = [
     "FALLBACK_CAPABILITY",
     "MANIFEST",
+    "FusionRoot",
+    "MacroPiece",
+    "ScanResult",
     "ResolveClosedError",
     "add_effect",
     "chair_cache_dir",
     "check_spec",
+    "fusion_roots",
     "import_media",
     "install_title_template",
     "load_effect_spec",
@@ -38,6 +49,7 @@ __all__ = [
     "read_current_timeline",
     "remove_effect",
     "rig_frames_to_baked",
+    "scan_fusion",
     "spec_to_comp",
     "spec_to_macro",
     "timeline_from_resolve",

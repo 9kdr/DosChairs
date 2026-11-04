@@ -1,0 +1,15 @@
+{
+  "id": "demo-lower",
+  "name": "Demo OGraf Lower",
+  "main": "lower.js",
+  "schema": {
+    "type": "object",
+    "properties": {
+      "headline": { "type": "string", "title": "Headline", "default": "HELLO" },
+      "accent": { "type": "string", "title": "Accent", "gddType": "color-rrggbb", "default": "#2563eb" },
+      "scale": { "type": "number", "title": "Scale", "minimum": 0.5, "maximum": 2, "default": 1 },
+      "mode": { "type": "string", "enum": ["fast", "slow"], "default": "fast" },
+      "pulse": { "type": "boolean", "default": true }
+    }
+  }
+}
