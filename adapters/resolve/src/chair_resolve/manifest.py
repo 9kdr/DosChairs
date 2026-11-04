@@ -6,6 +6,7 @@ class Capabilities(BaseModel):
 
     keyframes: bool
     fusion_comps: bool
+    open_project: bool = True
     fusion_macros: bool = True
     fusion_build_api: bool = True
     template_scan: bool = True
@@ -48,6 +49,9 @@ MANIFEST = Manifest(
     # retime clips, so the planner skips or flags them. Reading supports them,
     # so the flags above stay True.
     fallbacks={
+        "openProject": (
+            "open the project in Studio by hand, then open it again in Chair"
+        ),
         "subtitles": "import captions in Studio by hand",
         "adjustmentLayers": "add an adjustment clip in Studio by hand",
         "speedChanges": "retime the clip in Studio by hand",

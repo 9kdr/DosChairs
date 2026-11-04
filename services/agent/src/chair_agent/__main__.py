@@ -331,6 +331,35 @@ class Handler(BaseHTTPRequestHandler):
                 return
             self._send(200, plan_store.plan_payload(plan))
             return
+        if urlsplit(self.path).path == "/projects/open":
+            from chair_agent import open_project as opener
+
+            try:
+                body = self._body()
+            except ValueError:
+                self._send(400, _error("invalid_json", "request body must be JSON"))
+                return
+            project_id = body.get("project_id")
+            editor = (
+                project_id.split(":", 1)[0]
+                if isinstance(project_id, str) and ":" in project_id
+                else None
+            )
+            try:
+                self._send(
+                    200,
+                    opener.open_in_editor(project_id, body.get("name")),
+                )
+            except opener.OpenProjectError as error:
+                opener.note_failed(editor=editor, error=str(error))
+                self._send(400, _error("invalid_open", str(error)))
+            except opener.ProjectUnknownError as error:
+                opener.note_failed(editor=editor, error=str(error))
+                self._send(404, _error("unknown_project", str(error)))
+            except opener.EditorUnavailable as error:
+                opener.note_failed(editor=editor, error=str(error))
+                self._send(503, _error("editor_unavailable", str(error)))
+            return
         request_id = _cancel_path(self.path)
         if request_id is None:
             self.send_error(404)
@@ -530,7 +559,7 @@ def _pipeline() -> dict[str, Any]:
 
 
 def _health() -> dict[str, Any]:
-    from chair_agent import cuts, effects, modules, piece_bake, piece_plan, sounds
+    from chair_agent import cuts, effects, modules, open_project, piece_bake, piece_plan, sounds
     from chair_agent.client import auth_status_snapshot
     from chair_agent.pieces import macros
 
@@ -548,6 +577,7 @@ def _health() -> dict[str, Any]:
         "last_auth_error_at": auth_status["last_auth_error_at"],
         "sounds": sounds.status_snapshot(),
         "cuts": cuts.status_snapshot(),
+        "open_project": open_project.status_snapshot(),
         "effects": effects.status_snapshot(),
         "macros": macros.status_snapshot(),
         "modules": modules.status_snapshot() | {"model": modules.module_model()},

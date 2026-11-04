@@ -28,6 +28,7 @@ import {
   type Project,
 } from "./data";
 import { HomeDock, type HomeTab } from "./HomeDock";
+import { openProjectInEditor } from "./projects";
 import { ProjectCard } from "./ProjectCard";
 import { PiecesShelf } from "../effects/PiecesShelf";
 import { SettingsScreen } from "../settings/SettingsScreen";
@@ -170,6 +171,42 @@ function ProjectsPane({
 
   const detected = useProjects();
 
+  // Issue #314: the card asks the editor to open the project first and
+  // Home enters it only when the editor confirms. One open at a time;
+  // a failure leaves a plain message on the card and stays on Home.
+  const [openingId, setOpeningId] = useState<string | null>(null);
+  const [openError, setOpenError] = useState<{
+    id: string;
+    message: string;
+  } | null>(null);
+
+  const handleOpen = (project: Project) => {
+    if (openingId !== null) return;
+    if (project.editorId === "otio") {
+      // Interchange has no editor app to confirm; enter directly.
+      onOpenProject(project.id);
+      return;
+    }
+    setOpeningId(project.id);
+    setOpenError((current) =>
+      current?.id === project.id ? null : current,
+    );
+    void openProjectInEditor(project).then(
+      () => {
+        setOpeningId(null);
+        onOpenProject(project.id);
+      },
+      (error: unknown) => {
+        setOpeningId(null);
+        setOpenError({
+          id: project.id,
+          message:
+            error instanceof Error ? error.message : "the editor did not answer",
+        });
+      },
+    );
+  };
+
   return (
     <motion.div
       ref={paneRef}
@@ -243,7 +280,9 @@ function ProjectsPane({
               layoutTransition={layoutTransition}
               hoverEase={hoverEase}
               reduceMotion={reduceMotion}
-              onOpenProject={onOpenProject}
+              onOpenProject={handleOpen}
+              openingId={openingId}
+              openError={openError}
               cardRefs={cardRefs}
             />
           </>
@@ -264,6 +303,8 @@ function ProjectsGrid({
   hoverEase,
   reduceMotion,
   onOpenProject,
+  openingId,
+  openError,
   cardRefs,
 }: {
   projects: Project[];
@@ -275,7 +316,9 @@ function ProjectsGrid({
   layoutTransition: { duration: number } | { type: "spring"; stiffness: number; damping: number; mass: number };
   hoverEase: { type: "tween"; duration: number; ease: readonly [number, number, number, number] };
   reduceMotion: boolean | null;
-  onOpenProject: (projectId: string) => void;
+  onOpenProject: (project: Project) => void;
+  openingId: string | null;
+  openError: { id: string; message: string } | null;
   cardRefs: React.RefObject<Record<string, HTMLDivElement | null>>;
 }) {
   return (
@@ -318,7 +361,11 @@ function ProjectsGrid({
                   <ProjectCard
                     project={project}
                     emphasized={emphasized}
-                    onOpen={() => onOpenProject(project.id)}
+                    opening={openingId === project.id}
+                    openError={
+                      openError?.id === project.id ? openError.message : null
+                    }
+                    onOpen={() => onOpenProject(project)}
                     cardRef={(node) => {
                       cardRefs.current[project.id] = node;
                     }}
@@ -332,7 +379,7 @@ function ProjectsGrid({
                 <button
                   type="button"
                   aria-label={`Open ${project.name}`}
-                  onClick={() => onOpenProject(project.id)}
+                  onClick={() => onOpenProject(project)}
                   onContextMenu={(e) => {
                     const card = cardRefs.current[project.id];
                     if (card) {

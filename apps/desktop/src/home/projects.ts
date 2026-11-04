@@ -218,3 +218,87 @@ export function writeStoredSnapshot(snapshot: StoredSnapshot): void {
 export function findStoredProject(projectId: string): Project | null {
   return readStoredSnapshot().projects.find((entry) => entry.id === projectId) ?? null;
 }
+
+export type OpenProjectResult = {
+  opened: boolean;
+  alreadyCurrent: boolean;
+  project: string | null;
+  fallback?: string;
+};
+
+function openResultFromJson(payload: unknown): OpenProjectResult {
+  if (
+    !isRecord(payload) ||
+    typeof payload.opened !== "boolean" ||
+    typeof payload.alreadyCurrent !== "boolean" ||
+    (payload.project !== null && typeof payload.project !== "string")
+  ) {
+    throw malformed("open result needs opened, alreadyCurrent, and project");
+  }
+  const result: OpenProjectResult = {
+    opened: payload.opened,
+    alreadyCurrent: payload.alreadyCurrent,
+    project: payload.project,
+  };
+  if (typeof payload.fallback === "string") {
+    result.fallback = payload.fallback;
+  }
+  return result;
+}
+
+function openFailure(payload: unknown): { code?: string; message?: string } {
+  if (
+    isRecord(payload) &&
+    isRecord(payload.error) &&
+    typeof payload.error.message === "string"
+  ) {
+    return {
+      code:
+        typeof payload.error.code === "string"
+          ? payload.error.code
+          : undefined,
+      message: payload.error.message,
+    };
+  }
+  return {};
+}
+
+/**
+ * Ask the agent to put the editor on the project (issue #314). Home
+ * enters the project only when this confirms the editor is on it.
+ * Failures throw a ServiceError carrying the agent's plain message.
+ */
+export async function openProjectInEditor(
+  project: Pick<Project, "id" | "name">,
+  options: FetchProjectsOptions = {},
+): Promise<OpenProjectResult> {
+  const { agentUrl, fetchFn = fetch, signal } = options;
+  const url = `${agentBaseUrl(agentUrl)}/projects/open`;
+  let response: { ok: boolean; status: number; json: () => Promise<unknown> };
+  try {
+    response = await fetchFn(url, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ project_id: project.id, name: project.name }),
+      signal,
+    });
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") throw error;
+    throw new ServiceError("agent", `agent is unreachable at ${url}`);
+  }
+  let payload: unknown = null;
+  try {
+    payload = await response.json();
+  } catch {
+    payload = null;
+  }
+  if (!response.ok) {
+    const failure = openFailure(payload);
+    throw new ServiceError(
+      "agent",
+      failure.message ?? `agent failed (${response.status})`,
+      { status: response.status, code: failure.code },
+    );
+  }
+  return openResultFromJson(payload);
+}
