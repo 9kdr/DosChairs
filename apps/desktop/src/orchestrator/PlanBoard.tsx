@@ -130,26 +130,6 @@ export function PlanBoard({ items, digests, digesting, onChange, onDigest, onFil
                   </a>
                 ) : null}
                 <div className="flex items-center gap-2">
-                  <Input
-                    size="sm"
-                    value={item.title}
-                    placeholder="Title"
-                    aria-label="Board item title"
-                    className="h-7 min-w-0 flex-1 border-transparent bg-transparent text-[15px] font-medium"
-                    onChange={(event) => setItem(item.id, { title: event.target.value })}
-                  />
-                  <Button
-                    type="button"
-                    size="icon-sm"
-                    variant="ghost"
-                    aria-label={`Remove ${item.title || "board item"}`}
-                    className="shrink-0 rounded-full"
-                    onClick={() => onChange(items.filter((entry) => entry.id !== item.id))}
-                  >
-                    <X />
-                  </Button>
-                </div>
-                <div className="flex flex-wrap items-center gap-1.5">
                   <Menu>
                     <MenuTrigger
                       render={
@@ -173,7 +153,26 @@ export function PlanBoard({ items, digests, digesting, onChange, onDigest, onFil
                       {tag}
                     </Badge>
                   ))}
+                  <span className="flex-1" aria-hidden="true" />
+                  <Button
+                    type="button"
+                    size="icon-sm"
+                    variant="ghost"
+                    aria-label={`Remove ${item.title || "board item"}`}
+                    className="shrink-0 rounded-full"
+                    onClick={() => onChange(items.filter((entry) => entry.id !== item.id))}
+                  >
+                    <X />
+                  </Button>
                 </div>
+                <Input
+                  size="sm"
+                  value={item.title}
+                  placeholder="Title"
+                  aria-label="Board item title"
+                  className="h-7 border-transparent bg-transparent px-0 text-[15px] font-medium"
+                  onChange={(event) => setItem(item.id, { title: event.target.value })}
+                />
                 <Input
                   size="sm"
                   value={item.tags.join(", ")}
