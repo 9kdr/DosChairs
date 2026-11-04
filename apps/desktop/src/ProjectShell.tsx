@@ -216,7 +216,7 @@ export function ProjectShell({ projectId, projectName, editorId, onHome }: Proje
     if (!undone.ok) return `Can't rewind ${task.name} yet: ${undone.reason}`;
     project.undoToHere(tip.itemId);
     const count = entries.length === 1 ? "1 edit" : `${entries.length} edits`;
-    return `Rewound ${count} for ${task.name} onto a copy — History shows every step.`;
+    return `Rewound ${count} for ${task.name}.`;
   };
 
   const openTask = (task: RunningTask) => {

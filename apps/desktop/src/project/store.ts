@@ -142,7 +142,7 @@ export function undoSummaryForTask(
   const count = entries.length === 1 ? "1 applied edit" : `${entries.length} applied edits`;
   return (
     `${count} for ${taskName}, newest first: ${list}. ` +
-    `Press u or pick Undo to here in History to rewind — it applies at once onto a copy.`
+    "Press u or pick Undo to here in History to rewind."
   );
 }
 

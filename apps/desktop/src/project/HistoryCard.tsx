@@ -1,6 +1,7 @@
 import { Dialog } from "@base-ui/react/dialog";
 import { HistoryIcon, KeyboardIcon, TriangleAlertIcon, Undo2Icon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { InfoHint } from "@/components/info-hint";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Kbd } from "@/components/ui/kbd";
@@ -152,9 +153,10 @@ export function HistoryCard({
       <div className="flex items-center gap-2 px-1 pb-1">
         <HistoryIcon className="size-4 text-neutral-400" aria-hidden="true" />
         <h2 className="text-sm font-medium text-neutral-100">History</h2>
-        <span className="text-xs tabular-nums text-muted-foreground">
+        <span className="shrink-0 text-xs whitespace-nowrap tabular-nums text-muted-foreground">
           {entries.length === 1 ? "1 entry" : `${entries.length} entries`}
         </span>
+        <InfoHint>Every apply lands on a copy.</InfoHint>
         {onUndoLast && entries.length > 0 ? (
           <Button
             type="button"
@@ -167,9 +169,7 @@ export function HistoryCard({
             <Undo2Icon className="size-3.5" aria-hidden="true" />
             Undo
           </Button>
-        ) : (
-          <p className="ml-auto text-xs text-muted-foreground">Applied onto a copy. Undo is one key.</p>
-        )}
+        ) : null}
       </div>
       {entries.length === 0 ? (
         <p className="px-1 py-2 text-xs text-muted-foreground">
@@ -286,9 +286,6 @@ export function HistoryCard({
             <Dialog.Title className="text-base font-medium text-neutral-100">
               History shortcuts
             </Dialog.Title>
-            <Dialog.Description className="mt-1 text-sm text-neutral-400">
-              Rewind without the mouse. Shortcuts rest while typing.
-            </Dialog.Description>
             <ul aria-label="History shortcuts" className="mt-4 flex flex-col">
               {HISTORY_SHORTCUTS.map((shortcut) => (
                 <li
@@ -304,9 +301,6 @@ export function HistoryCard({
                 </li>
               ))}
             </ul>
-            <p className="mt-4 text-xs leading-5 text-muted-foreground">
-              Every apply lands on a copy, so every undo has a way back.
-            </p>
             <div className="mt-5 flex justify-end">
               <Button type="button" size="sm" onClick={() => setHelpOpen(false)}>
                 Done

@@ -294,7 +294,7 @@ describe("undoSummaryForTask", () => {
     expect(undoSummaryForTask(history, "task-1", "Assemble rough cut")).toBe(
       "2 applied edits for Assemble rough cut, newest first: " +
         "Add Marker; Add Marker. " +
-        "Press u or pick Undo to here in History to rewind — it applies at once onto a copy.",
+        "Press u or pick Undo to here in History to rewind.",
     );
   });
 
