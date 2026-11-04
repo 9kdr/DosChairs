@@ -157,10 +157,7 @@ def _board_list_entries(tokens: Sequence[str]) -> list[dict[str, Any]]:
 def list_pieces(query: str = "", *, limit: int = 50, rescan: bool = False) -> dict[str, Any]:
     """Catalogue pieces and Resolve macros together, filtered and ranked by query."""
     tokens = [token for token in query.lower().split() if token]
-    entries = (
-        _catalog_entries() + _macro_entries(get_scan(rescan=rescan))
-        + _board_list_entries(tokens)
-    )
+    entries = _catalog_entries() + _macro_entries(get_scan(rescan=rescan))
     # The editor's own macros first, then the built-in catalogue, then Resolve's stock set.
     order = {"user": 0, "catalog": 1, "system": 2}
     scored = sorted(
@@ -168,9 +165,9 @@ def list_pieces(query: str = "", *, limit: int = 50, rescan: bool = False) -> di
         key=lambda item: (-item[1], order.get(item[0]["source"], 1)),
     )
     entries = [entry for entry, score in scored if score > 0 or not tokens]
-    # Board items match on their own id/title/tags above, so they skip the
-    # piece scorer instead of being filtered by it.
-    entries = entries + _board_list_entries(tokens)
+    # Board items match on their own id/title/tags instead of the piece
+    # scorer. They ride first: they are the editor's own picks.
+    entries = _board_list_entries(tokens) + entries
     return {"pieces": entries[: max(1, limit)], "total": len(entries)}
 
 
