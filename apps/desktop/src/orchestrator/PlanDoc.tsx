@@ -1232,11 +1232,11 @@ export function PlanDoc({ open, mode, onOpen, onClose, notice, className }: Plan
         <div className="flex gap-2">
           <Button type="button" size="sm" variant="outline" onClick={() => onOpen("edit")}>
             <PenLine />
-            Edit
+            Edit plan
           </Button>
           <Button type="button" size="sm" variant="ghost" onClick={() => onOpen("talk")}>
             <MessageSquare />
-            Talk
+            Discuss
           </Button>
         </div>
       </article>
@@ -1370,10 +1370,10 @@ export function PlanDoc({ open, mode, onOpen, onClose, notice, className }: Plan
       <Tabs value={mode} onValueChange={(value) => onOpen(value as PlanMode)}>
         <TabsList size="sm" className="grid w-full grid-cols-2 rounded-full bg-white/5 p-1 [&>[data-slot=tab-indicator]]:hidden">
           <TabsTab value="edit" className="rounded-full data-active:bg-white/10">
-            Edit
+            Edit plan
           </TabsTab>
           <TabsTab value="talk" className="rounded-full data-active:bg-white/10">
-            Talk
+            Discuss
           </TabsTab>
         </TabsList>
       </Tabs>
