@@ -12,7 +12,7 @@
 import React from "react";
 import { ShaderMount, ditheringFragmentShader, getShaderColorFromString } from "@paper-design/shaders";
 import type { EffectProps, PropSpec } from "@chair/effects";
-import { clamp, num } from "@chair/effects";
+import { PAPER_PATTERN_SIZING, clamp, num } from "@chair/effects";
 
 export const meta = {
   id: "dither-reveal",
@@ -72,7 +72,10 @@ export default function DitherReveal(p: Props): React.ReactElement {
       if (!mountRef.current) {
         // Paper only queries uniform locations for keys passed here; every key
         // the effect later sets must be present, or the dither stays blank.
+        // PAPER_PATTERN_SIZING: the dithering fragment divides by u_scale
+        // itself — without it the pattern collapses to a solid fill.
         mountRef.current = new ShaderMount(hostRef.current, ditheringFragmentShader, {
+          ...PAPER_PATTERN_SIZING,
           u_colorBack: getShaderColorFromString(uniforms.colorBack),
           u_colorFront: getShaderColorFromString(uniforms.colorFront),
           u_shape: uniforms.shape,

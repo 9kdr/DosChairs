@@ -28,13 +28,13 @@ export function seekPaper(mount: SeekablePaperMount | null | undefined, t: numbe
 
 /**
  * Sizing uniforms for a bare `new ShaderMount`. Paper's React components set
- * these; the mount itself never does, so they stay 0 — and the shared vertex
- * shader divides UVs by `u_scale`, which blanks object-UV shaders like
- * mesh-gradient (0/1e-4 weights) and warps pattern-UV ones. Spread into the
- * constructor uniforms of any module whose shader reads `v_objectUV` or
- * `v_patternUV` (mesh, grain, ...). Shaders on `gl_FragCoord` (dithering)
- * must NOT include these: unused names only add "location not found" noise.
- * Values are Paper's own object defaults (`defaultObjectSizing`, fit contain).
+ * these; the mount itself never does, so they stay 0 — and both the shared
+ * vertex shader and the dithering fragment divide UVs by `u_scale`, which
+ * blanks object-UV shaders like mesh-gradient (0/1e-4 weights) and collapses
+ * dithering to a solid fill. Spread one of these into the constructor
+ * uniforms of every bare mount: OBJECT for mesh/grain-style shaders, PATTERN
+ * for dithering. Values are Paper's own defaults (`defaultObjectSizing` /
+ * `defaultPatternSizing`).
  */
 export const PAPER_OBJECT_SIZING = {
   u_fit: 1,
@@ -46,6 +46,12 @@ export const PAPER_OBJECT_SIZING = {
   u_originY: 0.5,
   u_worldWidth: 0,
   u_worldHeight: 0,
+} as const;
+
+/** Pattern variant (fit none): the dithering shader's own default. */
+export const PAPER_PATTERN_SIZING = {
+  ...PAPER_OBJECT_SIZING,
+  u_fit: 0,
 } as const;
 
 /** A SeekAdapter over a Paper ShaderMount fetched with `getMount`. Dispose is the module's (it owns WebGL). */
