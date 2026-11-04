@@ -223,6 +223,7 @@ export function ProjectShell({ projectId, projectName, editorId, onHome }: Proje
       <PlanDoc
         open={planOpen}
         mode={planMode}
+        projectId={projectId}
         onOpen={(mode) => {
           setPlanMode(mode);
           setPlanOpen(true);
