@@ -2,9 +2,18 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "noEmit": true,
-    "rootDir": "src",
-    "types": ["node"],
-    "jsx": "react-jsx"
+    "types": [
+      "node"
+    ],
+    "jsx": "react-jsx",
+    "paths": {
+      "@chair/effects": [
+        "./src/kit/index.ts"
+      ]
+    }
   },
-  "include": ["src"]
+  "include": [
+    "src",
+    "modules"
+  ]
 }

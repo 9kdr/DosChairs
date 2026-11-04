@@ -41,6 +41,10 @@ class Handler(BaseHTTPRequestHandler):
         if self.path == "/health":
             self._send(200, _health())
             return
+        module_route = _module_paths(self.path)
+        if module_route is not None:
+            self._module_get(*module_route)
+            return
         kind, effect_id = _effect_paths(self.path)
         if kind == "effect" and effect_id is not None:
             try:
@@ -146,6 +150,10 @@ class Handler(BaseHTTPRequestHandler):
             except ValueError as error:
                 self._send(400, _error("invalid_sounds_fetch", str(error)))
             return
+        module_route = _module_paths(self.path)
+        if module_route is not None:
+            self._module_post(*module_route)
+            return
         effects_path = urlsplit(self.path).path
         if effects_path == "/effects/generate":
             try:
@@ -203,6 +211,51 @@ class Handler(BaseHTTPRequestHandler):
         else:
             self._send(200, _job_body(self._base_url(), job))
 
+    def _module_get(self, action: str, module_id: str | None, name: str | None) -> None:
+        from chair_agent import modules
+
+        try:
+            if action == "record" and module_id is not None:
+                self._send(200, modules.get_module(module_id).model_dump(mode="json"))
+            elif action == "preview" and module_id is not None:
+                self._send_raw(200, modules.preview_for(module_id).encode(), "text/html")
+            elif action == "file" and module_id is not None and name is not None:
+                path = modules.build_file(module_id, name)
+                kind = "application/javascript" if path.suffix == ".js" else "application/json"
+                self._send_raw(200, path.read_bytes(), kind)
+            else:
+                self.send_error(404)
+        except Exception as error:
+            self._send(_modules_status(error), _error("invalid_module", str(error)))
+
+    def _module_post(self, action: str, module_id: str | None, name: str | None) -> None:
+        from chair_agent import modules
+
+        try:
+            body = self._body()
+        except ValueError:
+            self._send(400, _error("invalid_json", "request body must be JSON"))
+            return
+        try:
+            if action == "generate":
+                self._send(200, _modules_generate_body(body))
+            elif action == "import":
+                record = modules.register_source(
+                    str(body.get("source", "")), brief=str(body.get("brief", ""))
+                )
+                self._send(200, _module_summary(record))
+            elif action == "bundle" and module_id is not None:
+                self._send(200, _module_summary(modules.bundle_module(module_id)))
+            elif action == "install" and module_id is not None:
+                dest = body.get("dest")
+                self._send(200, modules.install_module(
+                    module_id, dest=dest if isinstance(dest, str) and dest else None
+                ))
+            else:
+                self.send_error(404)
+        except Exception as error:
+            self._send(_modules_status(error), _error("invalid_module", str(error)))
+
     def _body(self) -> dict[str, Any]:
         length = int(self.headers.get("content-length", "0"))
         payload = json.loads(self.rfile.read(length) or b"{}")
@@ -225,6 +278,14 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(raw)
 
+    def _send_raw(self, status: int, raw: bytes, content_type: str) -> None:
+        self.send_response(status)
+        self.send_header("content-type", f"{content_type}; charset=utf-8")
+        self.send_header("content-length", str(len(raw)))
+        self.send_header("access-control-allow-origin", "*")
+        self.end_headers()
+        self.wfile.write(raw)
+
     def log_message(self, fmt: str, *args: object) -> None:
         return
 
@@ -237,6 +298,22 @@ def _effect_paths(path: str) -> tuple[str, str | None]:
     if len(parts) == 3 and parts[0] == "effects" and parts[1] and parts[2] == "verify":
         return ("verify", unquote(parts[1]))
     return ("", None)
+
+
+def _module_paths(path: str) -> tuple[str, str | None, str | None] | None:
+    """Route /effects/modules/...; None when the path is not a module path."""
+    parts = [unquote(p) for p in urlsplit(path).path.strip("/").split("/")]
+    if len(parts) < 3 or parts[0] != "effects" or parts[1] != "modules":
+        return None
+    if len(parts) == 3:
+        if parts[2] in ("generate", "import"):
+            return (parts[2], None, None)
+        return ("record", parts[2], None)
+    if len(parts) == 4 and parts[3] in ("bundle", "install", "preview"):
+        return (parts[3], parts[2], None)
+    if len(parts) == 5 and parts[3] == "files":
+        return ("file", parts[2], parts[4])
+    return ("", None, None)
 
 
 def _review_path(path: str) -> str | None:
@@ -277,7 +354,7 @@ def _cancel_path(path: str) -> str | None:
 
 
 def _health() -> dict[str, Any]:
-    from chair_agent import effects, sounds
+    from chair_agent import effects, modules, sounds
 
     keys_status = keys_configured()
     return {
@@ -290,6 +367,7 @@ def _health() -> dict[str, Any]:
         "keys": keys_status,
         "sounds": sounds.status_snapshot(),
         "effects": effects.status_snapshot(),
+        "modules": modules.status_snapshot() | {"model": modules.module_model()},
     }
 
 
@@ -387,6 +465,59 @@ def _effects_status(error: Exception) -> int:
     if isinstance(error, InvalidEffect):
         return effects.error_status(error)
     return 400
+
+
+def _modules_status(error: Exception) -> int:
+    from chair_agent import modules
+    from chair_agent.modules import InvalidModule
+
+    if isinstance(error, InvalidModule):
+        return modules.error_status(error)
+    return 400
+
+
+def _module_summary(record: Any) -> dict[str, Any]:
+    dumped = record.model_dump(mode="json")
+    return {
+        "id": dumped["id"],
+        "meta": dumped["meta"],
+        "props": dumped["props"],
+        "checks": dumped["checks"],
+        "warnings": dumped["warnings"],
+        "stem": dumped["stem"],
+        "files": dumped["files"],
+        "notes": dumped["notes"],
+        "repaired": dumped["repaired"],
+        "preview": f"/effects/modules/{dumped['id']}/preview",
+    }
+
+
+def _modules_generate_body(body: dict[str, Any]) -> dict[str, Any]:
+    from chair_agent import modules
+
+    canvas = body.get("canvas", {})
+    if not isinstance(canvas, dict):
+        raise ValueError("generate needs a 'canvas' object with width and height")
+    try:
+        width = int(canvas.get("width", 1920))
+        height = int(canvas.get("height", 1080))
+        fps = float(body.get("fps", 30))
+        duration_sec = float(body.get("durationSec", 8))
+    except (TypeError, ValueError) as error:
+        raise ValueError(f"bad generate body: {error}") from error
+    references = body.get("references")
+    pieces = body.get("pieces")
+    record = modules.generate_module(
+        str(body.get("brief", "")),
+        kind=body.get("kind") if isinstance(body.get("kind"), str) else None,
+        width=width,
+        height=height,
+        fps=fps,
+        duration_sec=duration_sec,
+        references=references if isinstance(references, list) else None,
+        piece_ids=[str(p) for p in pieces] if isinstance(pieces, list) else None,
+    )
+    return _module_summary(record)
 
 
 def _effect_body(effect_id: str) -> dict[str, Any]:

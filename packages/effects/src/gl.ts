@@ -162,26 +162,26 @@ function setUniform(
 }
 
 /**
- * Paint one frame of the spec's shader on a WebGL2 context sized to the spec.
- * Returns true when anything was drawn; false (never throws) means the caller
- * should show the Canvas2D fallback box instead.
+ * Paint one fullscreen fragment pass on a WebGL2 context. Returns true when
+ * anything was drawn; false (never throws) means compile/link failed and the
+ * caller should show its fallback. Shared by spec shader layers and kit
+ * ShaderPass so there is one program cache and one draw path.
  */
-export function paintShader(
+export function paintFragment(
   gl: WebGL2RenderingContext,
-  spec: EffectSpec,
-  t: number,
-  controls: Record<string, unknown> = {},
+  source: string,
+  width: number,
+  height: number,
+  uniforms: BoundUniform[],
 ): boolean {
   try {
-    const source = spec.shader?.source;
-    if (!source) return false;
     const prog = programFor(gl, source);
     if (!prog) return false;
-    gl.viewport(0, 0, spec.width, spec.height);
+    gl.viewport(0, 0, width, height);
     gl.clearColor(0, 0, 0, 0);
     gl.clear(gl.COLOR_BUFFER_BIT);
     gl.useProgram(prog);
-    for (const u of shaderUniforms(spec, t, controls)) {
+    for (const u of uniforms) {
       const loc = gl.getUniformLocation(prog, u.name);
       if (!loc) continue;
       setUniform(gl, loc, u.value);
@@ -202,4 +202,16 @@ export function paintShader(
   } catch {
     return false;
   }
+}
+
+/** Paint one frame of the spec's shader on a WebGL2 context sized to the spec. */
+export function paintShader(
+  gl: WebGL2RenderingContext,
+  spec: EffectSpec,
+  t: number,
+  controls: Record<string, unknown> = {},
+): boolean {
+  const source = spec.shader?.source;
+  if (!source) return false;
+  return paintFragment(gl, source, spec.width, spec.height, shaderUniforms(spec, t, controls));
 }

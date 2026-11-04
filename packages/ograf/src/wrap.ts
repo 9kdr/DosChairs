@@ -8,11 +8,12 @@
  * requestAnimationFrame, no playback state. The *component* must hold up its
  * end (pure render of props + t); the host never hands it a clock.
  */
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
+import type { Plugin } from "esbuild";
 import type { OgrafProp } from "./props.js";
 import { normalizeHexColor } from "./props.js";
 import { manifestForOgarf, ografClassName, ografSlug } from "./manifest.js";
@@ -36,7 +37,16 @@ export interface WrapReactOptions {
   entry: string;
   /** Inspector props: become manifest schema, passed to the component. */
   props?: OgrafProp[];
-  /** Extra JSON payload passed as the component's `data` prop. */
+  /** Extra esbuild plugins (import allow-list, aliases) for the bundle step. */
+  plugins?: Plugin[];
+  /** Extra folders searched for bare imports, after the entry's own folder. */
+  nodePaths?: string[];
+  /**
+   * Extra JSON payload passed as the component's `data` prop. A
+   * `data.keyframes` table (`{ propId: [[seconds, value], ...] }`) is the
+   * baked fallback for `history()` when the host sends no updateAction
+   * events: numbers interpolate linearly, anything else holds.
+   */
   data?: unknown;
 }
 
@@ -81,30 +91,91 @@ import Component from __WRAP_ENTRY__;
 const DATA = __WRAP_DATA__;
 const DEFAULTS = __WRAP_DEFAULTS__;
 const FPS = __WRAP_FPS__;
+const WIDTH = __WRAP_WIDTH__;
+const HEIGHT = __WRAP_HEIGHT__;
+const BAKED = (DATA && typeof DATA === 'object' && DATA.keyframes && typeof DATA.keyframes === 'object') ? DATA.keyframes : {};
+
+function sampleBaked(table, t) {
+  if (!Array.isArray(table) || table.length === 0) return undefined;
+  const first = table[0];
+  const last = table[table.length - 1];
+  if (t <= first[0]) return first[1];
+  if (t >= last[0]) return last[1];
+  for (let i = 0; i < table.length - 1; i++) {
+    const a = table[i];
+    const b = table[i + 1];
+    if (t >= a[0] && t <= b[0]) {
+      if (typeof a[1] === 'number' && typeof b[1] === 'number') {
+        const u = (t - a[0]) / Math.max(1e-9, b[0] - a[0]);
+        return a[1] + (b[1] - a[1]) * u;
+      }
+      return a[1];
+    }
+  }
+  return last[1];
+}
 
 class __WRAP_CLASS__ extends HTMLElement {
   constructor() {
     super();
-    this._props = {};
-    for (const k of Object.keys(DEFAULTS)) this._props[k] = DEFAULTS[k];
+    this._baseline = {};
     this._t = 0;
     this._frame = 0;
     this._root = null;
     this._schedule = [];
+    this._updates = [];
+    this._origin = 0;
+    this._liveStep = 0;
     this._currentStep = 0;
     this._primed = false;
+    this._history = (name, t) => this._hist(name, t);
     const shadow = this.attachShadow({ mode: 'open' });
     this._mount = document.createElement('div');
     this._mount.style.cssText = 'position:absolute;inset:0;';
     shadow.appendChild(this._mount);
   }
 
+  // A prop's value at component time t (seconds since play): the last
+  // scheduled updateAction at or before it (sample-and-hold), else the baked
+  // keyframe table, else the load/Inspector baseline, else the default. It
+  // reads only the stored schedule, never call order, so any seek order and
+  // any earlier time give the same answer.
+  _hist(name, t) {
+    const at = this._origin + t * 1000;
+    let found = false;
+    let value;
+    for (const u of this._updates) {
+      if (u.timestamp > at) break;
+      if (Object.prototype.hasOwnProperty.call(u.data, name)) {
+        found = true;
+        value = u.data[name];
+      }
+    }
+    if (found) return value;
+    if (Object.prototype.hasOwnProperty.call(BAKED, name)) {
+      const baked = sampleBaked(BAKED[name], t);
+      if (baked !== undefined) return baked;
+    }
+    if (Object.prototype.hasOwnProperty.call(this._baseline, name)) return this._baseline[name];
+    return DEFAULTS[name];
+  }
+
+  _propsAt(t) {
+    const out = {};
+    for (const k of Object.keys(DEFAULTS)) out[k] = this._hist(k, t);
+    return out;
+  }
+
   _render() {
     const element = React.createElement(Component, {
-      ...this._props,
+      ...this._propsAt(this._t),
       data: DATA,
       t: this._t,
       frame: this._frame,
+      fps: FPS,
+      width: WIDTH,
+      height: HEIGHT,
+      history: this._history,
     });
     if (!this._root) this._root = createRoot(this._mount);
     flushSync(() => {
@@ -114,10 +185,12 @@ class __WRAP_CLASS__ extends HTMLElement {
 
   async load(params) {
     const data = (params && params.data) || {};
-    this._props = {};
-    for (const k of Object.keys(DEFAULTS)) this._props[k] = DEFAULTS[k];
-    for (const k of Object.keys(data)) this._props[k] = data[k];
+    this._baseline = {};
+    for (const k of Object.keys(data)) this._baseline[k] = data[k];
     this._schedule = [];
+    this._updates = [];
+    this._origin = 0;
+    this._liveStep = 0;
     this._currentStep = 0;
     this._primed = false;
     this._t = 0;
@@ -153,6 +226,7 @@ class __WRAP_CLASS__ extends HTMLElement {
       this._currentStep = this._currentStep + (isFinite(delta) ? delta : 1);
     }
     if (this._currentStep < 1) this._currentStep = 1;
+    this._liveStep = this._currentStep;
     this._t = Math.min(0.5, __WRAP_DURATION__);
     this._frame = Math.round(this._t * FPS);
     this._render();
@@ -161,6 +235,7 @@ class __WRAP_CLASS__ extends HTMLElement {
 
   async stopAction(params) {
     this._currentStep = 0;
+    this._liveStep = 0;
     this._primed = true;
     this._hide();
     return { statusCode: 200 };
@@ -168,7 +243,12 @@ class __WRAP_CLASS__ extends HTMLElement {
 
   async updateAction(params) {
     const data = (params && params.data) || {};
-    for (const k of Object.keys(data)) this._props[k] = data[k];
+    // Inspector edits live in the baseline so every later seek keeps them,
+    // unless the schedule carries its own updateAction events (then those
+    // replay the values and the baseline stays the load-time state).
+    if (this._updates.length === 0) {
+      for (const k of Object.keys(data)) this._baseline[k] = data[k];
+    }
     this._render();
     return { statusCode: 200 };
   }
@@ -179,34 +259,39 @@ class __WRAP_CLASS__ extends HTMLElement {
 
   async goToTime(payload) {
     const timestamp = payload && payload.timestamp != null ? payload.timestamp : 0;
+    // Every seek rebuilds from the stored schedule: the play/stop state comes
+    // from the live lifecycle calls plus the events up to this timestamp,
+    // the prop values come from history. Nothing carries over from the
+    // previous goToTime, so any call order paints the same frame.
+    let step = this._liveStep;
     let lastPlay = null;
     let lastStop = null;
     for (const event of this._schedule) {
       if (!event || event.timestamp > timestamp) break;
       const type = event.action && event.action.type;
-      const pdata = (event.action && event.action.params && event.action.params.data) || {};
-      if (type === 'updateAction') {
-        for (const k of Object.keys(pdata)) this._props[k] = pdata[k];
-      } else if (type === 'playAction') {
+      if (type === 'playAction') {
         lastPlay = event.timestamp;
         lastStop = null;
-        this._currentStep = 1;
+        step = 1;
       } else if (type === 'stopAction') {
         lastStop = event.timestamp;
         lastPlay = null;
-        this._currentStep = 0;
+        step = 0;
       }
     }
     let seconds;
     if (lastStop !== null) seconds = -1 + (timestamp - lastStop) / 1000;
     else if (lastPlay !== null) seconds = (timestamp - lastPlay) / 1000;
     else seconds = timestamp / 1000;
+    this._origin = lastPlay !== null ? lastPlay : 0;
     const dur = __WRAP_DURATION__;
     if (seconds < 0 || seconds > dur) {
+      this._currentStep = step;
       this._hide();
       return { statusCode: 200 };
     }
-    if (this._currentStep === 0 && this._primed) {
+    if (step === 0 && this._primed) {
+      this._currentStep = step;
       this._hide();
       return { statusCode: 200 };
     }
@@ -221,7 +306,14 @@ class __WRAP_CLASS__ extends HTMLElement {
   }
 
   async setActionsSchedule(payload) {
-    this._schedule = (payload && payload.schedule) || [];
+    this._schedule = ((payload && payload.schedule) || []).slice().sort((a, b) => a.timestamp - b.timestamp);
+    this._updates = [];
+    for (const event of this._schedule) {
+      if (event && event.action && event.action.type === 'updateAction') {
+        const data = (event.action.params && event.action.params.data) || {};
+        this._updates.push({ timestamp: event.timestamp, data });
+      }
+    }
     if (this._schedule.length > 0) this._primed = true;
     return { statusCode: 200 };
   }
@@ -235,27 +327,40 @@ export default __WRAP_CLASS__;
   // resolve from there: search from the entry first, then this package, then
   // the caller's working tree.
   const here = fileURLToPath(new URL(".", import.meta.url));
-  const nodePaths = [dirname(opts.entry), join(here, "..", "node_modules"), join(process.cwd(), "node_modules")];
+  const nodePaths = [
+    dirname(opts.entry),
+    ...(opts.nodePaths ?? []),
+    join(here, "..", "node_modules"),
+    join(process.cwd(), "node_modules"),
+  ];
   const source = host
     .replace("__WRAP_ENTRY__", () => JSON.stringify(opts.entry))
     .replace("__WRAP_DATA__", () => JSON.stringify(opts.data ?? null))
     .replace("__WRAP_DEFAULTS__", () => JSON.stringify(propDefaultsOf(opts.props)))
     .replace(/__WRAP_FPS__/g, () => JSON.stringify(fps))
+    .replace(/__WRAP_WIDTH__/g, () => JSON.stringify(opts.width ?? 1920))
+    .replace(/__WRAP_HEIGHT__/g, () => JSON.stringify(opts.height ?? 1080))
     .replace(/__WRAP_DURATION__/g, () => JSON.stringify(opts.durationSec))
     .replace(/__WRAP_CLASS__/g, () => className);
-  await writeFile(hostPath, source, "utf8");
-  const built = await build({
-    entryPoints: [hostPath],
-    bundle: true,
-    format: "esm",
-    platform: "browser",
-    target: ["chrome90"],
-    jsx: "automatic",
-    minify: true,
-    write: false,
-    nodePaths,
-    logLevel: "warning",
-  });
+  let built;
+  try {
+    await writeFile(hostPath, source, "utf8");
+    built = await build({
+      entryPoints: [hostPath],
+      bundle: true,
+      format: "esm",
+      platform: "browser",
+      target: ["chrome90"],
+      jsx: "automatic",
+      minify: true,
+      write: false,
+      nodePaths,
+      plugins: opts.plugins ?? [],
+      logLevel: "warning",
+    });
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
   const js = built.outputFiles?.[0]?.text ?? "";
   if (!js) throw new Error(`wrapReactComponent: esbuild produced no output for ${opts.entry}.`);
   for (const method of ["goToTime", "setActionsSchedule"]) {
