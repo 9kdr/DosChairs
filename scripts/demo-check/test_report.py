@@ -61,6 +61,24 @@ def test_new_flow_defaults_to_fail_with_tokens_note():
     assert flow["seconds"] == {}
 
 
+def test_check_undo_accepts_switch_and_remove():
+    run = load_run()
+    assert run.check_undo(["Comp 1", "Comp 2"], "Comp 2", "Comp 1",
+                          ["Comp 1"]) == "switch"
+    assert run.check_undo(["Comp 1"], "Comp 2", "Comp 1",
+                          ["Comp 1"]) == "remove"
+
+
+def test_check_undo_rejects_a_broken_undo():
+    import pytest
+
+    run = load_run()
+    with pytest.raises(run.Fail, match="is gone"):
+        run.check_undo(["Comp 2"], "Comp 2", "Comp 1", ["Comp 1"])
+    with pytest.raises(run.Fail, match="expected"):
+        run.check_undo(["Comp 1", "Comp 2"], "Comp 9", "Comp 1", ["Comp 1"])
+
+
 def test_report_json_shape(tmp_path):
     run = load_run()
     report = make_report(run)

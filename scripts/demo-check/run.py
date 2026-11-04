@@ -208,6 +208,21 @@ def health_delta(before: dict, after: dict, *areas: str) -> tuple[int, int]:
     return calls, repairs
 
 
+def check_undo(names: list, made: str, prev: str | None, before: list) -> str:
+    """Prove an undo from the version list. Returns 'switch' or 'remove'.
+
+    Switch keeps the added version (redo stays possible), so prev must
+    stand beside it; remove must restore the before-state exactly.
+    """
+    if made in names:
+        if prev not in names:
+            raise Fail(f"undo switched but {prev!r} is gone")
+        return "switch"
+    if sorted(names) != sorted(before):
+        raise Fail(f"undo left versions {names}, expected {before}")
+    return "remove"
+
+
 class Live:
     """The real agent plus the real Resolve. Every method may raise Fail."""
 
@@ -325,20 +340,20 @@ class Live:
             tools[name] = len(comp.GetToolList(False) or {}) if comp else 0
         return {"names": names, "tools": tools}
 
-    def undo_comp(self, op: dict, before: list) -> str:
+    def undo_comp(self, op: dict, before: list) -> tuple[str, str]:
         """Undo the apply through the real route, then prove the versions.
 
         POST /effects/rig/revert is the product undo (crash-guarded, #290):
-        it switches back when the Fusion UI is up, else removes the added
-        version. The version list must match the before-state afterwards.
+        it switches back when the Fusion UI is up (the added version stays
+        for redo), else removes the added version. Returns (prev, undone_by).
         """
         prev = (op.get("undo") or {}).get("prev_comp_name",
                                           op.get("prev_comp_name"))
         self.post("/effects/rig/revert", {"op": op, **self.locator()})
         names = self.comp_state()["names"]
-        if sorted(names) != sorted(before):
-            raise Fail(f"undo left versions {names}, expected {before}")
-        return prev if isinstance(prev, str) else ""
+        undone_by = check_undo(names, op.get("comp_name", ""),
+                               prev if isinstance(prev, str) else None, before)
+        return (prev if isinstance(prev, str) else "", undone_by)
 
     def delete_comp(self, name: str) -> None:
         item = self._demo_item()
@@ -440,9 +455,11 @@ class Dry:
 
     def __init__(self, agent: str) -> None:
         self.agent = agent
-        self.comps: list = []
-        self.tools: dict = {}
+        # Live clips list a phantom first version; mirror it.
+        self.comps: list = ["dry-comp-0"]
+        self.tools: dict = {"dry-comp-0": 2}
         self.applied = 0
+        self.reverts = 0
         self.timelines = {
             TIMELINE: {"video_tracks": 1, "audio_tracks": 1, "clips": 2,
                        "per_track": {"video1": 1, "audio1": 1}},
@@ -476,7 +493,10 @@ class Dry:
             made = op.get("comp_name", "")
             prev = (op.get("undo") or {}).get("prev_comp_name",
                                               op.get("prev_comp_name"))
-            if made in self.comps:
+            self.reverts += 1
+            if self.reverts % 2 == 0 and made in self.comps:
+                # Every other undo takes the remove path, so dry-run
+                # covers both undo proofs; the live clip takes switch.
                 self.comps.remove(made)
                 self.tools.pop(made, None)
             return {"comp_name": prev, "project": PROJECT, "timeline": TIMELINE}
@@ -536,13 +556,13 @@ class Dry:
     def comp_state(self) -> dict:
         return {"names": list(self.comps), "tools": dict(self.tools)}
 
-    def undo_comp(self, op: dict, before: list) -> str:
+    def undo_comp(self, op: dict, before: list) -> tuple[str, str]:
         prev = (op.get("undo") or {}).get("prev_comp_name",
                                           op.get("prev_comp_name"))
         self.post("/effects/rig/revert", {"op": op, **self.locator()})
-        if sorted(self.comps) != sorted(before):
-            raise Fail(f"undo left versions {self.comps}, expected {before}")
-        return prev if isinstance(prev, str) else ""
+        undone_by = check_undo(list(self.comps), op.get("comp_name", ""),
+                               prev if isinstance(prev, str) else None, before)
+        return (prev if isinstance(prev, str) else "", undone_by)
 
     def delete_comp(self, name: str) -> None:
         if name in self.comps:
@@ -567,6 +587,7 @@ class Dry:
 def flow_effect(world, prompts: dict, info: dict, created: dict) -> dict:
     """Generate the dither fade, apply it, undo to the previous comp."""
     flow = new_flow("effect", prompts["effect"])
+    before_health = None
     try:
         before_health = health_snapshot(world)
         canvas = {"width": info["width"], "height": info["height"]}
@@ -575,9 +596,12 @@ def flow_effect(world, prompts: dict, info: dict, created: dict) -> dict:
             {"prompt": flow["prompt"], "canvas": canvas,
              "fps": info["fps"], "durationSec": info["duration_sec"]})
         effect_id = generated.get("id", "")
+        flow["evidence"]["effect_id"] = effect_id
+        flow["evidence"]["notes"] = generated.get("notes", "")
         if not effect_id or not isinstance(generated.get("spec"), dict):
             raise Fail("generate answered without an effect id and spec")
         state_before = world.comp_state()
+        flow["evidence"]["versions_before"] = state_before["names"]
         applied = timed(
             flow["seconds"], "apply", world.post, "/effects/rig/apply",
             {"effectId": effect_id, **world.locator()})
@@ -586,46 +610,53 @@ def flow_effect(world, prompts: dict, info: dict, created: dict) -> dict:
             raise Fail(f"Resolve could not take this piece: {reason}")
         comp = applied.get("comp_name")
         prev = applied.get("prev_comp_name")
+        flow["evidence"]["comp_name"] = comp
+        flow["evidence"]["prev_comp_name"] = prev
         state_after = world.comp_state()
         if not comp or comp in state_before["names"]:
             raise Fail("apply did not land as a new comp version")
         created["comps"].append(comp)
         new_tools = state_after["tools"].get(comp, 0)
+        flow["evidence"]["new_comp_tools"] = new_tools
         if new_tools == 0:
             raise Fail(f"new comp {comp!r} is empty or unreadable")
         prev_tools_before = state_before["tools"].get(prev or "", None)
         prev_tools_after = state_after["tools"].get(prev or "", None)
+        flow["evidence"]["prev_comp_tools_before"] = prev_tools_before
+        flow["evidence"]["prev_comp_tools_after"] = prev_tools_after
         if prev is not None and prev_tools_before != prev_tools_after:
             raise Fail(f"apply touched the previous comp {prev!r}")
-        splines = world.keyframe_readback(comp)
+        flow["evidence"]["spline_readback"] = world.keyframe_readback(comp)
         op = {"comp_name": comp, "prev_comp_name": prev,
               "undo": {"prev_comp_name": prev}}
-        timed(flow["seconds"], "undo", world.undo_comp, op,
-              state_before["names"])
-        calls, repairs = health_delta(before_health, health_snapshot(world),
-                                      "effects")
-        flow["repairs"] = repairs
-        flow["model_calls"] = calls
-        flow["evidence"] = {
-            "effect_id": effect_id, "notes": generated.get("notes", ""),
-            "comp_name": comp, "prev_comp_name": prev,
-            "prev_comp_tools_before": prev_tools_before,
-            "prev_comp_tools_after": prev_tools_after,
-            "new_comp_tools": new_tools,
-            "spline_readback": splines,
-            "latency_ms": health_snapshot(world)["effects_latency_ms"],
-        }
+        _, undone_by = timed(flow["seconds"], "undo", world.undo_comp, op,
+                             state_before["names"])
+        flow["evidence"]["undone_by"] = undone_by
         flow["status"] = "PASS"
         undone = f"undone to {prev}" if prev else "only version removed"
         flow["reason"] = f"new comp {comp} with {new_tools} tools, {undone}"
     except Fail as error:
         flow["reason"] = str(error)
+    finally:
+        if before_health is not None:
+            try:
+                after_health = health_snapshot(world)
+            except Fail:
+                after_health = None
+            if after_health is not None:
+                calls, repairs = health_delta(before_health, after_health,
+                                              "effects")
+                flow["repairs"] = repairs
+                flow["model_calls"] = calls
+                flow["evidence"]["latency_ms"] = after_health.get(
+                    "effects_latency_ms")
     return flow
 
 
 def flow_rig(world, prompts: dict, info: dict, created: dict) -> dict:
     """Draft the cursor rig, bake it, apply it, undo to the previous comp."""
     flow = new_flow("rig", prompts["rig"])
+    before_health = None
     try:
         before_health = health_snapshot(world)
         canvas = {"width": info["width"], "height": info["height"]}
@@ -637,7 +668,10 @@ def flow_rig(world, prompts: dict, info: dict, created: dict) -> dict:
         finally:
             flow["seconds"]["generate"] = round(time.perf_counter() - t0, 1)
         rig = drafted.get("rig", {})
-        if not isinstance(rig.get("inputPath"), list) or not rig["inputPath"]:
+        flow["evidence"]["rig_notes"] = drafted.get("notes", "")
+        input_path = rig.get("inputPath")
+        flow["evidence"]["input_path_keys"] = len(input_path or [])
+        if not isinstance(input_path, list) or not input_path:
             raise Fail("rig draft came back with no input path")
         t0 = time.perf_counter()
         try:
@@ -650,14 +684,20 @@ def flow_rig(world, prompts: dict, info: dict, created: dict) -> dict:
                 flow["seconds"]["generate"] + time.perf_counter() - t0, 1)
         carrier_id = carrier.get("id", "")
         spec = carrier.get("spec")
+        flow["evidence"]["carrier_id"] = carrier_id
         if not carrier_id or not isinstance(spec, dict):
             raise Fail("carrier effect came back without an id and spec")
         baked = timed(flow["seconds"], "bake", world.bake, rig, spec,
                       info["fps"])
+        flow["evidence"]["target_layer"] = baked.get("targetId")
+        flow["evidence"]["baked_total"] = baked.get("keys", 0)
+        flow["evidence"]["sim_frames"] = baked.get("frames", 0)
+        flow["evidence"]["flat_channels"] = baked.get("flat", [])
         if not baked.get("targetId") or not baked.get("baked"):
             raise Fail("bake found no text/shape layer to drive in the carrier")
         props = next(iter(baked["baked"].values()))
         counts = {name: len(keys) for name, keys in props.items()}
+        flow["evidence"]["baked_keys"] = counts
         missing = [name for name in ("x", "y", "rotation")
                    if counts.get(name, 0) == 0]
         if counts.get("scaleX", 0) == 0 and counts.get("scaleY", 0) == 0:
@@ -674,34 +714,23 @@ def flow_rig(world, prompts: dict, info: dict, created: dict) -> dict:
             raise Fail(f"Resolve could not take this piece: {reason}")
         comp = applied.get("comp_name")
         prev = applied.get("prev_comp_name")
+        flow["evidence"]["comp_name"] = comp
+        flow["evidence"]["prev_comp_name"] = prev
+        flow["evidence"]["apply_keyframes"] = applied.get("keyframes", 0)
         state_after = world.comp_state()
         if not comp or comp in state_before["names"]:
             raise Fail("apply did not land as a new comp version")
         created["comps"].append(comp)
         new_tools = state_after["tools"].get(comp, 0)
+        flow["evidence"]["new_comp_tools"] = new_tools
         if new_tools == 0:
             raise Fail(f"new comp {comp!r} is empty or unreadable")
-        splines = world.keyframe_readback(comp)
+        flow["evidence"]["spline_readback"] = world.keyframe_readback(comp)
         op = {"comp_name": comp, "prev_comp_name": prev,
               "undo": {"prev_comp_name": prev}}
-        timed(flow["seconds"], "undo", world.undo_comp, op,
-              state_before["names"])
-        calls, repairs = health_delta(before_health, health_snapshot(world),
-                                      "effects", "rig")
-        flow["repairs"] = repairs
-        flow["model_calls"] = calls
-        flow["evidence"] = {
-            "rig_notes": drafted.get("notes", ""),
-            "input_path_keys": len(rig["inputPath"]),
-            "carrier_id": carrier_id, "target_layer": baked["targetId"],
-            "baked_keys": counts, "baked_total": baked.get("keys", 0),
-            "sim_frames": baked.get("frames", 0),
-            "flat_channels": baked.get("flat", []),
-            "comp_name": comp, "prev_comp_name": prev,
-            "new_comp_tools": new_tools,
-            "apply_keyframes": applied.get("keyframes", 0),
-            "spline_readback": splines,
-        }
+        _, undone_by = timed(flow["seconds"], "undo", world.undo_comp, op,
+                             state_before["names"])
+        flow["evidence"]["undone_by"] = undone_by
         flow["status"] = "PASS"
         undone = f"undone to {prev}" if prev else "only version removed"
         flow["reason"] = (
@@ -709,6 +738,17 @@ def flow_rig(world, prompts: dict, info: dict, created: dict) -> dict:
             f"new comp {comp}, {undone}")
     except Fail as error:
         flow["reason"] = str(error)
+    finally:
+        if before_health is not None:
+            try:
+                after_health = health_snapshot(world)
+            except Fail:
+                after_health = None
+            if after_health is not None:
+                calls, repairs = health_delta(before_health, after_health,
+                                              "effects", "rig")
+                flow["repairs"] = repairs
+                flow["model_calls"] = calls
     return flow
 
 
@@ -750,6 +790,7 @@ def flow_sound(world, prompts: dict, info: dict, created: dict) -> dict:
                  "frames": silence}],
             "preview_urls": ["file:///tmp/demo-check/preview.mp4"]}})
         request_id = submitted.get("request_id", "")
+        flow["evidence"]["job_id"] = request_id
         if not request_id:
             raise Fail("job submit answered without a request id")
         job = poll_job(world, request_id)
@@ -760,6 +801,9 @@ def flow_sound(world, prompts: dict, info: dict, created: dict) -> dict:
             name = op.get("op", "?")
             op_counts[name] = op_counts.get(name, 0) + 1
         skipped = job.get("skipped", [])
+        flow["evidence"]["planner"] = job.get("planner") or "rules"
+        flow["evidence"]["op_counts"] = op_counts
+        flow["evidence"]["job_skipped"] = skipped
         if skipped:
             first = skipped[0]
             raise Fail(f"job skipped {first.get('intent')}: {first.get('reason')}")
@@ -767,10 +811,16 @@ def flow_sound(world, prompts: dict, info: dict, created: dict) -> dict:
                    for op in ops):
             raise Fail("job finished with no sound items to apply")
         original_before = world.snapshot(TIMELINE)
+        flow["evidence"]["original"] = original_before
         applied = timed(
             flow["seconds"], "apply", world.post, "/sounds/apply",
             {"jobId": request_id, "project": PROJECT, "timeline": TIMELINE})
         copy_name = applied.get("timeline_name", "")
+        flow["evidence"]["copy_name"] = copy_name
+        flow["evidence"]["tracks_added"] = applied.get("tracks_added", 0)
+        flow["evidence"]["clips_added"] = applied.get("clips_added", 0)
+        flow["evidence"]["fallback"] = applied.get("fallback")
+        flow["evidence"]["apply_skipped"] = applied.get("skipped", [])
         if not copy_name or "(sound copy)" not in copy_name:
             raise Fail("apply did not write a (sound copy) timeline")
         created["timelines"].append(copy_name)
@@ -781,6 +831,7 @@ def flow_sound(world, prompts: dict, info: dict, created: dict) -> dict:
         if original_after != original_before:
             raise Fail("apply changed the original timeline")
         copy = world.snapshot(copy_name)
+        flow["evidence"]["copy"] = copy
         grew = (copy["audio_tracks"] > original_before["audio_tracks"]
                 or copy["clips"] > original_before["clips"])
         if not grew:
@@ -800,18 +851,8 @@ def flow_sound(world, prompts: dict, info: dict, created: dict) -> dict:
             if "is not in" not in str(error):
                 raise
         flow["repairs"] = 0
-        planner = job.get("planner") or "rules"
+        planner = flow["evidence"]["planner"]
         flow["model_calls"] = 0 if planner == "rules" else "1+ (planner not counted)"
-        flow["evidence"] = {
-            "job_id": request_id, "planner": planner,
-            "op_counts": op_counts,
-            "tracks_added": applied.get("tracks_added", 0),
-            "clips_added": applied.get("clips_added", 0),
-            "fallback": applied.get("fallback"),
-            "original": original_before,
-            "copy": copy,
-            "copy_name": copy_name,
-        }
         flow["status"] = "PASS"
         flow["reason"] = (
             f"copy {copy_name} added {applied.get('tracks_added', 0)} track(s) "
