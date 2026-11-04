@@ -228,18 +228,9 @@ class Handler(BaseHTTPRequestHandler):
             self._module_post(*module_route)
             return
         effects_path = urlsplit(self.path).path
-        if effects_path == "/effects/rig/generate":
-            try:
-                body = self._body()
-            except ValueError:
-                self._send(400, _error("invalid_json", "request body must be JSON"))
-                return
-            try:
-                self._send(200, _rig_generate_body(body))
-            except Exception as error:
-                self._send(_rig_status(error), _error("invalid_rig", str(error)))
-            return
-        if effects_path == "/effects/rig/apply":
+        # The generic apply-piece route. /effects/rig/apply is the historical
+        # name the desktop calls; /effects/apply is the same handler.
+        if effects_path in ("/effects/rig/apply", "/effects/apply"):
             try:
                 body = self._body()
             except ValueError:
@@ -257,7 +248,7 @@ class Handler(BaseHTTPRequestHandler):
                 if isinstance(error, BakeError):
                     self._send(error.status, _error("bake_failed", str(error)))
                 else:
-                    self._send(_rig_status(error), _error("invalid_rig", str(error)))
+                    self._send(400, _error("invalid_rig", str(error)))
             return
         if effects_path == "/effects/rig/revert":
             try:
@@ -272,7 +263,7 @@ class Handler(BaseHTTPRequestHandler):
             except _ResolveFailed as error:
                 self._send(502, _error("resolve_failed", str(error)))
             except Exception as error:
-                self._send(_rig_status(error), _error("invalid_rig", str(error)))
+                self._send(400, _error("invalid_rig", str(error)))
             return
         if effects_path == "/effects/generate":
             try:
@@ -381,6 +372,8 @@ class Handler(BaseHTTPRequestHandler):
         try:
             if action == "generate":
                 self._send(200, _modules_generate_body(body))
+            elif action == "plan":
+                self._send(200, _piece_plan_body(body))
             elif action == "import":
                 record = modules.register_source(
                     str(body.get("source", "")), brief=str(body.get("brief", ""))
@@ -450,7 +443,7 @@ def _module_paths(path: str) -> tuple[str, str | None, str | None] | None:
     if len(parts) < 3 or parts[0] != "effects" or parts[1] != "modules":
         return None
     if len(parts) == 3:
-        if parts[2] in ("generate", "import"):
+        if parts[2] in ("generate", "import", "plan"):
             return (parts[2], None, None)
         return ("record", parts[2], None)
     if len(parts) == 4 and parts[3] in ("bundle", "install", "preview"):
@@ -537,7 +530,7 @@ def _pipeline() -> dict[str, Any]:
 
 
 def _health() -> dict[str, Any]:
-    from chair_agent import cuts, effects, modules, piece_bake, rig, sounds
+    from chair_agent import cuts, effects, modules, piece_bake, piece_plan, sounds
     from chair_agent.client import auth_status_snapshot
     from chair_agent.pieces import macros
 
@@ -556,10 +549,10 @@ def _health() -> dict[str, Any]:
         "sounds": sounds.status_snapshot(),
         "cuts": cuts.status_snapshot(),
         "effects": effects.status_snapshot(),
-        "rig": rig.status_snapshot(),
         "macros": macros.status_snapshot(),
         "modules": modules.status_snapshot() | {"model": modules.module_model()},
         "piece_bake": piece_bake.status_snapshot(),
+        "piece_plans": piece_plan.status_snapshot(),
         "pipeline": _pipeline(),
         "crew": _crew_status(),
     }
@@ -680,37 +673,6 @@ class _ResolveUnavailable(Exception):
 
 class _ResolveFailed(Exception):
     pass
-
-
-def _rig_status(error: Exception) -> int:
-    from chair_agent import rig
-    from chair_agent.rig import InvalidRig
-
-    if isinstance(error, InvalidRig):
-        return rig.error_status(error)
-    return 400
-
-
-def _rig_generate_body(body: dict[str, Any]) -> dict[str, Any]:
-    from chair_agent import rig
-
-    canvas = body.get("canvas", {})
-    if not isinstance(canvas, dict):
-        raise ValueError("generate needs a 'canvas' object with width and height")
-    try:
-        width = int(canvas.get("width", 0))
-        height = int(canvas.get("height", 0))
-        fps = float(body.get("fps", 0))
-        duration_sec = float(body.get("durationSec", 0))
-    except (TypeError, ValueError) as error:
-        raise ValueError(f"bad generate body: {error}") from error
-    return rig.generate_rig(
-        str(body.get("brief", "")),
-        width=width,
-        height=height,
-        fps=fps,
-        duration_sec=duration_sec,
-    )
 
 
 def _resolve_project(project_name: Any) -> Any:
@@ -838,7 +800,6 @@ def _rig_apply_body(body: dict[str, Any]) -> dict[str, Any]:
     add_effect always lands on a NEW comp version: the current one stays
     untouched, and prev_comp_name in the answer is the undo back.
     """
-    from chair_agent import rig  # noqa: F401  (keeps the route's errors typed)
     from chair_agent.effects import InvalidEffect, get_effect
 
     spec = body.get("spec")
@@ -1450,9 +1411,21 @@ def _module_summary(record: Any) -> dict[str, Any]:
     }
 
 
-def _modules_generate_body(body: dict[str, Any]) -> dict[str, Any]:
-    from chair_agent import modules
+def _piece_plan_body(body: dict[str, Any]) -> dict[str, Any]:
+    from chair_agent import piece_plan
 
+    brief = body.get("brief", "")
+    if not isinstance(brief, str) or not brief.strip():
+        raise ValueError("plan needs a non-empty 'brief'")
+    return piece_plan.plan_piece(brief).model_dump(mode="json", by_alias=True)
+
+
+def _modules_generate_body(body: dict[str, Any]) -> dict[str, Any]:
+    from chair_agent import modules, piece_plan
+
+    brief = body.get("brief", "")
+    if not isinstance(brief, str) or not brief.strip():
+        raise ValueError("generate needs a non-empty 'brief'")
     canvas = body.get("canvas", {})
     if not isinstance(canvas, dict):
         raise ValueError("generate needs a 'canvas' object with width and height")
@@ -1468,8 +1441,10 @@ def _modules_generate_body(body: dict[str, Any]) -> dict[str, Any]:
     mode = body.get("mode", "spark")
     if mode not in modules.MODES:
         raise ValueError("mode must be 'spark' or 'wonder'")
+    plan = piece_plan.plan_piece(brief)
+    plan_dump = plan.model_dump(mode="json", by_alias=True)
     record = modules.generate_module(
-        str(body.get("brief", "")),
+        brief,
         kind=body.get("kind") if isinstance(body.get("kind"), str) else None,
         width=width,
         height=height,
@@ -1479,8 +1454,16 @@ def _modules_generate_body(body: dict[str, Any]) -> dict[str, Any]:
         piece_ids=[str(p) for p in pieces] if isinstance(pieces, list) else None,
         model=modules.WONDER_MODULE_MODEL if mode == "wonder" else None,
         mode=mode,
+        plan=plan,
     )
-    return _module_summary(record)
+    if record is None:
+        return {
+            "id": None,
+            "plan": plan_dump,
+            "notes": piece_plan.guidance(plan),
+            "preview": None,
+        }
+    return _module_summary(record) | {"plan": plan_dump}
 
 
 def _effect_body(effect_id: str) -> dict[str, Any]:

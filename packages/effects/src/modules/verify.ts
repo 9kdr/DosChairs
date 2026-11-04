@@ -35,13 +35,24 @@ export interface VerifyOutcome {
   shaderFailed?: boolean;
   shaderLog?: string | null;
   /**
-   * Fraction of sampled pixels visibly painted when the biggest canvas is
-   * composited over black and over white (max channel deviation above
-   * 10/255 from the backing counts). Composite-aware, so unmultiplied color
-   * leaking from transparent areas counts; null when there is no canvas or
-   * its buffer cannot be read.
+   * Fraction of the FRAME visibly painted: the painted share of the biggest
+   * canvas (composited over black and over white; max channel deviation
+   * above 10/255 from the backing counts) times the canvas share of the
+   * stage. Composite-aware, so unmultiplied color leaking from transparent
+   * areas counts; 0 when a canvas exists but occupies no visible area, null
+   * when there is no canvas or its buffer cannot be read.
    */
   paintCoverage?: number | null;
+  /**
+   * Worst shaders.com canvas status seen ("unavailable" beats "pending"
+   * beats "ready"); null when the module paints no shaders.com canvas.
+   * "ready" means the renderer initialized and submitted its frames, but
+   * the dump harness runs on virtual time, which expires before real GPU
+   * work finishes — so a settled paint usually still reads "pending"
+   * here. Pixel proof for these modules lives in screenshots, not this
+   * field. "unavailable" always means WebGPU failed on this host.
+   */
+  shadersStatus?: string | null;
 }
 
 const VERIFY_TIMEOUT_MS = 60_000;
@@ -62,11 +73,19 @@ export function findChromium(): string | null {
     process.env["PLAYWRIGHT_BROWSERS_PATH"]?.trim() ||
     join(process.env["HOME"] ?? "", ".cache", "ms-playwright");
   try {
-    for (const name of readdirSync(cache)) {
-      if (name.startsWith("chromium-")) {
-        const hit = found(join(cache, name, "chrome-linux", "chrome"));
+    const names = readdirSync(cache);
+    // Full chromium first: the stripped headless shell can create a WebGPU
+    // device yet fail to present the canvas, which reads as a blank frame.
+    for (const name of names) {
+      if (name.startsWith("chromium-") && !name.startsWith("chromium_headless_shell-")) {
+        const hit = found(join(cache, name, "chrome-linux", "chrome"))
+          ?? found(join(cache, name, "chrome-linux64", "chrome"))
+          ?? found(join(cache, name, "chrome-linux", "headless_shell"));
         if (hit) return hit;
-      } else if (name.startsWith("chromium_headless_shell-")) {
+      }
+    }
+    for (const name of names) {
+      if (name.startsWith("chromium_headless_shell-")) {
         const hit = found(join(cache, name, "chrome-headless-shell-linux64", "chrome-headless-shell"));
         if (hit) return hit;
       }
@@ -90,6 +109,20 @@ import { flushSync } from "react-dom";
 import { createRoot } from "react-dom/client";
 import * as Mod from "chair-module-under-test";
 
+// Third-party WebGL (Paper, OGL) leaves preserveDrawingBuffer off, which
+// makes the drawing buffer unreadable after compositing: the coverage
+// measure would read blank and report 0 for a painted frame. Force it on
+// for every context in this harness page (contexts are created at render,
+// after this runs); module code is untouched.
+const __chairGetContext = HTMLCanvasElement.prototype.getContext;
+HTMLCanvasElement.prototype.getContext = function (type, ...rest) {
+  if (type === "webgl" || type === "webgl2" || type === "experimental-webgl") {
+    const attrs = rest[0] && typeof rest[0] === "object" ? rest[0] : {};
+    rest[0] = { ...attrs, preserveDrawingBuffer: true };
+  }
+  return __chairGetContext.call(this, type, ...rest);
+};
+
 const meta = (Mod.meta ?? {});
 const props = (Mod.props ?? {});
 const Effect = Mod.default;
@@ -108,7 +141,13 @@ stage.style.height = height + "px";
 function collapse(s) { return String(s).replace(/\\s+/g, " ").trim().slice(0, 200); }
 
 function measure() {
-  const facts = { text: "", covers: [], shaderFailed: false, shaderLog: null, paintCoverage: null };
+  const facts = { text: "", covers: [], shaderFailed: false, shaderLog: null, paintCoverage: null, shadersStatus: null };
+  for (const c of stage.querySelectorAll("canvas")) {
+    const s = c.dataset ? c.dataset.shadersStatus : null;
+    if (s === "unavailable") facts.shadersStatus = "unavailable";
+    else if (s === "pending" && facts.shadersStatus !== "unavailable") facts.shadersStatus = "pending";
+    else if (s === "ready" && facts.shadersStatus === null) facts.shadersStatus = "ready";
+  }
   try {
     facts.text = collapse(stage.innerText ?? stage.textContent ?? "");
     const failed = stage.querySelector("[data-shader-failed]");
@@ -128,12 +167,18 @@ function measure() {
       }
     }
     let biggest = null;
-    let biggestArea = 0;
+    let biggestClientArea = 0;
+    let canvasCount = 0;
     for (const c of stage.querySelectorAll("canvas")) {
-      const a = (c.width || 0) * (c.height || 0);
-      if (a > biggestArea) { biggestArea = a; biggest = c; }
+      canvasCount++;
+      const a = (c.clientWidth || 0) * (c.clientHeight || 0);
+      if (a > biggestClientArea) { biggestClientArea = a; biggest = c; }
     }
-    if (biggest && biggestArea > 0) {
+    // A canvas that occupies no visible area paints nothing; with no canvas at
+    // all there is simply nothing to measure.
+    if (canvasCount > 0 && biggestClientArea === 0) {
+      facts.paintCoverage = 0;
+    } else if (biggest) {
       const small = document.createElement("canvas");
       small.width = 192; small.height = 108;
       const ctx = small.getContext("2d", { willReadFrequently: true });
@@ -156,7 +201,10 @@ function measure() {
       }
       let hit = 0;
       for (let p = 0; p < n; p++) if (worst[p] > 10) hit++;
-      facts.paintCoverage = Math.round((hit / n) * 1000) / 1000;
+      // Coverage is a fraction of the FRAME: the painted share of the canvas
+      // times the canvas share of the stage. A small canvas can never wash.
+      const frameFraction = Math.min(1, biggestClientArea / (width * height));
+      facts.paintCoverage = Math.round((hit / n) * frameFraction * 1000) / 1000;
     }
   } catch (err) {
     facts.text = "verify measure crashed: " + String((err && err.message) || err);
@@ -181,6 +229,26 @@ try {
   requestAnimationFrame(() => requestAnimationFrame(() => {
     try { measure(); } catch { /* keep the synchronous facts */ }
   }));
+  // shaders.com paints asynchronously: once no canvas is still pending,
+  // refine the facts one last time so coverage sees the settled frame.
+  // The synchronous facts above already stand if the budget runs out first.
+  let waits = 0;
+  const settleTimer = setInterval(() => {
+    try {
+      let pending = false;
+      for (const c of stage.querySelectorAll("canvas")) {
+        if (c.dataset && c.dataset.shadersStatus === "pending") { pending = true; break; }
+      }
+      waits++;
+      // Up to ~100 virtual seconds: SwiftShader paints 1920x1080 slowly,
+      // and only shaders.com canvases ever read "pending", so other
+      // modules settle on the first poll with no slowdown.
+      if (!pending || waits > 1000) {
+        clearInterval(settleTimer);
+        measure();
+      }
+    } catch { clearInterval(settleTimer); }
+  }, 100);
 } catch (err) {
   document.getElementById("result").textContent = JSON.stringify({
     text: "verify mount crashed: " + String((err && err.message) || err),
@@ -249,7 +317,14 @@ export async function verifyInBrowser(
       const child = spawn(
         chromium,
         [
-          "--headless", "--no-sandbox", "--disable-gpu", "--enable-unsafe-swiftshader",
+          // Software rendering everywhere (SwiftShader), so frames match
+          // across machines: WebGL2 for the ShaderPass modules, WebGPU for
+          // shaders.com. No --disable-gpu: it also disables the WebGPU
+          // adapter.
+          "--headless", "--no-sandbox", "--disable-dev-shm-usage",
+          "--enable-unsafe-webgpu", "--ignore-gpu-blocklist", "--enable-webgl",
+          "--use-angle=swiftshader", "--enable-unsafe-swiftshader",
+          "--use-vulkan=swiftshader", "--enable-features=Vulkan",
           "--virtual-time-budget=15000", "--timeout=45000", "--dump-dom",
           `http://127.0.0.1:${port}/`,
         ],
@@ -279,7 +354,7 @@ export async function verifyInBrowser(
       throw new Error(`browser verification found no result in the page (dump head: ${head || "(empty)"})`);
     }
     const facts = JSON.parse(match[1] ?? "{}") as {
-      text?: string; covers?: string[]; shaderFailed?: boolean; shaderLog?: string | null; paintCoverage?: number | null;
+      text?: string; covers?: string[]; shaderFailed?: boolean; shaderLog?: string | null; paintCoverage?: number | null; shadersStatus?: string | null;
     };
     return {
       skipped: false,
@@ -288,6 +363,7 @@ export async function verifyInBrowser(
       shaderFailed: facts.shaderFailed === true,
       shaderLog: typeof facts.shaderLog === "string" ? facts.shaderLog : null,
       paintCoverage: typeof facts.paintCoverage === "number" ? facts.paintCoverage : null,
+      shadersStatus: typeof facts.shadersStatus === "string" ? facts.shadersStatus : null,
     };
   } finally {
     server.close();

@@ -1,6 +1,7 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { DragEvent, KeyboardEvent, MouseEvent, PointerEvent } from "react";
-import { Loader2, Redo2, RotateCcw, Square, Undo2 } from "lucide-react";
+import { ArrowUpRight, Check, Loader2, Redo2, RotateCcw, Square, Undo2 } from "lucide-react";
+import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { DitherShader } from "@/lib/dither";
 import type { DitherColor } from "@/lib/dither";
 import { Button } from "@/components/ui/button";
@@ -8,11 +9,18 @@ import { DitherArt } from "@/components/dither-art";
 import { InfoHint } from "@/components/info-hint";
 import { Empty, EmptyArt } from "@/components/ui/empty";
 import { cn } from "@/lib/utils";
-import { historyForTask, type HistoryEntry } from "../project/store";
+import { clockTime, historyForTask, opLabel, type HistoryEntry } from "../project/store";
 import { activityForTask } from "./TaskActivity";
 import { createServicesClient } from "@/lib/services/client";
 import type { AgentJobStatus } from "@/lib/services/types";
-import { landedFor, stopLiveTask } from "./taskThread";
+import {
+  headerStatusFor,
+  isTaskSeen,
+  landedFor,
+  liveSubmitError,
+  markTaskSeen,
+  stopLiveTask,
+} from "./taskThread";
 
 export type TaskLane = "edit" | "effects" | "colour";
 
@@ -44,6 +52,8 @@ export interface RunningTask {
   /** Live agent job behind this row; absent until the opening turn submits. */
   jobId?: string;
   jobStatus?: AgentJobStatus;
+  /** When the task started, as a unix-millis stamp. Absent on older tasks. */
+  startedAt?: number;
 }
 
 const NON_STOPPABLE_STATUSES = new Set([
@@ -75,17 +85,43 @@ export function canStopTask(task: RunningTask): boolean {
  */
 export function displayStatusFor(task: RunningTask): { short: string; detail: string | null } {
   if (/agent is unreachable at \S+/i.test(task.status)) {
-    return { short: task.status.replace(/agent is unreachable at \S+/i, "Agent offline"), detail: task.status };
+    return {
+      short: task.status.replace(/agent is unreachable at \S+/i, "Agent offline"),
+      detail: task.status,
+    };
   }
   const landed = landedFor(task.id);
   if (landed?.detail) return { short: task.status, detail: landed.detail };
   return { short: task.status, detail: null };
 }
 
+/** Status lines that say nothing: the tile shows a quiet spinner instead. */
+const QUIET_STATUS = new Set([
+  "the agent is working",
+  "waiting for the agent",
+  "queued on the agent",
+  "agent working",
+  "running",
+  "starting the turn…",
+  "starting the turn...",
+  "working…",
+]);
+
+/** The tile's current step: the live line, unless it is machinery. */
+export function stepTextFor(task: RunningTask): string | null {
+  const activity = activityForTask(task);
+  const live = activity.steps.find((step) => step.state === "active")?.label ?? task.status;
+  const short = displayStatusFor({ ...task, status: live }).short;
+  return QUIET_STATUS.has(short.trim().toLowerCase()) ? null : short;
+}
+
 export interface RunningTasksProps {
   className?: string;
+  /** Working tasks: running, waiting, or queued. The board sorts oldest first. */
   tasks?: readonly RunningTask[];
-  /** Accepted history: gates each row's Undo button. Empty until accepts land. */
+  /** Finished tasks, oldest first. The board shows the newest five. */
+  recentTasks?: readonly RunningTask[];
+  /** Accepted history: gates each tile's Undo button. Empty until accepts land. */
   history?: readonly HistoryEntry[];
   /** Hold the dither shaders on their current frame (e.g. mid-morph). */
   frozen?: boolean;
@@ -98,6 +134,8 @@ export interface RunningTasksProps {
   onUndoResolve?: (task: RunningTask) => void;
   /** Redo an undone write: the stored apply goes again as a new copy. */
   onRedoResolve?: (task: RunningTask) => void;
+  /** Open the full History page, from the Recent group's link. */
+  onOpenHistory?: () => void;
 }
 
 const LANE_LABEL: Record<TaskLane, string> = {
@@ -155,12 +193,14 @@ float field(vec2 uv, vec2 res, float t) {
 }
 `;
 
-function TaskRow({
+function TaskTile({
   task,
   seed,
   frozen,
-  bright,
+  finished,
+  expanded,
   history,
+  onToggle,
   onOpen,
   onUndo,
   onStop,
@@ -171,9 +211,11 @@ function TaskRow({
   task: RunningTask;
   seed: number;
   frozen: boolean;
-  /** Only the first active row carries the bright dither; all others stay calm. */
-  bright: boolean;
+  /** Finished tiles (Recent) never dither; only working tiles do. */
+  finished: boolean;
+  expanded: boolean;
   history: readonly HistoryEntry[];
+  onToggle: () => void;
   onOpen: () => void;
   onUndo?: () => void;
   onStop?: () => void;
@@ -181,6 +223,7 @@ function TaskRow({
   onUndoResolve?: () => void;
   onRedoResolve?: () => void;
 }) {
+  const reduce = useReducedMotion();
   const isDraggingRef = useRef(false);
   const dragTimeoutRef = useRef<number | null>(null);
   const dragGhostRef = useRef<HTMLDivElement | null>(null);
@@ -254,20 +297,26 @@ function TaskRow({
     }, 100);
   };
 
-  const handlePointerDown = (
-    event: PointerEvent<HTMLDivElement> | MouseEvent<HTMLDivElement>,
-  ) => {
+  const handlePointerDown = (event: PointerEvent<HTMLDivElement> | MouseEvent<HTMLDivElement>) => {
     if (event.button !== 0) return;
     isDraggingRef.current = false;
     startPosRef.current = { x: event.clientX, y: event.clientY };
     upPosRef.current = { x: event.clientX, y: event.clientY };
   };
 
-  const handlePointerUp = (
-    event: PointerEvent<HTMLDivElement> | MouseEvent<HTMLDivElement>,
-  ) => {
+  const handlePointerUp = (event: PointerEvent<HTMLDivElement> | MouseEvent<HTMLDivElement>) => {
     if (event.button !== 0) return;
     upPosRef.current = { x: event.clientX, y: event.clientY };
+  };
+
+  const toggle = () => {
+    if (finished) markTaskSeen(task.projectId, task.id);
+    onToggle();
+  };
+
+  const open = () => {
+    if (finished) markTaskSeen(task.projectId, task.id);
+    onOpen();
   };
 
   const handleClick = (event: MouseEvent<HTMLDivElement>) => {
@@ -292,10 +341,7 @@ function TaskRow({
           ? event.clientY
           : (upPosRef.current?.y ?? event.clientY);
 
-      const dist = Math.hypot(
-        endX - startPosRef.current.x,
-        endY - startPosRef.current.y,
-      );
+      const dist = Math.hypot(endX - startPosRef.current.x, endY - startPosRef.current.y);
       startPosRef.current = null;
       upPosRef.current = null;
 
@@ -304,217 +350,339 @@ function TaskRow({
       }
     }
 
-    onOpen();
+    toggle();
   };
 
   const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.key === "Enter" || event.key === " " || event.key === "Spacebar") {
       event.preventDefault();
-      onOpen();
+      toggle();
     }
   };
 
-  // The board row is the task's live line: lane chip, active step, progress.
-  const activity = activityForTask(task);
-  const liveStep = activity.steps.find((step) => step.state === "active");
-  const undoable = historyForTask(history, task.id).length > 0;
   const failed = isFailedTask(task);
   const landed = landedFor(task.id);
-  const status = displayStatusFor({ ...task, status: liveStep?.label ?? task.status });
-  const rowActionClass =
+  const step = stepTextFor(task);
+  const detail = displayStatusFor(task).detail;
+  // The tile reads the same status as the thread header, so the card and
+  // the header agree: Landed/Undone, Failed/Stopped, Planned, or the live
+  // step (null reads as the quiet spinner).
+  const status = headerStatusFor({
+    terminal: task.jobStatus ?? null,
+    landed: landed?.state ?? null,
+    step,
+    live: true,
+    fallback: task.status,
+  });
+  const entries = historyForTask(history, task.id);
+  const undoable = entries.length > 0;
+  // Retry only where it can do something: a turn that never sent, or a
+  // write that failed. A finished agent turn never resubmits.
+  const retryable = liveSubmitError(task.id) !== undefined || landed?.state === "failed";
+  const showDither = !finished && !failed;
+  const seen = finished && isTaskSeen(task.projectId, task.id);
+  const unseen = finished && !failed && !expanded && !seen;
+  const activity = activityForTask(task);
+  // Finished tiles show the flow steps as done; the outcome already sits in
+  // the meta line (and the landed line below), so the live step drops out
+  // instead of repeating it.
+  const steps = finished
+    ? activity.steps
+        .filter((item) => item.state !== "active")
+        .map((item) => ({ ...item, state: "done" as const }))
+    : activity.steps;
+  const tileActionClass =
     "bg-card text-muted-foreground opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100 hover:text-neutral-100 focus-visible:opacity-100 @max-[760px]:opacity-100";
 
   return (
-    <div
-      ref={rootRef}
-      role="button"
-      tabIndex={0}
-      draggable
-      onDragStart={handleDragStart}
-      onDragEnd={handleDragEnd}
-      onPointerDown={handlePointerDown}
-      onPointerUp={handlePointerUp}
-      onMouseDown={handlePointerDown}
-      onMouseUp={handlePointerUp}
-      onClick={handleClick}
-      onKeyDown={handleKeyDown}
-      className="dark group relative cursor-pointer rounded-card bg-card data-[dragging]:opacity-64"
+    <motion.div
+      layout
+      transition={{ duration: reduce ? 0 : 0.2, ease: "easeOut" }}
+      className="min-w-0"
     >
-      {bright ? (
-        <DitherShader
-          field={TASK_FIELD}
-          palette={["transparent", LANE_INK[task.lane]]}
-          uniforms={{ taskSeed: seed }}
-          speed={0.5}
-          animate={!frozen}
-          suspended={frozen}
-          stillTime={1.6}
-          cell={3}
-          className="absolute inset-0 overflow-hidden rounded-card"
-          style={{
-            maskImage:
-              "linear-gradient(to bottom, transparent, #000 14px, #000 calc(100% - 14px), transparent), linear-gradient(to right, transparent 66%, #000 84%)", // taste-skill-ignore: mask confines the dither sea to the row's right edge, not a fill.
-            WebkitMaskImage:
-              "linear-gradient(to bottom, transparent, #000 14px, #000 calc(100% - 14px), transparent), linear-gradient(to right, transparent 66%, #000 84%)", // taste-skill-ignore: mask confines the dither sea to the row's right edge, not a fill.
-            maskComposite: "intersect",
-            WebkitMaskComposite: "source-in",
-          }}
-        />
-      ) : null}
-      {bright ? (
-        <div
-          aria-hidden
-          className="pointer-events-none absolute inset-0"
-          style={{
-            background:
-              "linear-gradient(to right, var(--card) 0%, var(--card) 66%, transparent 84%)", // taste-skill-ignore: neutral scrim keeps the task titles legible over the dither sea.
-          }}
-        />
-      ) : null}
-      <div className="relative flex flex-col gap-2.5 p-5">
-        <div className="flex items-center justify-between gap-3">
-          <div className={cn("min-w-0 flex-1", bright && "max-w-[64%]")}>
-            <p className="truncate text-title font-medium text-neutral-100">
-              {task.name}
-            </p>
-            <p className="truncate text-meta text-muted-foreground" title={status.detail ?? undefined}>
-              {LANE_LABEL[task.lane]} · {status.short}
-              {landed && landed.skipped.length > 0 ? (
-                <>
-                  {" "}
-                  <InfoHint>
-                    {landed.skipped.length === 1 ? (
-                      landed.skipped[0]!.reason
-                    ) : (
-                      <span>
-                        {landed.skipped.map((skip) => (
-                          <span key={skip.intent} className="block">
-                            {skip.reason}
-                          </span>
-                        ))}
-                      </span>
-                    )}
-                  </InfoHint>
-                </>
-              ) : null}
-            </p>
-          </div>
-          <div className="flex shrink-0 items-center gap-1.5">
-            {failed && onRetry ? (
-              <Button
-                type="button"
-                size="sm"
-                variant="ghost"
-                aria-label={`Retry ${task.name}`}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  onRetry();
-                }}
-                onKeyDown={(event) => event.stopPropagation()}
-                className={rowActionClass}
-              >
-                <RotateCcw />
-                Retry
-              </Button>
-            ) : null}
-            {!failed && landed?.state === "landed" && landed.undo && onUndoResolve ? (
-              <Button
-                type="button"
-                size="sm"
-                variant="ghost"
-                aria-label={`Undo Resolve write for ${task.name}`}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  onUndoResolve();
-                }}
-                onKeyDown={(event) => event.stopPropagation()}
-                className={rowActionClass}
-              >
-                <Undo2 />
-                Undo
-              </Button>
-            ) : null}
-            {!failed && landed?.state === "undone" && landed.redo && onRedoResolve ? (
-              <Button
-                type="button"
-                size="sm"
-                variant="ghost"
-                aria-label={`Redo Resolve write for ${task.name}`}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  onRedoResolve();
-                }}
-                onKeyDown={(event) => event.stopPropagation()}
-                className={rowActionClass}
-              >
-                <Redo2 />
-                Redo
-              </Button>
-            ) : null}
-            {!failed && !landed && canStopTask(task) ? (
-              <Button
-                type="button"
-                size="sm"
-                variant="ghost"
-                aria-label={`Stop ${task.name}`}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  onStop?.();
-                }}
-                onKeyDown={(event) => event.stopPropagation()}
-                className={rowActionClass}
-              >
-                <Square />
-                Stop task
-              </Button>
-            ) : null}
-            {onUndo && undoable && !landed ? (
-              <Button
-                type="button"
-                size="sm"
-                variant="ghost"
-                aria-label={`Undo ${task.name}`}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  onUndo();
-                }}
-                onKeyDown={(event) => event.stopPropagation()}
-                className={rowActionClass}
-              >
-                <Undo2 />
-                Undo
-              </Button>
-            ) : null}
-            {!failed && !landed ? (
-              <Loader2 className="size-3.5 shrink-0 animate-spin text-neutral-400" />
-            ) : null}
-          </div>
-        </div>
-        <div
-          className="h-1 min-w-0 flex-1 overflow-hidden rounded-full bg-white/10"
-          role="progressbar"
-          aria-valuenow={Math.round(activity.progress * 100)}
-          aria-valuemin={0}
-          aria-valuemax={100}
-          aria-label={`${task.name} progress`}
-        >
-          <div
-            className="h-full rounded-full bg-neutral-200 transition-[width] duration-500"
-            style={{ width: `${Math.round(activity.progress * 100)}%` }}
+      <div
+        ref={rootRef}
+        role="button"
+        tabIndex={0}
+        aria-expanded={expanded}
+        draggable
+        onDragStart={handleDragStart}
+        onDragEnd={handleDragEnd}
+        onPointerDown={handlePointerDown}
+        onPointerUp={handlePointerUp}
+        onMouseDown={handlePointerDown}
+        onMouseUp={handlePointerUp}
+        onClick={handleClick}
+        onKeyDown={handleKeyDown}
+        className="dark group relative cursor-pointer overflow-hidden rounded-card bg-card data-[dragging]:opacity-64"
+      >
+        {showDither ? (
+          <DitherShader
+            field={TASK_FIELD}
+            palette={["transparent", LANE_INK[task.lane]]}
+            uniforms={{ taskSeed: seed }}
+            speed={0.5}
+            animate={!frozen && !reduce}
+            suspended={frozen || Boolean(reduce)}
+            stillTime={1.6}
+            cell={3}
+            className="absolute inset-0 opacity-35"
+            style={{
+              maskImage: "linear-gradient(to right, transparent 30%, #000 65%)", // taste-skill-ignore: mask bleeds the dither flow in from the tile's right edge, not a fill.
+              WebkitMaskImage: "linear-gradient(to right, transparent 30%, #000 65%)", // taste-skill-ignore: mask bleeds the dither flow in from the tile's right edge, not a fill.
+            }}
           />
+        ) : null}
+        {showDither ? (
+          <div
+            aria-hidden
+            className="pointer-events-none absolute inset-0"
+            style={{
+              background: "linear-gradient(to right, var(--card) 0%, transparent 45%)", // taste-skill-ignore: neutral scrim keeps the task titles legible over the dither sea.
+            }}
+          />
+        ) : null}
+        {showDither ? (
+          <div
+            aria-hidden
+            className="pointer-events-none absolute inset-0"
+            style={{
+              background:
+                "linear-gradient(to left, var(--card) 0%, var(--card) 12%, transparent 26%)", // taste-skill-ignore: neutral scrim keeps the tile controls off the dither sea.
+            }}
+          />
+        ) : null}
+        <div className="relative flex flex-col gap-2 p-4">
+          <div className="flex items-center justify-between gap-3">
+            <div
+              className="flex min-w-0 flex-1 items-center gap-2"
+            >
+              {failed && !seen ? (
+                <span
+                  role="img"
+                  aria-label="Failed"
+                  className="size-2 shrink-0 rounded-full bg-red-400/70"
+                />
+              ) : !finished ? (
+                <Loader2
+                  className="size-3.5 shrink-0 animate-spin text-neutral-400"
+                  aria-label="Working"
+                />
+              ) : !unseen ? null : status === "Planned" || status === "Stopped" ? (
+                <span
+                  role="img"
+                  aria-label="Not yet looked at"
+                  className="size-2 shrink-0 rounded-full bg-neutral-500"
+                />
+              ) : (
+                <span
+                  role="img"
+                  aria-label="Not yet looked at"
+                  className="size-2 shrink-0 rounded-full bg-emerald-400"
+                />
+              )}
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-title font-medium text-neutral-100" title={task.name}>
+                  {task.name}
+                </p>
+                <p
+                  className="truncate text-meta text-muted-foreground"
+                  title={landed?.line ?? detail ?? undefined}
+                >
+                  {LANE_LABEL[task.lane]}
+                  {status ? ` · ${status}` : ""}
+                  {landed && landed.skipped.length > 0 ? (
+                    <>
+                      {" "}
+                      <InfoHint>
+                        {landed.skipped.length === 1 ? (
+                          landed.skipped[0]!.reason
+                        ) : (
+                          <span>
+                            {landed.skipped.map((skip) => (
+                              <span key={skip.intent} className="block">
+                                {skip.reason}
+                              </span>
+                            ))}
+                          </span>
+                        )}
+                      </InfoHint>
+                    </>
+                  ) : null}
+                </p>
+              </div>
+            </div>
+            <div className="flex shrink-0 items-center gap-1.5">
+              {failed && retryable && onRetry ? (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  aria-label={`Retry ${task.name}`}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onRetry();
+                  }}
+                  onKeyDown={(event) => event.stopPropagation()}
+                  className={tileActionClass}
+                >
+                  <RotateCcw />
+                  Retry
+                </Button>
+              ) : null}
+              {!failed && landed?.state === "landed" && landed.undo && onUndoResolve ? (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  aria-label={`Undo Resolve write for ${task.name}`}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onUndoResolve();
+                  }}
+                  onKeyDown={(event) => event.stopPropagation()}
+                  className={tileActionClass}
+                >
+                  <Undo2 />
+                  Undo
+                </Button>
+              ) : null}
+              {!failed && landed?.state === "undone" && landed.redo && onRedoResolve ? (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  aria-label={`Redo Resolve write for ${task.name}`}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onRedoResolve();
+                  }}
+                  onKeyDown={(event) => event.stopPropagation()}
+                  className={tileActionClass}
+                >
+                  <Redo2 />
+                  Redo
+                </Button>
+              ) : null}
+              {!failed && !landed && task.jobId && canStopTask(task) ? (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  aria-label={`Stop ${task.name}`}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onStop?.();
+                  }}
+                  onKeyDown={(event) => event.stopPropagation()}
+                  className={tileActionClass}
+                >
+                  <Square />
+                  Stop task
+                </Button>
+              ) : null}
+              {onUndo && undoable && !landed ? (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  aria-label={`Undo ${task.name}`}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onUndo();
+                  }}
+                  onKeyDown={(event) => event.stopPropagation()}
+                  className={tileActionClass}
+                >
+                  <Undo2 />
+                  Undo
+                </Button>
+              ) : null}
+              <Button
+                type="button"
+                size="icon-xs"
+                variant="ghost"
+                aria-label={`Open ${task.name}`}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  open();
+                }}
+                onKeyDown={(event) => event.stopPropagation()}
+                className="bg-card text-muted-foreground hover:text-neutral-100"
+              >
+                <ArrowUpRight />
+              </Button>
+            </div>
+          </div>
+          <AnimatePresence initial={false}>
+            {expanded ? (
+              <motion.div
+                key="detail"
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: "auto", opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                transition={{ duration: reduce ? 0 : 0.2, ease: "easeOut" }}
+                className="overflow-hidden"
+              >
+                <div className="flex flex-col gap-2 pt-1">
+                  <ol className="flex flex-col gap-1.5" aria-label={`${task.name} steps`}>
+                    {steps.map((item) => (
+                      <li key={item.id} className="flex items-center gap-2">
+                        {item.state === "done" ? (
+                          <Check className="size-3.5 shrink-0 text-emerald-400" aria-label="Done" />
+                        ) : item.state === "active" ? (
+                          <Loader2
+                            className="size-3.5 shrink-0 animate-spin text-neutral-300"
+                            aria-label="In progress"
+                          />
+                        ) : (
+                          <span
+                            aria-hidden="true"
+                            className="size-1.5 shrink-0 rounded-full bg-neutral-600"
+                          />
+                        )}
+                        <span
+                          className={cn(
+                            "min-w-0 truncate text-[13px] leading-5",
+                            item.state === "queued" ? "text-muted-foreground" : "text-neutral-200",
+                          )}
+                        >
+                          {item.state === "active" ? (step ?? "Working") : item.label}
+                        </span>
+                      </li>
+                    ))}
+                  </ol>
+                  {landed || entries.length > 0 ? (
+                    <div className="flex flex-col gap-1 border-t border-white/[0.06] pt-2">
+                      {landed ? (
+                        <p className="text-xs text-muted-foreground">{landed.line}</p>
+                      ) : null}
+                      {entries.map((entry) => (
+                        <p key={entry.itemId} className="truncate text-xs text-muted-foreground">
+                          {opLabel(entry.op)} · {clockTime(entry.acceptedAt)}
+                        </p>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+              </motion.div>
+            ) : null}
+          </AnimatePresence>
         </div>
       </div>
-    </div>
+    </motion.div>
   );
 }
 
 /**
- * Live agent jobs for this project, one row per task with a running job.
- * Empty until opening turns submit; terminal jobs leave the list.
+ * The board: working tasks plus the newest finished ones in one card. Only
+ * one tile expands at a time. Plain grids keyed by task id: wrap in
+ * Reorder.Group when order gains meaning.
  */
 export function RunningTasks({
   className,
   tasks = [],
+  recentTasks = [],
   history = [],
   frozen = false,
   onOpen,
@@ -523,8 +691,15 @@ export function RunningTasks({
   onRetry,
   onUndoResolve,
   onRedoResolve,
+  onOpenHistory,
 }: RunningTasksProps) {
-  if (tasks.length === 0) {
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const working = useMemo(
+    () => [...tasks].sort((a, b) => (a.startedAt ?? 0) - (b.startedAt ?? 0)),
+    [tasks],
+  );
+  const recent = useMemo(() => [...recentTasks].slice(-5).reverse(), [recentTasks]);
+  if (working.length === 0 && recent.length === 0) {
     return (
       <div className={cn("rounded-card bg-card p-5 text-neutral-100", className)}>
         <Empty className="gap-4 py-6">
@@ -536,32 +711,82 @@ export function RunningTasks({
       </div>
     );
   }
-  // Visual only: the first active row carries the one bright dither.
-  // Finished rows (landed or failed) and every later row stay calm.
-  const brightId = tasks.find(
-    (task) => !isFailedTask(task) && landedFor(task.id) === undefined,
-  )?.id;
+  const toggle = (id: string) => setExpandedId((current) => (current === id ? null : id));
   return (
-    <div className={cn("flex flex-col gap-4", className)}>
-      {tasks.map((task, index) => (
-        <TaskRow
-          key={task.id}
-          task={task}
-          seed={index + 1}
-          frozen={frozen}
-          bright={task.id === brightId}
-          history={history}
-          onOpen={() => onOpen?.(task)}
-          onUndo={onUndo ? () => onUndo(task) : undefined}
-          onStop={() => {
-            onStop?.(task);
-            void stopLiveTask(createServicesClient(), task).catch(() => {});
-          }}
-          onRetry={onRetry ? () => onRetry(task) : undefined}
-          onUndoResolve={onUndoResolve ? () => onUndoResolve(task) : undefined}
-          onRedoResolve={onRedoResolve ? () => onRedoResolve(task) : undefined}
-        />
-      ))}
+    <div className={cn("@container flex flex-col gap-4 text-neutral-100", className)}>
+      {working.length > 0 ? (
+        <section aria-label="Working">
+          <div className="flex items-center gap-2 px-1 pb-2">
+            <h3 className="text-xs font-medium text-muted-foreground">Working</h3>
+            <span className="text-xs tabular-nums text-neutral-600">{working.length}</span>
+          </div>
+          <div className="grid grid-cols-1 gap-2 @min-[620px]:grid-cols-2 @min-[960px]:grid-cols-3">
+            {working.map((task, index) => (
+              <TaskTile
+                key={task.id}
+                task={task}
+                seed={index + 1}
+                frozen={frozen}
+                finished={false}
+                expanded={expandedId === task.id}
+                history={history}
+                onToggle={() => toggle(task.id)}
+                onOpen={() => onOpen?.(task)}
+                onUndo={onUndo ? () => onUndo(task) : undefined}
+                onStop={() => {
+                  onStop?.(task);
+                  void stopLiveTask(createServicesClient(), task).catch(() => {});
+                }}
+                onRetry={onRetry ? () => onRetry(task) : undefined}
+                onUndoResolve={onUndoResolve ? () => onUndoResolve(task) : undefined}
+                onRedoResolve={onRedoResolve ? () => onRedoResolve(task) : undefined}
+              />
+            ))}
+          </div>
+        </section>
+      ) : null}
+      {recent.length > 0 ? (
+        <section aria-label="Recent">
+          <div className="flex items-center gap-2 px-1 pb-2">
+            <h3 className="text-xs font-medium text-muted-foreground">Recent</h3>
+            <span className="text-xs tabular-nums text-neutral-600">{recent.length}</span>
+            {onOpenHistory ? (
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                className="ml-auto"
+                onClick={onOpenHistory}
+              >
+                All in History
+              </Button>
+            ) : null}
+          </div>
+          <div className="grid grid-cols-1 gap-2 @min-[620px]:grid-cols-2 @min-[960px]:grid-cols-3">
+            {recent.map((task, index) => (
+              <TaskTile
+                key={task.id}
+                task={task}
+                seed={101 + index}
+                frozen={frozen}
+                finished
+                expanded={expandedId === task.id}
+                history={history}
+                onToggle={() => toggle(task.id)}
+                onOpen={() => onOpen?.(task)}
+                onUndo={onUndo ? () => onUndo(task) : undefined}
+                onStop={() => {
+                  onStop?.(task);
+                  void stopLiveTask(createServicesClient(), task).catch(() => {});
+                }}
+                onRetry={onRetry ? () => onRetry(task) : undefined}
+                onUndoResolve={onUndoResolve ? () => onUndoResolve(task) : undefined}
+                onRedoResolve={onRedoResolve ? () => onRedoResolve(task) : undefined}
+              />
+            ))}
+          </div>
+        </section>
+      ) : null}
     </div>
   );
 }

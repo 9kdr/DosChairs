@@ -59,7 +59,7 @@ async function main(): Promise<void> {
   }
   const outDir = resolve(flag >= 0 && rest[flag + 1] ? rest[flag + 1]! : ".");
   const data = raw ? JSON.parse(raw) : undefined;
-  const built = await bundleModule(entry, { data });
+  const built = await bundleModule(entry, { data, scope });
   let files: string[] = [];
   let id: string | null = null;
   if (built.bundle) {

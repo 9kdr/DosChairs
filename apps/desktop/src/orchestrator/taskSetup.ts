@@ -48,6 +48,7 @@ export function setupTask(prompt: string, commandId: number): RunningTask {
     status: "Running",
     lane: plan.lanes[0]!,
     plan,
+    startedAt: commandId,
   };
 }
 
@@ -91,14 +92,5 @@ export function spawnSubagents(task: RunningTask): Subagent[] {
  * ids. Submits nothing.
  */
 export function gatedAgentText(agent: Subagent): string {
-  const work =
-    agent.lane === "effects"
-      ? "effects and pieces work"
-      : agent.lane === "colour"
-        ? "colour work"
-        : "editing work";
-  return (
-    `${agent.label} isn't connected yet — ${work} is still on the way. ` +
-    "Nothing changed."
-  );
+  return `${agent.label} isn't connected yet. Nothing changed.`;
 }

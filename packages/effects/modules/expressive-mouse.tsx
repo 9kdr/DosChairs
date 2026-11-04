@@ -27,8 +27,10 @@ export const props = {
   targetY: { type: "number", min: 0, max: 1080, default: 540, title: "Target Y" },
   stiffness: { type: "number", min: 20, max: 400, default: 150, title: "Spring Stiffness" },
   damping: { type: "number", min: 3, max: 40, default: 11, title: "Spring Damping" },
+  mass: { type: "number", min: 0.2, max: 5, default: 1, title: "Cursor Mass" },
   swing: { type: "number", min: 0, max: 2, default: 1, title: "Swing & Tilt" },
   squash: { type: "number", min: 0, max: 2, default: 1, title: "Squash & Stretch" },
+  overshoot: { type: "boolean", default: true, title: "Overshoot" },
   size: { type: "number", min: 30, max: 400, default: 140, title: "Cursor Size" },
   accent: { type: "color", default: "#ff6a00", title: "Cursor Color" },
   outline: { type: "color", default: "#141414", title: "Outline Color" },
@@ -40,8 +42,10 @@ type Props = EffectProps<{
   targetY: number;
   stiffness: number;
   damping: number;
+  mass: number;
   swing: number;
   squash: number;
+  overshoot: boolean;
   size: number;
   accent: string;
   outline: string;
@@ -57,9 +61,18 @@ export default function ExpressiveMouse(p: Props): React.ReactElement {
   const swing = num(history, "swing", t, 1);
   const squash = num(history, "squash", t, 1);
   const size = num(history, "size", t, 140);
+  const stiffness = num(history, "stiffness", t, 150);
+  const mass = num(history, "mass", t, 1);
+  // Overshoot off is exactly critical damping: the fastest settle with no
+  // overshoot, whatever the damping slider says.
+  const damping =
+    history("overshoot", t) === false
+      ? 2 * Math.sqrt(stiffness * Math.max(mass, 1e-6))
+      : num(history, "damping", t, 11);
   const pose = simulateFollower(history, "targetX", "targetY", t, {
-    stiffness: num(history, "stiffness", t, 150),
-    damping: num(history, "damping", t, 11),
+    stiffness,
+    damping,
+    mass,
     tiltGain: 0.0011 * swing,
     maxTilt: 0.7 * Math.max(swing, 0.01),
     stretchGain: 0.00045 * squash,

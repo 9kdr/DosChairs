@@ -10,7 +10,7 @@
  */
 import React from "react";
 import { resolveFrame } from "./curves.js";
-import { simulateRig } from "./rig.js";
+import { simulateRig } from "./kit/rig.js";
 import { drawResolvedLayers, drawShaderFallback } from "./canvas2d.js";
 import { paintShader } from "./gl.js";
 import type { DrawImage } from "./canvas2d.js";

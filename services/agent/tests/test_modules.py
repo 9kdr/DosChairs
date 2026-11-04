@@ -137,6 +137,24 @@ def test_generate_checks_and_stores(isolated) -> None:
 
 
 @needs_toolchain
+def test_generate_covers_rig_briefs_with_a_cursor_piece(isolated) -> None:
+    """A cursor brief is a normal piece: kind rig, checked, keyframable target (#273)."""
+    source = (
+        ROOT / "packages" / "effects" / "modules" / "expressive-mouse.tsx"
+    ).read_text()
+    client = FakeClient([fenced(source)])
+    record = modules.generate_module(
+        "cursor swings in with momentum, overshoots, settles, then bounces",
+        kind="rig", client=client,
+    )
+    assert record.meta and record.meta["kind"] == "rig"
+    assert record.checks["deterministic"] is True
+    ids = [prop["id"] for prop in record.props]
+    for prop in ("targetX", "targetY", "stiffness", "damping", "mass", "overshoot"):
+        assert prop in ids
+
+
+@needs_toolchain
 def test_generate_repairs_once_for_prose_then_for_a_clock(isolated) -> None:
     client = FakeClient(["I think you want a fade.", fenced(GOOD)])
     record = modules.generate_module("fade a label in", client=client)
@@ -299,7 +317,9 @@ def test_generate_rejects_unasked_opaque_frame(isolated) -> None:
     )
     client = FakeClient([fenced(opaque), fenced(opaque)])
     with pytest.raises(InvalidModule, match="no background") as caught:
-        modules.generate_module("smoothly merging liquid boxes", client=client)
+        # "blobs", not "boxes": boxes would reuse liquid-boxes instead of
+        # drafting, and this test needs the model drafting path.
+        modules.generate_module("smoothly merging liquid blobs", client=client)
     assert "failed the check twice" in str(caught.value)
 
 
@@ -332,7 +352,9 @@ export default function Effect({ t, hue, width, height }: any) {
 def test_generate_rejects_failure_fallback_with_gl_log(isolated) -> None:
     client = FakeClient([fenced(BROKEN_SHADER), fenced(BROKEN_SHADER)])
     with pytest.raises(InvalidModule, match="failed the check twice") as caught:
-        modules.generate_module("smoothly merging liquid boxes", client=client)
+        # "blobs", not "boxes": boxes would reuse liquid-boxes instead of
+        # drafting, and this test needs the model drafting path.
+        modules.generate_module("smoothly merging liquid blobs", client=client)
     assert "failure fallback" in str(caught.value)
     assert "dimension mismatch" in str(caught.value)
 

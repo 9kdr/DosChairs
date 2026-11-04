@@ -14,8 +14,9 @@ Write Chair effect modules: one TSX file that becomes a native Resolve (OGraf) t
 - Scope: only the asked-for element, transparent by default. No text unless asked, no frames/labels/vignettes/extras. Fills need a `backdrop` boolean defaulting off; kind `background` excepted.
 - The frame is a pure function of (props, history, t). No clocks, no `Math.random` (use `mulberry32`/`hash2`), no rAF loops, no timers, no network, no module-level mutable state.
 - Physics re-simulates from 0..t at a fixed step from `history()` (see `simulateWorld`, `simulateSpring`, `followProp`, `verletChain`).
-- Time arrives only as `t` (seconds). Animation libraries stay paused and move only through `seek(t)`: `seekPaper`, `seekOgl`, `seekMotion`, `seekAnime`, `simulateWorld`, `seekTransition`, `morphAt`, `seekWaapi`.
-- Client-only libraries (Paper, OGL, Motion) mount in a layout effect and mirror every driven value into SSR markup (`data-*` attributes, inline styles), so the probe sees the same frame.
+- Time arrives only as `t` (seconds). Animation libraries stay paused and move only through `seek(t)`: `seekPaper`, `seekOgl`, `seekMotion`, `seekAnime`, `simulateWorld`, `seekTransition`, `morphAt`, `seekWaapi`, `createShadersComAdapter`.
+- Client-only libraries (Paper, OGL, Motion, shaders.com) mount in a layout effect and mirror every driven value into SSR markup (`data-*` attributes, inline styles), so the probe sees the same frame.
+- shaders.com (`shaders/core`, MIT, WebGPU only): pick a component from the registry (Aurora, Plasma, Glow, Blur, ...), sample keyframed props at `t` into `buildPreset`, and seek through the adapter — it rebuilds the renderer per seek and paints `[t, 0]` (advance plus a zero-delta settle repaint), which is byte-identical for the same `t` in any order. Colors become color controls, ranges become number sliders with min/max. Gold examples: `aurora-veil` (background), `glow-orb` (overlay). No WebGL fallback: the canvas marks `data-shaders-status` (`ready`/`unavailable`), and WebGPU in Resolve's own title runtime still needs a live-Resolve check.
 - Imports: only the approved list. Never GSAP, Remotion, LYGIA, Shadertoy snippets, React Bits, Aceternalist Pro, Unicorn Studio, @theatre/studio, or lottie-web.
 
 ## Process

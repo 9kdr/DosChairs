@@ -69,13 +69,25 @@ void main() {
   oColor = vec4(vec3(1.0, 0.42, 0.0) * a, a);
 }`;
 
+// The zeroed-uniform bug class: the shader compiles and its uniforms upload,
+// but it outputs effectively nothing — a blank canvas the SSR probe cannot see.
+const BLANK_FRAG = `#version 300 es
+precision highp float;
+in vec2 vUv;
+out vec4 oColor;
+uniform float u_hue;
+void main() {
+  oColor = vec4(vec3(u_hue / 255.0), 0.0);
+}`;
+
 const BROKEN = fixture("bad-shader", BROKEN_FRAG);
 const WASH = fixture("wash", WASH_FRAG);
 const CLEAN = fixture("clean-disc", CLEAN_FRAG);
+const BLANK = fixture("blank", BLANK_FRAG);
 
 describe("browser verification", () => {
-  it("SSR sees a clean frame for all three fixtures", async () => {
-    for (const entry of [BROKEN, WASH, CLEAN]) {
+  it("SSR sees a clean frame for all four fixtures", async () => {
+    for (const entry of [BROKEN, WASH, CLEAN, BLANK]) {
       const report = await checkModule(entry);
       expect(report.errors, entry).toEqual([]);
       expect(report.ok, entry).toBe(true);
@@ -108,5 +120,13 @@ describe("browser verification", () => {
     const coverage = report.checks["paintCoverage"];
     expect(typeof coverage).toBe("number");
     expect(coverage as number).toBeLessThan(0.4);
+  }, 120_000);
+
+  it.runIf(findChromium() !== null)("rejects a module that paints nothing", async () => {
+    const report = await checkModule(BLANK, { scope: SCOPE });
+    expect(report.ok).toBe(false);
+    expect(report.checks["browserVerified"]).toBe(true);
+    expect(report.checks["paintCoverage"]).toBe(0);
+    expect(report.errors.join(" ")).toContain("piece painted nothing");
   }, 120_000);
 });

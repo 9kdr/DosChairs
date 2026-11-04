@@ -1,6 +1,7 @@
 export const schemaIds = [
   "capability-manifest.schema.json",
   "changeset.schema.json",
+  "piece-plan.schema.json",
   "plan-grade.schema.json",
   "plan-motion.schema.json",
   "plan-muse-image.schema.json",

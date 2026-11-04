@@ -1,6 +1,12 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import * as RunningTasksModule from "./RunningTasks";
-import { canStopTask, displayStatusFor, isFailedTask, type RunningTask } from "./RunningTasks";
+import {
+  canStopTask,
+  displayStatusFor,
+  isFailedTask,
+  stepTextFor,
+  type RunningTask,
+} from "./RunningTasks";
 import { applyFinishedSound, resetLiveJobs } from "./taskThread";
 
 beforeEach(() => {
@@ -36,9 +42,12 @@ describe("canStopTask", () => {
 
   it("hides Stop on failed rows: they retry instead", () => {
     const { jobId: _jobId, jobStatus: _jobStatus, ...unsubmitted } = live;
-    expect(canStopTask({ ...unsubmitted, status: "Failed: agent is unreachable at http://127.0.0.1:8787" })).toBe(
-      false,
-    );
+    expect(
+      canStopTask({
+        ...unsubmitted,
+        status: "Failed: agent is unreachable at http://127.0.0.1:8787",
+      }),
+    ).toBe(false);
     expect(canStopTask({ ...live, jobStatus: "failed" })).toBe(false);
   });
 });
@@ -48,7 +57,9 @@ describe("isFailedTask", () => {
     expect(isFailedTask({ ...live, jobStatus: "failed" })).toBe(true);
     expect(isFailedTask({ ...live, jobStatus: undefined, status: "Failed: boom" })).toBe(true);
     expect(isFailedTask(live)).toBe(false);
-    expect(isFailedTask({ ...live, jobStatus: "completed", status: "Added to Demo Cut" })).toBe(false);
+    expect(isFailedTask({ ...live, jobStatus: "completed", status: "Added to Demo Cut" })).toBe(
+      false,
+    );
   });
 });
 
@@ -97,10 +108,29 @@ describe("displayStatusFor", () => {
         }),
       },
     );
-    expect(displayStatusFor({ ...live, status: "Added to Demo Cut (sound copy) · 1 skipped" })).toEqual({
+    expect(
+      displayStatusFor({ ...live, status: "Added to Demo Cut (sound copy) · 1 skipped" }),
+    ).toEqual({
       short: "Added to Demo Cut (sound copy) · 1 skipped",
       detail: "Skipped sting: no sting in the library",
     });
+  });
+});
+
+describe("stepTextFor", () => {
+  it("quiets machinery lines so the tile shows a spinner instead", () => {
+    expect(stepTextFor({ ...live, status: "The agent is working" })).toBeNull();
+    expect(stepTextFor({ ...live, status: "Waiting for the agent" })).toBeNull();
+    expect(stepTextFor({ ...live, status: "Queued on the agent" })).toBeNull();
+    expect(stepTextFor({ ...live, status: "Working…" })).toBeNull();
+  });
+
+  it("keeps real steps, outcomes, and landed lines", () => {
+    expect(stepTextFor({ ...live, status: "Grading the hook" })).toBe("Grading the hook");
+    expect(stepTextFor({ ...live, status: "Done", jobStatus: "completed" })).toBe("Done");
+    expect(stepTextFor({ ...live, status: "Failed: no faces found" })).toBe(
+      "Failed: no faces found",
+    );
   });
 });
 

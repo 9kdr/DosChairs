@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/9kdr/DosChairs/schemas/piece-plan.schema.json",
+  "title": "PiecePlan",
+  "description": "How a loose ask splits into parts before anything is generated. Each part routes to a native Resolve/Fusion tool, an existing library piece, or one tightly scoped new piece. Order 0 is the topmost part (first mentioned).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "brief", "parts", "counts"],
+  "properties": {
+    "schemaVersion": { "const": "0.1.0" },
+    "brief": { "type": "string", "minLength": 1 },
+    "parts": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/part" }
+    },
+    "counts": { "$ref": "#/$defs/counts" }
+  },
+  "$defs": {
+    "part": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "route", "order", "brief"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "route": { "enum": ["native", "reuse", "new"] },
+        "order": { "type": "integer", "minimum": 0 },
+        "tool": { "type": ["string", "null"] },
+        "settings": { "type": "object" },
+        "pieceId": { "type": ["string", "null"] },
+        "props": { "type": "object" },
+        "brief": { "type": "string", "minLength": 1 },
+        "note": { "type": "string" }
+      }
+    },
+    "counts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["native", "reuse", "new"],
+      "properties": {
+        "native": { "type": "integer", "minimum": 0 },
+        "reuse": { "type": "integer", "minimum": 0 },
+        "new": { "type": "integer", "minimum": 0 }
+      }
+    }
+  }
+}
