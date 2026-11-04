@@ -183,8 +183,6 @@ def _spec() -> dict:
 
 
 def test_http_rig_generate_and_apply(isolated, monkeypatch) -> None:
-    from chair_agent import client as client_module
-
     client = FakeClient(execute=[json.dumps(_rig())])
     monkeypatch.setattr("chair_agent.rig._model_client", lambda: client)
     item = _FakeItem()

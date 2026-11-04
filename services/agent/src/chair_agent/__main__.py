@@ -585,8 +585,8 @@ def _resolve_timeline_item(
     the clip do not resolve.
     """
     try:
-        from chair_resolve import resolve_app  # noqa: F401
         import DaVinciResolveScript as bmd
+        from chair_resolve import resolve_app  # noqa: F401
     except ImportError as error:
         raise _ResolveUnavailable(
             "the Resolve adapter or scripting host is missing here; run the "

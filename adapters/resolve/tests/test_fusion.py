@@ -223,8 +223,10 @@ def _look_spec(look: str, params: dict | None = None) -> dict:
 
 def test_native_looks_map_to_fusion_tools() -> None:
     cases = [
-        ("film-grain", {"amount": 0.7}, ["Grain_look = FilmGrain", "MasterStrength"], "native:FilmGrain"),
-        ("dither", {"levels": 4}, ["Dith_look = Custom", "NumberIn1", "mod(x,2)"], "native:Custom(dither)"),
+        ("film-grain", {"amount": 0.7},
+         ["Grain_look = FilmGrain", "MasterStrength"], "native:FilmGrain"),
+        ("dither", {"levels": 4},
+         ["Dith_look = Custom", "NumberIn1", "mod(x,2)"], "native:Custom(dither)"),
         ("halftone", {}, ["Halo_look = Custom", "cos(n2)"], "native:Custom(halftone)"),
         ("fast-noise", {}, ["FNoise_look = FastNoise", "Detail"], "native:FastNoise"),
         ("gradient", {"colors": ["#1a1d24", "#05070c"]},

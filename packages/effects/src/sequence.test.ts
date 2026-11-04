@@ -19,7 +19,11 @@ function bakeSpec(): EffectSpec {
       {
         id: "wash",
         type: "shader",
-        params: { look: "gradient", colors: ["#ffffff", "#000000"], angle: 180 },
+        // colors is a string list (the schema allows any params JSON).
+        params: { look: "gradient", colors: ["#ffffff", "#000000"], angle: 180 } as unknown as Record<
+          string,
+          string | number | boolean
+        >,
       },
     ],
   };
