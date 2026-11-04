@@ -19,8 +19,18 @@ from pathlib import Path
 from typing import Any
 
 MAX_CONTEXT_CHARS = 6000
+WONDER_CONTEXT_CHARS = 3500
 TOP_LIBRARY = 3
 TOP_EXAMPLES = 2
+
+WONDER_NOTE = (
+    "Toolbox, optional: the library below is inspiration, not a base. "
+    "You may write entirely your own code — custom shaders, your own "
+    "physics or logic, or nothing from the library at all. You still must "
+    "pass the same contract: a pure function of (props, history, t), "
+    "seekable through the SeekAdapter, deterministic in any order, props "
+    "keyframable, and licence-safe (no copied or paid-company code)."
+)
 
 
 def skills_root() -> Path:
@@ -158,6 +168,26 @@ def context_for(
     else:
         for entry in library_entries()[:TOP_LIBRARY]:
             parts.append(_entry_text(entry))
+    return _capped(parts, max_chars)
+
+
+def wonder_context(
+    max_chars: int = WONDER_CONTEXT_CHARS,
+    root: Path | None = None,
+) -> str:
+    """L3 for Wonder: taste plus the whole library as one-line toolbox rows."""
+    base = root or skills_root()
+    parts = [WONDER_NOTE]
+    taste = base / "taste.md"
+    if taste.is_file():
+        parts.append(taste.read_text(encoding="utf-8"))
+    for entry in library_entries():
+        props = ", ".join(p["id"] for p in entry.get("props", []))
+        parts.append(f"[{entry.get('id')}] {entry.get('summary', '')} Controls: {props}.")
+    return _capped(parts, max_chars)
+
+
+def _capped(parts: list[str], max_chars: int) -> str:
     out: list[str] = []
     used = 0
     for part in parts:

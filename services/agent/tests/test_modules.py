@@ -208,12 +208,38 @@ def test_wonder_model_is_selected_by_mode(isolated, monkeypatch) -> None:
         return FakeClient([fenced(GOOD)])
 
     monkeypatch.setattr(modules, "_model_client", fake_client)
-    record = modules.generate_module("fade", model=modules.WONDER_MODULE_MODEL)
+    record = modules.generate_module(
+        "fade", model=modules.WONDER_MODULE_MODEL, mode="wonder"
+    )
     assert seen["model"] == modules.WONDER_MODULE_MODEL == "muse-wonder-1.0"
     assert record.model == "muse-wonder-1.0"
     defaulted = modules.generate_module("fade", model=None)
     assert seen["model"] is None
     assert defaulted.model == "muse-wonder-1.0"  # the FakeClient's executor, not the default
+
+
+def test_modes_produce_different_instructions() -> None:
+    spark = "\n\n".join(
+        m.content for m in modules.build_generate_messages("smoothly merging liquid boxes")
+        if m.role == "developer"
+    )
+    wonder = "\n\n".join(
+        m.content
+        for m in modules.build_generate_messages("smoothly merging liquid boxes", mode="wonder")
+        if m.role == "developer"
+    )
+    assert "pick one and adapt it" in spark
+    assert "liquid-boxes" in spark
+    assert "Toolbox, optional" in wonder
+    assert "pick one and adapt it" not in wonder
+    golds = (
+        "liquid-boxes", "dither-reveal", "lower-third",
+        "physics-letters", "morph-icon", "mesh-gradient",
+    )
+    for gold in golds:
+        assert gold in wonder  # the whole library is offered as one-line rows
+    with pytest.raises(InvalidModule, match="unknown mode"):
+        modules.build_generate_messages("fade", mode="party")
 
 
 def test_generate_prompt_carries_skills_and_library() -> None:

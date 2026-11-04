@@ -36,6 +36,9 @@ MODEL_ENV = "CHAIR_MODULE_MODEL"
 OGRAF_DIR_ENV = "CHAIR_OGRAF_DIR"
 _CLI_TIMEOUT_SECONDS = 90
 _MODEL_TIMEOUT_SECONDS = 240.0
+_WONDER_TIMEOUT_SECONDS = 600.0
+_WONDER_MAX_TOKENS = 8000
+MODES = ("spark", "wonder")
 _MAX_REFERENCE_CHARS = 6000
 _MAX_REFERENCES = 5
 
@@ -334,6 +337,13 @@ def _reference_blocks(
     return blocks
 
 
+SPARK_BRIEF_NOTE = (
+    "Spark works inside constraints: start from the closest gold module or "
+    "library adapter below — pick one and adapt it. Keep its shape, its "
+    "typed props, and the house taste; invent only what the brief needs."
+)
+
+
 def build_generate_messages(
     brief: str,
     *,
@@ -344,13 +354,16 @@ def build_generate_messages(
     duration_sec: float = 8,
     references: Sequence[Any] | None = None,
     piece_ids: Sequence[str] | None = None,
+    mode: str = "spark",
 ) -> list[Message]:
     if not brief.strip():
         raise InvalidModule("generate needs a non-empty 'brief'")
+    if mode not in MODES:
+        raise InvalidModule(f"unknown mode: {mode!r} (want 'spark' or 'wonder')")
     try:
-        from chair_agent.skills import context_for
+        from chair_agent.skills import context_for, wonder_context
 
-        skills_block = context_for(brief)
+        skills_block = wonder_context() if mode == "wonder" else context_for(brief)
     except Exception:
         skills_block = ""
     developer = [
@@ -359,9 +372,16 @@ def build_generate_messages(
         f"Canvas: {width}x{height}, {fps} fps, {duration_sec}s. Use exactly these numbers in meta."
         + (f" meta.kind must be '{kind}'." if kind else ""),
     ]
-    if skills_block:
+    if skills_block and mode == "wonder":
         developer.append(
-            "House skills and the closest library entries (follow them):\n" + skills_block
+            "House skills and an optional toolbox (improvise freely):\n" + skills_block
+        )
+    elif skills_block:
+        developer.append(
+            "House skills and the closest library entries (follow them):\n"
+            + SPARK_BRIEF_NOTE
+            + "\n\n"
+            + skills_block
         )
     blocks = _reference_blocks(references, piece_ids)
     if blocks:
@@ -420,13 +440,19 @@ def _model_client(model: str | None = None) -> ModelClient:
         raise InvalidModule(
             f"module generation needs a model: set META_API_KEY (and optionally {MODEL_ENV})"
         )
+    resolved = model or module_model()
+    wonder = resolved == WONDER_MODULE_MODEL
     try:
         return ModelClient(
-            models=RoleModels(planner=None, executor=model or module_model(), verifier=None),
+            models=RoleModels(planner=None, executor=resolved, verifier=None),
             transport=HttpxTransport(
-                settings.base_url, client=httpx.Client(timeout=_MODEL_TIMEOUT_SECONDS)
+                settings.base_url,
+                client=httpx.Client(
+                    timeout=_WONDER_TIMEOUT_SECONDS if wonder else _MODEL_TIMEOUT_SECONDS
+                ),
             ),
             api_key=settings.api_key,
+            max_tokens=_WONDER_MAX_TOKENS if wonder else None,
         )
     except Exception as error:
         raise InvalidModule(f"module model unavailable: {error}") from error
@@ -536,8 +562,9 @@ def generate_module(
     client: ModelClient | None = None,
     env: Mapping[str, str] | None = None,
     model: str | None = None,
+    mode: str = "spark",
 ) -> ModuleRecord:
-    """Draft with Muse Spark (or `model=` for Wonder), check, repair once, then store."""
+    """Draft with Muse Spark (or Wonder), check, repair once, then store."""
     if width <= 0 or height <= 0 or fps <= 0 or duration_sec <= 0:
         raise InvalidModule("canvas width, height, fps, and durationSec must be positive")
     active = client if client is not None else _model_client(model)
@@ -545,6 +572,7 @@ def generate_module(
     messages = build_generate_messages(
         brief, kind=kind, width=width, height=height, fps=fps,
         duration_sec=duration_sec, references=references, piece_ids=piece_ids,
+        mode=mode,
     )
     module_id = f"fxm-{uuid.uuid4().hex[:12]}"
     started = time.perf_counter()

@@ -33,6 +33,21 @@ def test_retrieval_handles_empty_brief() -> None:
     assert len(skills.context_for("")) <= skills.MAX_CONTEXT_CHARS
 
 
+GOLDS = (
+    "liquid-boxes", "dither-reveal", "lower-third",
+    "physics-letters", "morph-icon", "mesh-gradient",
+)
+
+
+def test_wonder_toolbox_is_small_and_complete() -> None:
+    context = skills.wonder_context()
+    assert "Toolbox, optional" in context
+    for gold in GOLDS:
+        assert gold in context
+    assert len(context) <= skills.WONDER_CONTEXT_CHARS
+    assert "Gold example" not in context  # wonder gets rows, not worked examples
+
+
 def test_library_index_mirrors_the_bundle() -> None:
     assert json.loads(PACKAGED.read_text(encoding="utf-8")) == json.loads(
         MIRRORED.read_text(encoding="utf-8")

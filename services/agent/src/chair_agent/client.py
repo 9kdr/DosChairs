@@ -153,10 +153,14 @@ def completion_text(payload: dict[str, Any]) -> str:
 
 
 class ModelClient:
-    def __init__(self, *, models: RoleModels, transport: Transport, api_key: str | None) -> None:
+    def __init__(
+        self, *, models: RoleModels, transport: Transport, api_key: str | None,
+        max_tokens: int | None = None,
+    ) -> None:
         self.models = models
         self.transport = transport
         self._api_key = api_key
+        self._max_tokens = max_tokens
 
     def plan(self, messages: Sequence[Message]) -> Completion:
         return self.complete("planner", messages)
@@ -169,14 +173,13 @@ class ModelClient:
 
     def complete(self, role: RoleName, messages: Sequence[Message]) -> Completion:
         model = self._model_name(role)
-        payload = self.transport.post_json(
-            "/chat/completions",
-            {
-                "model": model,
-                "messages": [message.model_dump(mode="json") for message in messages],
-            },
-            self._api_key,
-        )
+        body: dict[str, Any] = {
+            "model": model,
+            "messages": [message.model_dump(mode="json") for message in messages],
+        }
+        if self._max_tokens is not None:
+            body["max_tokens"] = self._max_tokens
+        payload = self.transport.post_json("/chat/completions", body, self._api_key)
         return Completion(model=model, text=completion_text(payload))
 
     def _model_name(self, role: RoleName) -> str:

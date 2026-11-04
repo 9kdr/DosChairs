@@ -22,3 +22,7 @@ Momentum in, overshoot a little, settle. Staggered entrances, one idea per beat.
 1. Read `taste.md` first.
 2. Pick the closest gold module (lower-third for springs, physics-letters for stagger, morph-icon for morphs).
 3. Check the module: zero warnings, deterministic under both histories.
+
+## Taste reference (motion only, inspiration only)
+
+- Remotion showcase and docs — programmatic video with real easing and staging. Its code is under a paid company licence: study the feel, never copy the code.
