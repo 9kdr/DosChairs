@@ -126,7 +126,7 @@ def test_generate_checks_and_stores(isolated) -> None:
     record = modules.generate_module("fade a label in", client=client)
     assert record.id.startswith("fxm-")
     assert record.meta and record.meta["id"] == "fade-label"
-    assert [p["id"] for p in record.props] == ["size", "tint", "label"]
+    assert [p["id"] for p in record.props] == ["size", "tint", "label", "transparentBg", "backgroundColor"]
     assert record.checks["deterministic"] is True
     assert record.repaired is False and client.calls == 1
     snap = modules.status_snapshot()
@@ -426,7 +426,7 @@ def test_http_generate_bundle_preview_install_and_health(isolated, monkeypatch) 
             "brief": "fade a label in", "canvas": {"width": 1280, "height": 720},
             "fps": 30, "durationSec": 3,
         })
-        assert made["checks"]["deterministic"] is True and len(made["props"]) == 3
+        assert made["checks"]["deterministic"] is True and len(made["props"]) == 5
         module_id = made["id"]
         bundled = post(f"/effects/modules/{module_id}/bundle", {})
         assert bundled["stem"] == "chair-fade-label"

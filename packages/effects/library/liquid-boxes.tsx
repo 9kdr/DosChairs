@@ -1,22 +1,20 @@
 /**
- * Liquid Boxes (gold module): two boxes orbit, touch, and merge through a
- * smooth-min SDF, rendered by OGL on transparent pixels with a Paper
- * grain-gradient multiplied over the boxes only.
+ * Liquid Boxes (gold module): two rounded boxes orbit, meet, and merge
+ * through a smooth-min SDF with a clean accent halo and subtle grain inside
+ * the cores, all on transparent pixels.
  *
- * Seeking: OGL paints one frame per seek (`u_time = t`, render once) and the
- * Paper mount is parked with `setFrame(t * 1000)` at speed 0; a 2D composite
- * masks the grain with the OGL alpha and multiplies it over the boxes.
- * Per-box phase offsets come from motion's pure `stagger()`, so the render
- * pass — the one the determinism probe reads — computes the exact same
- * centers the client mounts paint. Mirror attributes (`data-c1`,
- * `data-frame`, ...) carry every prop into SSR markup.
+ * Seeking: OGL paints one frame per seek (`u_time = t`, render once). The
+ * grain hash is a pure function of the pixel and `u_time`, so a seek always
+ * repaints the same frame. Per-box phase offsets come from motion's pure
+ * `stagger()`, so the render pass — the one the determinism probe reads —
+ * computes the exact same centers the client paints. Mirror attributes
+ * (`data-c1`, `data-frame`, ...) carry every prop into SSR markup.
  */
 import React from "react";
 import { Renderer, Program, Mesh, Triangle } from "ogl";
 import { stagger } from "motion";
-import { ShaderMount, getShaderColorFromString, grainGradientFragmentShader } from "@paper-design/shaders";
 import type { EffectProps, PropSpec } from "@chair/effects";
-import { PAPER_OBJECT_SIZING, clamp, hexToRgb01, num } from "@chair/effects";
+import { clamp, hexToRgb01, num } from "@chair/effects";
 
 export const meta = {
   id: "liquid-boxes",
@@ -36,8 +34,6 @@ export const props = {
   grain: { type: "number", min: 0, max: 1, default: 0.35, title: "Grain" },
   ink: { type: "color", default: "#101018", title: "Ink" },
   accent: { type: "color", default: "#ff6a00", title: "Accent" },
-  paper: { type: "color", default: "#f1ebdd", title: "Paper" },
-  backdrop: { type: "boolean", default: false, title: "Backdrop Fill" },
 } satisfies Record<string, PropSpec>;
 
 type Props = EffectProps<{
@@ -48,8 +44,6 @@ type Props = EffectProps<{
   grain: number;
   ink: string;
   accent: string;
-  paper: string;
-  backdrop: boolean;
 }>;
 
 const FRAG = `#version 300 es
@@ -62,26 +56,36 @@ uniform vec2 u_c1;
 uniform vec2 u_c2;
 uniform float u_size;
 uniform float u_merge;
+uniform float u_grain;
 uniform vec3 u_ink;
 uniform vec3 u_accent;
-float sdBox(vec2 p, vec2 b) {
-  vec2 d = abs(p) - b;
-  return length(max(d, 0.0)) + min(max(d.x, d.y), 0.0);
+float sdRoundBox(vec2 p, vec2 b, float r) {
+  vec2 q = abs(p) - b + r;
+  return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - r;
 }
 float smin(float a, float b, float k) {
   float h = clamp(0.5 + 0.5 * (b - a) / k, 0.0, 1.0);
   return mix(b, a, h) - k * h * (1.0 - h);
 }
+float hash12(vec2 p) {
+  vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+  p3 += dot(p3, p3.yzx + 33.33);
+  return fract((p3.x + p3.y) * p3.z);
+}
 void main() {
   vec2 px = (vUv - 0.5) * vec2(u_res.x / u_res.y, 1.0);
   float wob = 0.06 * sin(u_time * 1.7 + px.x * 4.0) * sin(u_time * 1.3 + px.y * 3.0);
-  float d = smin(sdBox(px - u_c1, vec2(u_size)), sdBox(px - u_c2, vec2(u_size)), u_merge * 0.55 + 0.02);
+  float d = smin(
+    sdRoundBox(px - u_c1, vec2(u_size), u_size * 0.35),
+    sdRoundBox(px - u_c2, vec2(u_size), u_size * 0.35),
+    u_merge * 0.55 + 0.02);
   float edge = smoothstep(0.012 + wob * 0.2, -0.012 + wob * 0.2, d);
   float glow = exp(-max(d, 0.0) * 18.0) * step(0.0, d);
-  // Boxes and their halo on transparency: ink core, accent falloff, and
-  // exactly zero (no unmultiplied leak) everywhere else.
+  // Ink cores with subtle grain, clean accent halo, and exactly zero
+  // (no unmultiplied leak) everywhere else.
   float halo = glow * 0.85 * (1.0 - edge);
-  vec3 col = u_ink * edge + u_accent * halo;
+  float grit = 1.0 + (hash12(gl_FragCoord.xy * 0.35 + u_time * 47.0) - 0.5) * 0.24 * u_grain * edge;
+  vec3 col = u_ink * edge * grit + u_accent * halo;
   oColor = vec4(col, clamp(edge + halo, 0.0, 1.0));
 }`;
 
@@ -101,27 +105,22 @@ export default function LiquidBoxes(p: Props): React.ReactElement {
   const { t, history, width, height } = p;
   const n = (name: string, fallback: number) => num(history, name, t, fallback);
   const c = (name: string, fallback: string) => String(history(name, t) ?? fallback);
-  const backdrop = history("backdrop", t) === true;
   const spreadPx = n("spread", 220) / Math.min(width, height);
   const [c1, c2] = centers(t, spreadPx, n("speed", 0.6));
   const size = n("size", 150) / Math.min(width, height) / 2;
   const merge = clamp(n("merge", 0.55), 0, 1);
   const grain = clamp(n("grain", 0.35), 0, 1);
+  const ink = c("ink", "#101018");
+  const accent = c("accent", "#ff6a00");
   const oglRef = React.useRef<HTMLDivElement | null>(null);
-  const grainRef = React.useRef<HTMLDivElement | null>(null);
-  const compRef = React.useRef<HTMLDivElement | null>(null);
-  const compCanvasRef = React.useRef<HTMLCanvasElement | null>(null);
-  const tempCanvasRef = React.useRef<HTMLCanvasElement | null>(null);
 
   React.useLayoutEffect(() => {
-    if (!oglRef.current || !grainRef.current || !compRef.current) return;
+    if (!oglRef.current) return;
     // Client enhancement only; the render pass above is what the probe checks.
     let renderer: Renderer | null = null;
-    let mount: ShaderMount | null = null;
     try {
       renderer = new Renderer({ width, height, dpr: 1, alpha: true });
       const gl = renderer.gl;
-      gl.canvas.style.display = "none";
       oglRef.current.appendChild(gl.canvas);
       const program = new Program(gl, {
         vertex: `#version 300 es
@@ -135,97 +134,35 @@ export default function LiquidBoxes(p: Props): React.ReactElement {
           u_c2: { value: [c2.x, c2.y] },
           u_size: { value: size },
           u_merge: { value: merge },
-          u_ink: { value: hexToRgb01(c("ink", "#101018")) },
-          u_accent: { value: hexToRgb01(c("accent", "#ff6a00")) },
+          u_grain: { value: grain },
+          u_ink: { value: hexToRgb01(ink) },
+          u_accent: { value: hexToRgb01(accent) },
         },
       });
       renderer.render({ scene: new Mesh(gl, { geometry: new Triangle(gl), program }) });
-      // Paper only queries uniform locations for keys passed here; every key the
-      // grain later sets must be present, or the grain layer stays blank.
-      // PAPER_OBJECT_SIZING: the mount never sets the vertex sizing uniforms.
-      mount = new ShaderMount(grainRef.current, grainGradientFragmentShader, {
-        ...PAPER_OBJECT_SIZING,
-        u_colorBack: getShaderColorFromString(c("paper", "#f1ebdd")),
-        u_colors: [c("ink", "#101018"), c("accent", "#ff6a00"), c("paper", "#f1ebdd")].map((hex) => getShaderColorFromString(hex)),
-        u_colorsCount: 3,
-        u_softness: 0.5,
-        u_intensity: 0.8,
-        u_noise: grain,
-        u_shape: 2,
-      }, undefined, 0, Math.round(t * 1000));
-      mount.setUniforms({
-        u_colorBack: getShaderColorFromString(c("paper", "#f1ebdd")),
-        u_colors: [c("ink", "#101018"), c("accent", "#ff6a00"), c("paper", "#f1ebdd")].map((hex) => getShaderColorFromString(hex)),
-        u_colorsCount: 3,
-        u_softness: 0.5,
-        u_intensity: 0.8,
-        u_noise: grain,
-        u_shape: 2,
-      });
-      mount.setSpeed(0);
-      mount.setFrame(Math.round(t * 1000));
-      // Grain only inside the boxes: mask the full-frame grain with the OGL
-      // alpha, then multiply it over the boxes. Both draws are synchronous,
-      // so the GL buffers are valid to read in this same task.
-      const paperCanvas = grainRef.current.querySelector("canvas");
-      if (paperCanvas) {
-        paperCanvas.style.display = "none";
-        if (!compCanvasRef.current) {
-          const made = document.createElement("canvas");
-          made.width = width;
-          made.height = height;
-          made.style.cssText = "position:absolute;inset:0;width:100%;height:100%";
-          compRef.current.appendChild(made);
-          compCanvasRef.current = made;
-        }
-        if (!tempCanvasRef.current) {
-          const made = document.createElement("canvas");
-          made.width = width;
-          made.height = height;
-          tempCanvasRef.current = made;
-        }
-        const temp = tempCanvasRef.current.getContext("2d");
-        const comp = compCanvasRef.current.getContext("2d");
-        if (temp && comp) {
-          temp.globalCompositeOperation = "source-over";
-          temp.clearRect(0, 0, width, height);
-          temp.drawImage(paperCanvas, 0, 0, width, height);
-          temp.globalCompositeOperation = "destination-in";
-          temp.drawImage(gl.canvas, 0, 0, width, height);
-          comp.globalCompositeOperation = "source-over";
-          comp.clearRect(0, 0, width, height);
-          comp.drawImage(gl.canvas, 0, 0, width, height);
-          comp.globalCompositeOperation = "multiply";
-          comp.drawImage(tempCanvasRef.current, 0, 0);
-          comp.globalCompositeOperation = "source-over";
-        }
-      }
     } catch {
       // No WebGL on this host: the mirrored markup still describes the frame.
     }
     return () => {
-      mount?.dispose();
       renderer?.gl?.canvas?.remove();
     };
     // The probe never runs effects; the client re-seeks on every frame input.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [t, width, height, c1.x, c1.y, c2.x, c2.y, size, merge, grain]);
+  }, [t, width, height, c1.x, c1.y, c2.x, c2.y, size, merge, grain, ink, accent]);
 
   return (
     <div
       style={{
         position: "absolute",
         inset: 0,
-        background: backdrop ? c("paper", "#f1ebdd") : "transparent",
+        background: "transparent",
       }}
       data-frame={Math.round(t * 30)}
       data-c1={`${c1.x.toFixed(4)},${c1.y.toFixed(4)}`}
       data-c2={`${c2.x.toFixed(4)},${c2.y.toFixed(4)}`}
-      data-props={[merge.toFixed(3), size.toFixed(4), grain.toFixed(3), c("ink", ""), c("accent", ""), c("paper", "")].join("|")}
+      data-props={[merge.toFixed(3), size.toFixed(4), grain.toFixed(3), ink, accent].join("|")}
     >
       <div ref={oglRef} style={{ position: "absolute", inset: 0 }} />
-      <div ref={grainRef} style={{ position: "absolute", inset: 0, pointerEvents: "none" }} />
-      <div ref={compRef} style={{ position: "absolute", inset: 0, pointerEvents: "none" }} />
     </div>
   );
 }

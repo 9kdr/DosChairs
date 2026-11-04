@@ -108,6 +108,7 @@ const MOUNT_SOURCE = `import React from "react";
 import { flushSync } from "react-dom";
 import { createRoot } from "react-dom/client";
 import * as Mod from "chair-module-under-test";
+import { STANDARD_SWITCH_PROPS, StandardBg } from "__CHAIR_KIT__";
 
 // Third-party WebGL (Paper, OGL) leaves preserveDrawingBuffer off, which
 // makes the drawing buffer unreadable after compositing: the coverage
@@ -124,7 +125,8 @@ HTMLCanvasElement.prototype.getContext = function (type, ...rest) {
 };
 
 const meta = (Mod.meta ?? {});
-const props = (Mod.props ?? {});
+const stdSwitch = meta.kind !== "background";
+const props = stdSwitch ? { ...(Mod.props ?? {}), ...STANDARD_SWITCH_PROPS } : (Mod.props ?? {});
 const Effect = Mod.default;
 const dur = typeof meta.durationSec === "number" && meta.durationSec > 0 ? meta.durationSec : 5;
 const fps = typeof meta.fps === "number" && meta.fps > 0 ? meta.fps : 30;
@@ -133,7 +135,8 @@ const height = typeof meta.height === "number" ? meta.height : 1080;
 const t = dur * 0.5;
 const defaults = {};
 for (const id of Object.keys(props)) defaults[id] = props[id].default;
-const history = (name) => defaults[name];
+const OVR = __CHAIR_VALUES__;
+const history = (name) => (OVR[name] !== undefined ? OVR[name] : defaults[name]);
 const stage = document.getElementById("stage");
 stage.style.width = width + "px";
 stage.style.height = height + "px";
@@ -220,8 +223,10 @@ try {
   // empty tag racing the next animation frame.
   const root = createRoot(stage);
   flushSync(() => {
+    const frameProps = { ...defaults, ...OVR, t, frame: Math.round(t * fps), fps, width, height, history };
+    const content = React.createElement(Effect, frameProps);
     root.render(
-      React.createElement(Effect, { ...defaults, t, frame: Math.round(t * fps), fps, width, height, history }),
+      stdSwitch ? React.createElement(StandardBg, { t, history, children: content }) : content,
     );
   });
   measure();
@@ -267,14 +272,18 @@ const PAGE = `<!doctype html><meta charset="utf-8"><title>verify</title>
 /** Mount the module in headless chromium and read back live scope facts. */
 export async function verifyInBrowser(
   entry: string,
-  opts: { plugin: Plugin; scope: BrowserScope; chromium?: string },
+  opts: { plugin: Plugin; scope: BrowserScope; chromium?: string; values?: Record<string, unknown> | undefined },
 ): Promise<VerifyOutcome> {
   const chromium = opts.chromium ?? findChromium();
   if (!chromium) {
     return { skipped: true, reason: "no chromium binary (set CHAIR_CHROMIUM)" };
   }
   const dir = await mkdtemp(join(tmpdir(), "chair-verify-"));
-  await writeFile(join(dir, "mount.tsx"), MOUNT_SOURCE, "utf8");
+  const mountSource = MOUNT_SOURCE.replace("__CHAIR_KIT__", () => join(effectsPackageDir(), "src", "kit", "standardBg.tsx")).replace(
+    "__CHAIR_VALUES__",
+    () => JSON.stringify(opts.values ?? {}),
+  );
+  await writeFile(join(dir, "mount.tsx"), mountSource, "utf8");
   const server = createServer(async (req, res) => {
     try {
       if ((req.url ?? "/").split("?")[0] === "/mount.js") {

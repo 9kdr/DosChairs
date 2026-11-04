@@ -149,8 +149,9 @@ export function scopeErrors(
   if (covers.length > 0 && !flags.wantsBackground) {
     errors.push(
       `fully opaque frame (${covers[0]}) but the brief asks for no background: ` +
-        "render only the element on a transparent background, or gate any fill behind " +
-        "a backdrop prop that defaults off",
+        "render only the element on a transparent background — the kit's " +
+        "transparentBg switch already covers a user-asked fill, so the module " +
+        "itself must not paint one",
     );
   }
   if (text.length > 0 && !flags.wantsText) {

@@ -23,3 +23,4 @@ export * from "./transitions.js";
 export * from "./flubber.js";
 export * from "./shaderscom.js";
 export * from "./presets.js";
+export * from "./standardBg.js";

@@ -89,7 +89,14 @@ export default function MorphIcon(p: Props): React.ReactElement {
 
   return (
     <div
-      style={{ position: "absolute", inset: 0, background: c("paper", "#101018") }}
+      style={{
+        position: "absolute",
+        inset: 0,
+        // Transparent by default (the standard switch); the paper plate only
+        // shows when the user turns the switch off.
+        background: history("transparentBg", t) === false ? c("paper", "#101018") : "transparent",
+      }}
+      data-paper={c("paper", "#101018")}
       data-seg={`${segment}:${u.toFixed(3)}`}
       data-d-len={d.length}
       data-style={`${size.toFixed(0)}:${thickness.toFixed(1)}:${glow.toFixed(2)}`}

@@ -12,6 +12,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 // @ts-expect-error resolved by the bundler alias to the module under test
 import * as Mod from "chair-module-under-test";
 import { describeCovers, extractText } from "./scope.js";
+import { STANDARD_SWITCH_PROPS, StandardBg } from "../kit/standardBg.js";
 
 type Json = number | string | boolean | null | Json[] | { [k: string]: Json };
 type History = (name: string, t: number) => number | string | boolean | undefined;
@@ -37,15 +38,28 @@ function done(): void {
 }
 
 try {
-  const meta = (Mod as Record<string, unknown>)["meta"] as { durationSec?: number; fps?: number; width?: number; height?: number } | undefined;
-  const props = (Mod as Record<string, unknown>)["props"] as Record<string, RawProp> | undefined;
+  const meta = (Mod as Record<string, unknown>)["meta"] as { durationSec?: number; fps?: number; width?: number; height?: number; kind?: string } | undefined;
+  const rawProps = (Mod as Record<string, unknown>)["props"] as Record<string, RawProp> | undefined;
   const Effect = (Mod as Record<string, unknown>)["default"] as ((p: Record<string, unknown>) => React.ReactNode) | undefined;
+  // The standard switch rides along on every non-background piece; the kit
+  // wins on a collision so the ids stay the same everywhere.
+  const stdSwitch = meta?.kind !== "background";
+  const props = (stdSwitch && rawProps && typeof rawProps === "object"
+    ? { ...rawProps, ...STANDARD_SWITCH_PROPS }
+    : rawProps) as Record<string, RawProp> | undefined;
   report.meta = (meta ?? null) as Json;
   report.props = (props ?? null) as Json;
   if (typeof Effect !== "function") {
     report.errors.push("the module must `export default` the Effect function component");
   } else if (meta && props && typeof meta === "object" && typeof props === "object") {
-    probeFrames(Effect, meta, props);
+    const Rendered = stdSwitch
+      ? (p: Record<string, unknown>) => StandardBg({
+          t: p["t"] as number,
+          history: p["history"] as History,
+          children: Effect(p),
+        })
+      : Effect;
+    probeFrames(Rendered, meta, props);
   }
 } catch (error) {
   report.errors.push(`module failed to load: ${error instanceof Error ? error.message : String(error)}`);
