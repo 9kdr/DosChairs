@@ -701,8 +701,8 @@ export function RunningTasks({
   const recent = useMemo(() => [...recentTasks].slice(-5).reverse(), [recentTasks]);
   if (working.length === 0 && recent.length === 0) {
     return (
-      <div className={cn("rounded-card bg-card p-5 text-neutral-100", className)}>
-        <Empty className="gap-4 py-6">
+      <div className={cn("rounded-card bg-card p-4 text-neutral-100", className)}>
+        <Empty className="gap-2 py-1">
           <EmptyArt>
             <DitherArt seed={2} />
           </EmptyArt>

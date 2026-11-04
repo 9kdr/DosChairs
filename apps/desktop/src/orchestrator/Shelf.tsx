@@ -225,21 +225,9 @@ export function Shelf({
   };
 
   return (
-    <div className={cn("flex h-full min-h-0 min-w-0 flex-col gap-3", className)}>
-      <div className="flex shrink-0 flex-wrap items-center gap-2">
-        <Tabs
-          value={kind}
-          onValueChange={(value) => setKind(value as ShelfKind)}
-          className="min-w-0"
-        >
-          <TabsList size="sm" aria-label="Shelf filter">
-            {KINDS.map((item) => (
-              <TabsTab key={item.id} value={item.id}>
-                {item.label}
-              </TabsTab>
-            ))}
-          </TabsList>
-        </Tabs>
+    <div className={cn("flex h-full min-h-0 w-full min-w-0 flex-1 flex-col gap-3", className)}>
+      <div className="flex shrink-0 items-center gap-2">
+        <h2 className="text-sm font-medium text-neutral-200">Shelf</h2>
         <Menu>
           <MenuTrigger
             render={
@@ -281,6 +269,21 @@ export function Shelf({
             event.target.value = "";
           }}
         />
+      </div>
+      <div className="flex shrink-0 items-center gap-2">
+        <Tabs
+          value={kind}
+          onValueChange={(value) => setKind(value as ShelfKind)}
+          className="min-w-0 flex-1"
+        >
+          <TabsList size="sm" aria-label="Shelf filter" className="flex w-full justify-start">
+            {KINDS.map((item) => (
+              <TabsTab key={item.id} value={item.id} className="min-w-0 flex-1 px-2">
+                {item.label}
+              </TabsTab>
+            ))}
+          </TabsList>
+        </Tabs>
       </div>
       <div className="shrink-0">
         <Input

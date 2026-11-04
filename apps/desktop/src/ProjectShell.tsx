@@ -1,5 +1,5 @@
 import { ArrowLeft, HistoryIcon, HomeIcon } from "lucide-react";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ChatPrompt } from "@/components/chat-prompt";
 import { ServiceStatus } from "@/components/service-status";
 import { Button } from "@/components/ui/button";
@@ -11,7 +11,7 @@ import { formatCutDuration } from "@/lib/format";
 import type { EditorId } from "./home/data";
 import { EditorLogo } from "./home/EditorLogo";
 import { buildUndoChangeset } from "@chair/timeline-ir";
-import { CreationBoard } from "./orchestrator/CreationBoard";
+import { EffectMaker } from "./effects/EffectMaker";
 import { parseAction } from "./orchestrator/actions";
 import { PlanDoc } from "./orchestrator/PlanDoc";
 import { RunningTasks, type RunningTask } from "./orchestrator/RunningTasks";
@@ -71,40 +71,7 @@ type SideTab = "plan" | "shelf";
 type NarrowTab = "tasks" | SideTab;
 type PlanMode = "edit" | "talk";
 
-/** The tabbed Plan/Shelf card in the side column. */
-function SidePanel({
-  tab,
-  onTab,
-  plan,
-  shelf,
-}: {
-  tab: SideTab;
-  onTab: (tab: SideTab) => void;
-  plan: ReactNode;
-  shelf: ReactNode;
-}) {
-  return (
-    <Tabs
-      value={tab}
-      onValueChange={(value) => onTab(value as SideTab)}
-      className="flex min-h-0 flex-1 flex-col"
-    >
-      <div className="flex shrink-0 items-center gap-2">
-        <TabsList
-          variant="underline"
-          size="sm"
-          className="grid w-full flex-1 grid-cols-2 border-b border-line"
-        >
-          <TabsTab value="plan">Plan</TabsTab>
-          <TabsTab value="shelf">Shelf</TabsTab>
-        </TabsList>
-      </div>
-      <div className="mt-3 min-h-0 flex-1 overflow-hidden">{tab === "plan" ? plan : shelf}</div>
-    </Tabs>
-  );
-}
-
-/** The board in the center, Plan/Shelf in the side panel. */
+/** The dashboard: tasks on top, Plan and Shelf below on one canvas. */
 export function ProjectShell({ projectId, projectName, editorId, onHome }: ProjectShellProps) {
   const [page, setPage] = useState<Page>("board");
   const [sideTab, setSideTab] = useState<SideTab>("plan");
@@ -279,8 +246,8 @@ export function ProjectShell({ projectId, projectName, editorId, onHome }: Proje
     [],
   );
 
-  // The Effect Maker takes the full width: the side panel steps aside
-  // while it (or Settings) owns the screen. History keeps the panel.
+  // The Effect Maker takes the full width while it (or Settings) owns
+  // the screen. History keeps the dashboard. Narrow windows keep a panel.
   const showSide = page !== "maker" && !settingsOpen;
   // Narrow windows get one underline switch instead of two columns.
   // The task thread owns the whole narrow screen, like before.
@@ -315,6 +282,24 @@ export function ProjectShell({ projectId, projectName, editorId, onHome }: Proje
       landings={project.landings}
       onRecordLanding={project.recordLanding}
       onCreate={openMakerPage}
+    />
+  );
+  // The empty task list is already its own card; working/recent tiles get one.
+  const hasTasks = workingTasks.length + recentTasks.length > 0;
+  const tasksList = (
+    <RunningTasks
+      history={project.history}
+      tasks={workingTasks}
+      recentTasks={recentTasks}
+      onOpen={openTask}
+      onUndo={(task) => {
+        setTaskChat(task);
+        setTaskNote({ id: Date.now(), text: UNDO_PROMPT });
+      }}
+      onRetry={retryTask}
+      onUndoResolve={undoResolveWrite}
+      onRedoResolve={redoResolveWrite}
+      onOpenHistory={openHistoryPage}
     />
   );
 
@@ -429,21 +414,31 @@ export function ProjectShell({ projectId, projectName, editorId, onHome }: Proje
           ) : page === "board" ? (
             <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden">
               <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
-                <div className="mx-auto flex w-full max-w-5xl flex-col gap-3 py-2 @max-[760px]:max-w-none">
-                  <RunningTasks
-                    history={project.history}
-                    tasks={workingTasks}
-                    recentTasks={recentTasks}
-                    onOpen={openTask}
-                    onUndo={(task) => {
-                      setTaskChat(task);
-                      setTaskNote({ id: Date.now(), text: UNDO_PROMPT });
-                    }}
-                    onRetry={retryTask}
-                    onUndoResolve={undoResolveWrite}
-                    onRedoResolve={redoResolveWrite}
-                    onOpenHistory={openHistoryPage}
-                  />
+                <div className="mx-auto grid w-full grid-cols-1 gap-3 py-2 @min-[1000px]:grid-cols-12">
+                  <div className="@min-[1000px]:col-span-12">
+                    {hasTasks ? (
+                      <section
+                        aria-label="Tasks"
+                        className="rounded-card bg-card p-4 text-neutral-100"
+                      >
+                        {tasksList}
+                      </section>
+                    ) : (
+                      tasksList
+                    )}
+                  </div>
+                  <section
+                    aria-label="Plan"
+                    className="flex h-[520px] min-h-0 flex-col rounded-card bg-card p-4 text-neutral-100 @max-[760px]:hidden @min-[1000px]:col-span-7"
+                  >
+                    {planPane}
+                  </section>
+                  <section
+                    aria-label="Shelf"
+                    className="flex h-[520px] min-h-0 flex-col rounded-card bg-card p-4 text-neutral-100 @max-[760px]:hidden @min-[1000px]:col-span-5"
+                  >
+                    {shelfPane}
+                  </section>
                 </div>
               </div>
               <div className="mx-auto flex w-full max-w-3xl shrink-0 flex-col gap-2 @max-[760px]:max-w-none">
@@ -503,15 +498,14 @@ export function ProjectShell({ projectId, projectName, editorId, onHome }: Proje
                 </Button>
               </div>
               <div className="mx-auto min-h-0 w-full max-w-4xl flex-1">
-                <CreationBoard
+                <EffectMaker
                   clips={effectClips}
-                  onApplyEffect={project.applyItem}
-                  onUndoEffect={(itemId) => project.undoToHere(itemId)}
+                  onApply={project.applyItem}
+                  onUndo={(itemId) => project.undoToHere(itemId)}
                   onOpenHistory={openHistoryPage}
                   refusal={project.refusal?.reason ?? null}
                   landings={project.landings}
                   onRecordLanding={project.recordLanding}
-                  startOnNewPiece
                 />
               </div>
             </div>
@@ -539,18 +533,14 @@ export function ProjectShell({ projectId, projectName, editorId, onHome }: Proje
             </div>
           )}
           </main>
-          {showSide ? (
+          {narrowShowsPanel ? (
             <aside
               aria-label="Project panel"
-              className={`flex min-h-0 w-80 shrink-0 flex-col overflow-hidden rounded-card bg-card p-4 text-neutral-100 xl:w-96${narrowShowsPanel ? " @max-[760px]:w-full" : " @max-[760px]:hidden"}`}
+              className="flex min-h-0 w-full min-w-0 flex-1 flex-col overflow-hidden rounded-card bg-card p-4 text-neutral-100 @min-[761px]:hidden"
             >
-              {narrowShowsPanel ? (
-                <div className="min-h-0 flex-1 overflow-hidden">
-                  {sideTab === "plan" ? planPane : shelfPane}
-                </div>
-              ) : (
-                <SidePanel tab={sideTab} onTab={setSideTab} plan={planPane} shelf={shelfPane} />
-              )}
+              <div className="min-h-0 flex-1 overflow-hidden">
+                {sideTab === "plan" ? planPane : shelfPane}
+              </div>
             </aside>
           ) : null}
         </div>
