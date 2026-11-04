@@ -10,6 +10,8 @@ import { createOglAdapter, seekOgl } from "./ogl.js";
 import { createPaperAdapter, seekPaper } from "./paper.js";
 import { createTransitionAdapter, seekTransition, transitionProgress } from "./transitions.js";
 import { createFlubberAdapter, morphAt } from "./flubber.js";
+import { createShadersComAdapter, seekShadersComRenderer } from "./shaderscom.js";
+import type { ShadersComRenderer, ShadersComTarget } from "./shaderscom.js";
 import { seedMatter, simulateWorld } from "./matter.js";
 import { GlowWrap, GradientWash, GrainOverlay, HalftoneLayer } from "./presets.js";
 
@@ -191,5 +193,105 @@ describe("presets", () => {
       React.createElement(GlowWrap, { color: "#ff0000", children: "x" }),
     );
     expect(glow).toContain("drop-shadow");
+  });
+});
+
+describe("shaders.com adapter", () => {
+  class FakeRenderer implements ShadersComRenderer {
+    calls: (number | "init" | "dispose")[] = [];
+    constructor(private fail: string | null = null) {}
+    async initialize(): Promise<void> {
+      this.calls.push("init");
+    }
+    async renderFrame(options?: { deltaSeconds?: number }): Promise<void> {
+      this.calls.push(options?.deltaSeconds ?? -1);
+    }
+    getFailureReason(): string | null {
+      return this.fail;
+    }
+    dispose(): void {
+      this.calls.push("dispose");
+    }
+  }
+
+  const fakeCanvas = (): HTMLCanvasElement => ({ dataset: {} }) as HTMLCanvasElement;
+
+  const settle = async (until: () => boolean): Promise<void> => {
+    for (let i = 0; i < 200 && !until(); i++) {
+      await new Promise((r) => setTimeout(r, 5));
+    }
+    expect(until()).toBe(true);
+  };
+
+  it("paints [t, 0] and clamps negative t", async () => {
+    const a = new FakeRenderer();
+    await seekShadersComRenderer(a, 2.5);
+    expect(a.calls).toEqual([2.5, 0]);
+    const b = new FakeRenderer();
+    await seekShadersComRenderer(b, -3);
+    expect(b.calls).toEqual([0, 0]);
+  });
+
+  it("is a safe no-op without a target and after dispose", () => {
+    const adapter = createShadersComAdapter(() => null);
+    expect(() => {
+      adapter.init(null, {});
+      adapter.seek(1);
+      adapter.dispose();
+    }).not.toThrow();
+  });
+
+  it("rebuilds per seek, paints [t, 0], marks ready", async () => {
+    const canvas = fakeCanvas();
+    const made: FakeRenderer[] = [];
+    const adapter = createShadersComAdapter((): ShadersComTarget => ({
+      canvas,
+      buildPreset: () => ({ components: [] }),
+      createRenderer: () => {
+        const r = new FakeRenderer();
+        made.push(r);
+        return r;
+      },
+    }));
+    adapter.seek(1.5);
+    await settle(() => canvas.dataset["shadersStatus"] === "ready");
+    expect(made.length).toBe(1);
+    expect(made[0]!.calls).toEqual(["init", 1.5, 0]);
+    adapter.seek(2.5);
+    await settle(() => made.length === 2 && made[1]!.calls.length === 3);
+    expect(made[1]!.calls).toEqual(["init", 2.5, 0]);
+    expect(made[0]!.calls).toContain("dispose");
+    adapter.dispose();
+  });
+
+  it("marks unavailable when the renderer fails, without throwing", async () => {
+    const canvas = fakeCanvas();
+    const adapter = createShadersComAdapter((): ShadersComTarget => ({
+      canvas,
+      buildPreset: () => ({ components: [] }),
+      createRenderer: () => new FakeRenderer("no-device"),
+    }));
+    adapter.seek(1);
+    await settle(() => canvas.dataset["shadersStatus"] === "unavailable");
+    adapter.dispose();
+  });
+
+  it("dispose cancels a queued seek", async () => {
+    const canvas = fakeCanvas();
+    let made = 0;
+    const adapter = createShadersComAdapter((): ShadersComTarget => ({
+      canvas,
+      buildPreset: () => ({ components: [] }),
+      createRenderer: () => {
+        made++;
+        return new FakeRenderer();
+      },
+    }));
+    adapter.dispose();
+    adapter.seek(1);
+    adapter.dispose();
+    await new Promise((r) => setTimeout(r, 50));
+    expect(made).toBeLessThanOrEqual(1);
+    expect(canvas.dataset["shadersStatus"]).not.toBe("ready");
   });
 });

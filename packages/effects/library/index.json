@@ -9,7 +9,8 @@
     "matter": "matter-js. MIT.",
     "paper": "@paper-design/shaders 0.0.82. Apache-2.0.",
     "flubber": "flubber. MIT.",
-    "transitions": "gl-transitions (check the bundled transition's file header). MIT."
+    "transitions": "gl-transitions (check the bundled transition's file header). MIT.",
+    "shaderscom": "shaders.com WebGPU components (shaders 4.x, frame-locked). MIT."
   },
   "entries": [
     {
@@ -360,6 +361,98 @@
       ],
       "license": "Apache-2.0",
       "path": "library/mesh-gradient.tsx"
+    },
+    {
+      "id": "aurora-veil",
+      "tags": [
+        "shaderscom",
+        "aurora",
+        "background",
+        "generator",
+        "webgpu"
+      ],
+      "summary": "A shaders.com Aurora background \u2014 layered curtains and rays \u2014 in three editor colors with brightness, flow speed, and waviness; every seek rebuilds the renderer and paints [t, 0].",
+      "props": [
+        {
+          "id": "colorA",
+          "type": "color"
+        },
+        {
+          "id": "colorB",
+          "type": "color"
+        },
+        {
+          "id": "colorC",
+          "type": "color"
+        },
+        {
+          "id": "intensity",
+          "type": "number"
+        },
+        {
+          "id": "speed",
+          "type": "number"
+        },
+        {
+          "id": "waviness",
+          "type": "number"
+        }
+      ],
+      "source": "shaderscom",
+      "libraries": [
+        {
+          "name": "shaders",
+          "license": "MIT"
+        }
+      ],
+      "license": "MIT",
+      "path": "library/aurora-veil.tsx"
+    },
+    {
+      "id": "glow-orb",
+      "tags": [
+        "shaderscom",
+        "glow",
+        "orb",
+        "overlay",
+        "webgpu"
+      ],
+      "summary": "A breathing orb \u2014 a shaders.com Circle with a Glow filter \u2014 on a transparent background; one pulse phase drives radius and glow, pure in t.",
+      "props": [
+        {
+          "id": "color",
+          "type": "color"
+        },
+        {
+          "id": "intensity",
+          "type": "number"
+        },
+        {
+          "id": "radius",
+          "type": "number"
+        },
+        {
+          "id": "size",
+          "type": "number"
+        },
+        {
+          "id": "pulse",
+          "type": "number"
+        },
+        {
+          "id": "rate",
+          "type": "number"
+        }
+      ],
+      "source": "shaderscom",
+      "libraries": [
+        {
+          "name": "shaders",
+          "license": "MIT"
+        }
+      ],
+      "license": "MIT",
+      "path": "library/glow-orb.tsx"
     }
   ]
 }
