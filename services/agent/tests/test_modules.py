@@ -202,12 +202,21 @@ def test_module_model_is_overridable_by_env() -> None:
 
 def test_wonder_model_is_selected_by_mode(isolated, monkeypatch) -> None:
     seen: dict = {}
+    report = {
+        "ok": True,
+        "errors": [],
+        "warnings": [],
+        "meta": {"id": "fade-label", "name": "Fade Label"},
+        "props": [{"id": "size"}],
+        "checks": {"deterministic": True},
+    }
 
     def fake_client(model=None):
         seen["model"] = model
         return FakeClient([fenced(GOOD)])
 
     monkeypatch.setattr(modules, "_model_client", fake_client)
+    monkeypatch.setattr(modules, "_check_source", lambda *args: dict(report))
     record = modules.generate_module(
         "fade", model=modules.WONDER_MODULE_MODEL, mode="wonder"
     )
