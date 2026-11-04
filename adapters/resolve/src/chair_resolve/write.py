@@ -18,6 +18,7 @@ from typing import Any
 
 from chair_resolve.fusion import chair_cache_dir, spec_to_comp
 from chair_resolve.manifest import MANIFEST, Manifest
+from chair_resolve.ograf import install_ograf, place_ograf_title
 from chair_resolve.read import FRAME_RATES, TRACK_PREFIX, ResolveClosedError, resolve_app
 
 Frame = int | float
@@ -77,6 +78,7 @@ def plan_from_timeline(timeline: dict[str, Any], manifest: Manifest = MANIFEST) 
         "clips": [],
         "markers": _plan_markers(markers, num, den),
         "fusion": [],
+        "ograf_titles": [],
         "skipped": [],
     }
     counts = {"video": 0, "audio": 0}
@@ -150,7 +152,9 @@ def write_timeline(
         item = by_clip[fusion["clip_id"]]
         if _import_planned_fusion(plan, manifest, item, fusion, fusion_cache_dir):
             imported += 1
-    return {
+    for ograf in plan["ograf_titles"]:
+        _write_ograf_title(ograf, timeline_obj, plan, manifest)
+    summary = {
         "timeline": plan["timeline_name"],
         "tracks": len(plan["tracks"]),
         "clips": len(plan["clips"]),
@@ -158,6 +162,9 @@ def write_timeline(
         "fusion": imported,
         "skipped": len(plan["skipped"]),
     }
+    if plan["ograf_titles"]:
+        summary["ograf"] = len(plan["ograf_titles"])
+    return summary
 
 
 def _plan_track(
@@ -391,6 +398,12 @@ def _plan_effect(plan: dict[str, Any], manifest: Manifest, clip_id: str, effect:
             {"kind": "effect", "id": effect_id, "reason": f"Effect {effect_id!r} is disabled."}
         )
         return
+    export_target = effect.get("exportTarget")
+    if not isinstance(export_target, str):
+        export_target = params.get("exportTarget")
+    if export_target == "ograf":
+        _plan_ograf_effect(plan, manifest, clip_id, effect_id, effect, params)
+        return
     if "spec" in params or "specRef" in params:
         if not manifest.capabilities.fusion_macros:
             fallback = manifest.fallbacks.get("fusionMacros", "Fusion macros are disabled.")
@@ -441,6 +454,78 @@ def _plan_effect(plan: dict[str, Any], manifest: Manifest, clip_id: str, effect:
             "effect_id": effect_id,
             "preset": str(effect["presetName"]),
             "comp_path": comp_path.strip(),
+        }
+    )
+
+
+def _plan_ograf_effect(
+    plan: dict[str, Any],
+    manifest: Manifest,
+    clip_id: str,
+    effect_id: str,
+    effect: dict[str, Any],
+    params: dict[str, Any],
+) -> None:
+    """Record an OGraf title install instead of a Fusion comp import."""
+    title_name = params.get("ografTitle")
+    if not isinstance(title_name, str) or not title_name.strip():
+        title_name = str(effect["presetName"])
+    if not manifest.capabilities.ograf_titles:
+        fallback = manifest.fallbacks.get("ografTitles", "OGraf titles are disabled.")
+        plan["skipped"].append(
+            {
+                "kind": "effect",
+                "id": effect_id,
+                "reason": f"Effect {effect_id!r}: {fallback}",
+            }
+        )
+        return
+    entry: dict[str, Any] = {
+        "clip_id": clip_id,
+        "effect_id": effect_id,
+        "preset": str(effect["presetName"]),
+        "title_name": title_name.strip(),
+    }
+    bundle_manifest = params.get("ografManifest")
+    bundle_js = params.get("ografJs")
+    if isinstance(bundle_manifest, dict) and isinstance(bundle_js, str) and bundle_js.strip():
+        entry["manifest"] = bundle_manifest
+        entry["js"] = bundle_js
+    plan["ograf_titles"].append(entry)
+
+
+def _write_ograf_title(
+    entry: dict[str, Any],
+    timeline_obj: Any,
+    plan: dict[str, Any],
+    manifest: Manifest,
+) -> None:
+    """Install the title bundle, then try scripting placement on the timeline."""
+    title_name = str(entry["title_name"])
+    bundle_manifest = entry.get("manifest")
+    bundle_js = entry.get("js")
+    if isinstance(bundle_manifest, dict) and isinstance(bundle_js, str):
+        try:
+            installed = install_ograf(bundle_manifest, bundle_js)
+        except (TypeError, ValueError, OSError) as exc:
+            plan["skipped"].append(
+                {
+                    "kind": "effect",
+                    "id": str(entry["effect_id"]),
+                    "reason": f"OGraf title {title_name!r}: install failed ({exc}).",
+                }
+            )
+            return
+        title_name = str(installed["title_name"])
+    if place_ograf_title(timeline_obj, title_name):
+        return
+    fallback = manifest.fallbacks.get("ografTitles", "OGraf titles need a hand install.")
+    plan["skipped"].append(
+        {
+            "kind": "effect",
+            "id": str(entry["effect_id"]),
+            "reason": f'OGraf title {title_name!r}: {fallback} (drag "{title_name}" '
+            'from Effects > Titles > OGraf onto the timeline)',
         }
     )
 

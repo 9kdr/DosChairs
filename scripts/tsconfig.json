@@ -1,0 +1,23 @@
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "target": "es2022",
+    "lib": ["es2022", "dom"],
+    "types": ["node"],
+    "skipLibCheck": true,
+    "verbatimModuleSyntax": false,
+    "jsx": "react-jsx",
+    "declaration": false,
+    "declarationMap": false,
+    "sourceMap": false,
+    "outDir": "/tmp/chair-ograf-build",
+    "rootDir": "..",
+    "paths": {
+      "@chair/effects": ["../packages/effects/src/index.ts"],
+      "@chair/ograf": ["../packages/ograf/src/index.ts"]
+    }
+  },
+  "include": ["export-ograf.ts"]
+}
