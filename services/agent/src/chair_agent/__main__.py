@@ -41,6 +41,13 @@ class Handler(BaseHTTPRequestHandler):
         if self.path == "/health":
             self._send(200, _health())
             return
+        kind, effect_id = _effect_paths(self.path)
+        if kind == "effect" and effect_id is not None:
+            try:
+                self._send(200, _effect_body(effect_id))
+            except Exception as error:
+                self._send(_effects_status(error), _error("invalid_effect", str(error)))
+            return
         if urlsplit(self.path).path == "/sounds":
             self._send(200, _sounds_body(self.path))
             return
@@ -139,6 +146,30 @@ class Handler(BaseHTTPRequestHandler):
             except ValueError as error:
                 self._send(400, _error("invalid_sounds_fetch", str(error)))
             return
+        effects_path = urlsplit(self.path).path
+        if effects_path == "/effects/generate":
+            try:
+                body = self._body()
+            except ValueError:
+                self._send(400, _error("invalid_json", "request body must be JSON"))
+                return
+            try:
+                self._send(200, _effects_generate_body(body))
+            except Exception as error:
+                self._send(_effects_status(error), _error("invalid_effect", str(error)))
+            return
+        kind, effect_id = _effect_paths(self.path)
+        if kind == "verify" and effect_id is not None:
+            try:
+                body = self._body()
+            except ValueError:
+                self._send(400, _error("invalid_json", "request body must be JSON"))
+                return
+            try:
+                self._send(200, _effects_verify_body(effect_id, body))
+            except Exception as error:
+                self._send(_effects_status(error), _error("invalid_effect", str(error)))
+            return
         project_id = _assets_path(self.path)
         if project_id is not None:
             try:
@@ -198,6 +229,16 @@ class Handler(BaseHTTPRequestHandler):
         return
 
 
+def _effect_paths(path: str) -> tuple[str, str | None]:
+    """Split /effects/<id> and /effects/<id>/verify; else ("", None)."""
+    parts = urlsplit(path).path.strip("/").split("/")
+    if len(parts) == 2 and parts[0] == "effects" and parts[1]:
+        return ("effect", unquote(parts[1]))
+    if len(parts) == 3 and parts[0] == "effects" and parts[1] and parts[2] == "verify":
+        return ("verify", unquote(parts[1]))
+    return ("", None)
+
+
 def _review_path(path: str) -> str | None:
     parts = urlsplit(path).path.strip("/").split("/")
     if len(parts) == 3 and parts[0] == "projects" and parts[1] and parts[2] == "review":
@@ -236,7 +277,7 @@ def _cancel_path(path: str) -> str | None:
 
 
 def _health() -> dict[str, Any]:
-    from chair_agent import sounds
+    from chair_agent import effects, sounds
 
     keys_status = keys_configured()
     return {
@@ -248,6 +289,7 @@ def _health() -> dict[str, Any]:
         "keys_configured": keys_status,
         "keys": keys_status,
         "sounds": sounds.status_snapshot(),
+        "effects": effects.status_snapshot(),
     }
 
 
@@ -336,6 +378,66 @@ def _sounds_fetch_body(body: dict[str, Any]) -> dict[str, Any]:
         raise ValueError(f"unknown sound entry: {wanted!r}")
     dest = sounds.fetch_freesound_entry(entry, api_key=api_key)
     return {"id": entry.id, "path": str(dest)}
+
+
+def _effects_status(error: Exception) -> int:
+    from chair_agent import effects
+    from chair_agent.effects import InvalidEffect
+
+    if isinstance(error, InvalidEffect):
+        return effects.error_status(error)
+    return 400
+
+
+def _effect_body(effect_id: str) -> dict[str, Any]:
+    from chair_agent import effects
+
+    record = effects.get_effect(effect_id)
+    return record.model_dump(mode="json")
+
+
+def _effects_generate_body(body: dict[str, Any]) -> dict[str, Any]:
+    from chair_agent import effects
+
+    canvas = body.get("canvas", {})
+    if not isinstance(canvas, dict):
+        raise ValueError("generate needs a 'canvas' object with width and height")
+    try:
+        width = int(canvas.get("width", 0))
+        height = int(canvas.get("height", 0))
+        fps = float(body.get("fps", 0))
+        duration_sec = float(body.get("durationSec", 0))
+    except (TypeError, ValueError) as error:
+        raise ValueError(f"bad generate body: {error}") from error
+    record = effects.generate_effect(
+        str(body.get("prompt", "")),
+        width=width,
+        height=height,
+        fps=fps,
+        duration_sec=duration_sec,
+        rig=body.get("rig") if isinstance(body.get("rig"), dict) else None,
+        reference_image=body.get("referenceImage")
+        if isinstance(body.get("referenceImage"), str) else None,
+    )
+    dumped = record.model_dump(mode="json")
+    return {"id": dumped["id"], "spec": dumped["spec"], "notes": dumped["notes"]}
+
+
+def _effects_verify_body(effect_id: str, body: dict[str, Any]) -> dict[str, Any]:
+    from chair_agent import effects
+
+    record, passed, notes = effects.verify_effect(
+        effect_id,
+        preview_png=str(body.get("previewPng", "")),
+        reference_png=str(body.get("referencePng", ""))
+        if isinstance(body.get("referencePng"), str) else None,
+        resolve_still_png=str(body.get("resolveStillPng", ""))
+        if isinstance(body.get("resolveStillPng"), str) else None,
+    )
+    out: dict[str, Any] = {"pass": passed, "notes": notes}
+    if not passed:
+        out["revisedSpec"] = record.spec
+    return out
 
 
 def _handle_body(base_url: str, job: Job) -> dict[str, Any]:
