@@ -128,17 +128,49 @@ def _score(entry: dict[str, Any], tokens: Sequence[str]) -> int:
     return sum(3 if token in name else 1 if token in rest else 0 for token in tokens)
 
 
+def _board_list_entries(tokens: Sequence[str]) -> list[dict[str, Any]]:
+    """Style-board items as list entries, matched against the query tokens."""
+    from chair_agent import plans as plan_store
+
+    entries = []
+    for item in plan_store.iter_board_items():
+        name = item["title"] or item["id"]
+        haystack = " ".join(
+            [item["id"], name, item["kind"], item["notes"], *item["tags"]]
+        ).lower()
+        if tokens and not all(token in haystack for token in tokens):
+            continue
+        entries.append(
+            {
+                "id": f"board:{item['id']}",
+                "name": name,
+                "kind": item["kind"],
+                "origin": "board",
+                "source": item["project_id"],
+                "summary": item["notes"] or "",
+                "controls": [],
+            }
+        )
+    return entries
+
+
 def list_pieces(query: str = "", *, limit: int = 50, rescan: bool = False) -> dict[str, Any]:
     """Catalogue pieces and Resolve macros together, filtered and ranked by query."""
-    entries = _catalog_entries() + _macro_entries(get_scan(rescan=rescan))
     tokens = [token for token in query.lower().split() if token]
+    entries = (
+        _catalog_entries() + _macro_entries(get_scan(rescan=rescan))
+        + _board_list_entries(tokens)
+    )
     # The editor's own macros first, then the built-in catalogue, then Resolve's stock set.
     order = {"user": 0, "catalog": 1, "system": 2}
     scored = sorted(
         ((entry, _score(entry, tokens)) for entry in entries),
-        key=lambda item: (-item[1], order[item[0]["source"]]),
+        key=lambda item: (-item[1], order.get(item[0]["source"], 1)),
     )
     entries = [entry for entry, score in scored if score > 0 or not tokens]
+    # Board items match on their own id/title/tags above, so they skip the
+    # piece scorer instead of being filtered by it.
+    entries = entries + _board_list_entries(tokens)
     return {"pieces": entries[: max(1, limit)], "total": len(entries)}
 
 

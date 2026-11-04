@@ -114,6 +114,16 @@ def test_find_board_item_resolves_id_and_title(isolated) -> None:
         digest_item(PROJECT, "missing", client=FakeClient(DIGEST_JSON))
 
 
+def test_board_items_appear_in_the_piece_listing(isolated) -> None:
+    from chair_agent.pieces import macros
+
+    save_front(PROJECT, FRONT)
+    assert macros.list_pieces("style-x")["pieces"][0]["id"] == "board:style-x"
+    ids = [entry["id"] for entry in macros.list_pieces("warm morning")["pieces"]]
+    assert "board:style-x" in ids
+    assert macros.list_pieces("no such look")["total"] == 0
+
+
 def test_find_piece_resolves_board_ref_for_effect_briefs(isolated) -> None:
     from chair_agent.pieces import macros
 
