@@ -4,7 +4,13 @@ import types
 import pytest
 from chair_resolve.manifest import MANIFEST, Capabilities, Manifest
 from chair_resolve.read import ResolveClosedError, timeline_from_resolve
-from chair_resolve.write import import_media, plan_from_timeline, write_timeline
+from chair_resolve.write import (
+    apply_sound_items,
+    describe_sound_report,
+    import_media,
+    plan_from_timeline,
+    write_timeline,
+)
 
 
 def _time(value, rate=24):
@@ -568,3 +574,76 @@ def test_import_media_when_studio_refuses() -> None:
 
     with pytest.raises(RuntimeError, match="could not import media"):
         import_media("/media/new.mov", resolve)
+
+
+def _sound_timeline():
+    return {
+        "id": "tl-sound",
+        "name": "Sound captest",
+        "rate": {"num": 30, "den": 1},
+        "tracks": [
+            {
+                "id": "music",
+                "kind": "audio",
+                "name": "Music",
+                "clips": [_clip("music-1", "/media/music.wav", start=0, span=600)],
+            },
+        ],
+        "markers": [],
+    }
+
+
+def _sound_items():
+    return [
+        {"id": "track-sfx-1", "op": "add_track", "rationale": "SFX track.",
+         "patch": {"track": {"id": "audio-sfx-1", "kind": "audio", "name": "SFX"}},
+         "status": "pending"},
+        {"id": "sfx-riser-1", "op": "add_clip", "targetId": "audio-sfx-1",
+         "rationale": "Riser lands on the cut.",
+         "patch": {"clip": {
+             "id": "sfx-riser-1", "name": "sfx-riser-1",
+             "mediaRef": "/sfx/riser.wav",
+             "sourceRange": _range(0, 60, 30), "timelineRange": _range(90, 60, 30)},
+                    "clipId": "sfx-riser-1", "kind": "riser", "gainDb": -10.0},
+         "status": "pending"},
+        {"id": "duck-1", "op": "set_gain", "targetId": "music-1",
+         "rationale": "Duck music under dialogue.",
+         "patch": {"gainDb": -12.0,
+                    "keyframes": [{"timeSeconds": 0.0, "gainDb": -12.0}]},
+         "status": "pending"},
+    ]
+
+
+def test_apply_sound_items_lands_on_a_copy() -> None:
+    timeline = _sound_timeline()
+    copy, report = apply_sound_items(timeline, _sound_items())
+    assert timeline["tracks"] == _sound_timeline()["tracks"]
+    assert report["tracks_added"] == ["audio-sfx-1"]
+    assert report["clips_placed"] == ["sfx-riser-1"]
+    assert report["keyframes"] == 1
+    sfx_track = next(track for track in copy["tracks"] if track["id"] == "audio-sfx-1")
+    assert [clip["id"] for clip in sfx_track["clips"]] == ["sfx-riser-1"]
+    music = next(track for track in copy["tracks"] if track["id"] == "music")["clips"][0]
+    assert music["metadata"]["chairDucking"]["gainDb"] == -12.0
+    assert report["fallbacks"] and report["skipped"] == []
+    assert "volume keyframes: 1" in describe_sound_report(report)
+
+
+def test_apply_sound_items_skips_what_is_missing() -> None:
+    copy, report = apply_sound_items(_sound_timeline(), [
+        {"id": "lost", "op": "add_clip", "targetId": "nope", "rationale": "Lost.",
+         "patch": {}, "status": "pending"},
+    ])
+    assert copy["tracks"] == _sound_timeline()["tracks"]
+    assert len(report["skipped"]) == 1
+
+
+def test_sound_copy_places_through_the_normal_clip_path() -> None:
+    copy, report = apply_sound_items(_sound_timeline(), _sound_items())
+    plan = plan_from_timeline(copy)
+    sfx = next(clip for clip in plan["clips"] if clip["clip_id"] == "sfx-riser-1")
+    assert sfx["media_path"] == "/sfx/riser.wav"
+    # Riser ends exactly on the cut: placed at 90, 60 frames long, ends at 150.
+    assert sfx["record_frame"] == 90
+    assert sfx["end_frame"] - sfx["start_frame"] + 1 == 60
+    assert sfx["media_type"] == 2

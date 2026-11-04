@@ -581,6 +581,163 @@ def _rate_label(num: int, den: int) -> str:
     return label
 
 
+def apply_sound_items(
+    timeline: dict[str, Any],
+    items: list[dict[str, Any]],
+    manifest: Manifest = MANIFEST,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Map sound changeset items onto a NEW timeline dict (the copy).
+
+    add_track adds the SFX audio track, add_clip places the SFX snapshot on
+    it, and set_gain records ducking keyframes on the target clip's metadata
+    for Fairlight (scripting cannot set them: see the audioKeyframes
+    fallback). The input timeline is never mutated. Returns (copy, report)
+    with track/clip/keyframe counts and skipped reasons.
+    """
+    import copy
+
+    if not isinstance(timeline, dict):
+        raise TypeError("Timeline must be an object.")
+    tracks = timeline.get("tracks")
+    if not isinstance(tracks, list):
+        raise ValueError("Timeline has no tracks list.")
+    result = copy.deepcopy(timeline)
+    report: dict[str, Any] = {
+        "tracks_added": [],
+        "clips_placed": [],
+        "keyframes": 0,
+        "skipped": [],
+        "fallbacks": [],
+    }
+    by_id = {track.get("id"): track for track in result["tracks"] if isinstance(track, dict)}
+
+    def skip(item_id: str, reason: str) -> None:
+        report["skipped"].append({"id": item_id, "reason": reason})
+
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        op = item.get("op")
+        item_id = str(item.get("id") or op)
+        patch = item.get("patch") if isinstance(item.get("patch"), dict) else {}
+        if op == "add_track":
+            track = patch.get("track") if isinstance(patch.get("track"), dict) else {}
+            track_id = str(track.get("id") or patch.get("trackId") or "")
+            if track.get("kind", "audio") != "audio" or not track_id:
+                continue  # not a sound track; the generic applier owns it
+            if track_id in by_id:
+                continue
+            entry = {
+                "id": track_id,
+                "kind": "audio",
+                "name": str(track.get("name") or "SFX"),
+                "clips": list(track.get("clips") or []),
+            }
+            result["tracks"].append(entry)
+            by_id[track_id] = entry
+            report["tracks_added"].append(track_id)
+        elif op == "add_clip":
+            target = item.get("targetId")
+            track = by_id.get(target) if isinstance(target, str) else None
+            clip = patch.get("clip") if isinstance(patch.get("clip"), dict) else None
+            if track is None or track.get("kind") != "audio":
+                skip(item_id, f"SFX {item_id!r} names no audio track on the copy.")
+                continue
+            if clip is None or not clip.get("id"):
+                skip(item_id, f"SFX {item_id!r} has no clip snapshot to place.")
+                continue
+            if manifest.audio_capabilities.get("place_sfx_on_new_track", True) is False:
+                skip(item_id, f"SFX {item_id!r}: {manifest.fallbacks.get('placeSfx', 'skipped')}")
+                continue
+            snapshot = {
+                "id": str(clip["id"]),
+                "name": str(clip.get("name") or clip["id"]),
+                "sourceRange": clip["sourceRange"],
+                "timelineRange": clip["timelineRange"],
+            }
+            if clip.get("mediaRef"):
+                snapshot["mediaRef"] = str(clip["mediaRef"])
+            snapshot["metadata"] = {
+                **(clip.get("metadata") if isinstance(clip.get("metadata"), dict) else {}),
+                "chairSound": {
+                    "kind": str(patch.get("kind") or "sfx"),
+                    "gainDb": patch.get("gainDb"),
+                    "license": patch.get("license"),
+                },
+            }
+            existing = track.setdefault("clips", [])
+            if not any(c.get("id") == snapshot["id"] for c in existing):
+                existing.append(snapshot)
+                existing.sort(key=lambda c: _timeline_start(c, item_id))
+            report["clips_placed"].append(snapshot["id"])
+        elif op == "set_gain":
+            target = item.get("targetId")
+            found = _find_clip(result["tracks"], target) if isinstance(target, str) else None
+            keyframes = patch.get("keyframes")
+            if found is None:
+                skip(item_id, f"Duck {item_id!r} names no clip on the copy.")
+                continue
+            if not isinstance(keyframes, list) or not keyframes:
+                skip(item_id, f"Duck {item_id!r} carries no keyframes.")
+                continue
+            if manifest.audio_capabilities.get("volume_keyframes", False) is False:
+                found.setdefault("metadata", {})["chairDucking"] = {
+                    "gainDb": patch.get("gainDb"),
+                    "keyframes": keyframes,
+                    "fallback": manifest.fallbacks.get(
+                        "audioKeyframes", "set the Fairlight keyframes by hand"
+                    ),
+                }
+                report["keyframes"] += len(keyframes)
+                report["fallbacks"].append({
+                    "id": item_id,
+                    "reason": manifest.fallbacks.get(
+                        "audioKeyframes", "set the Fairlight keyframes by hand"
+                    ),
+                })
+                continue
+            found.setdefault("metadata", {})["chairDucking"] = {
+                "gainDb": patch.get("gainDb"),
+                "keyframes": keyframes,
+            }
+            report["keyframes"] += len(keyframes)
+    return result, report
+
+
+def _timeline_start(clip: dict[str, Any], label: str) -> float:
+    try:
+        start = clip["timelineRange"]["start"]
+        return float(start["value"]) / float(start["rate"])
+    except (KeyError, TypeError, ValueError, ZeroDivisionError) as error:
+        raise ValueError(f"Clip {label!r} has no timeline start.") from error
+
+
+def _find_clip(tracks: list[Any], clip_id: str) -> dict[str, Any] | None:
+    for track in tracks:
+        if not isinstance(track, dict):
+            continue
+        for clip in track.get("clips", []) or []:
+            if isinstance(clip, dict) and clip.get("id") == clip_id:
+                return clip
+    return None
+
+
+def describe_sound_report(report: dict[str, Any]) -> str:
+    """One plain line per placed sound fact, for the demo proof."""
+    lines = [
+        f"audio tracks added: {len(report.get('tracks_added', []))} "
+        f"({', '.join(report.get('tracks_added', [])) or 'none'})",
+        f"sfx clips placed: {len(report.get('clips_placed', []))} "
+        f"({', '.join(report.get('clips_placed', [])) or 'none'})",
+        f"volume keyframes: {report.get('keyframes', 0)}",
+    ]
+    for skipped in report.get("skipped", []):
+        lines.append(f"skipped {skipped.get('id')}: {skipped.get('reason')}")
+    for fallback in report.get("fallbacks", []):
+        lines.append(f"fallback {fallback.get('id')}: {fallback.get('reason')}")
+    return "\n".join(lines)
+
+
 def _frames(node: Any, num: int, den: int, label: str, part: str | None) -> Frame:
     rational: Any = node if part is None else node.get(part) if isinstance(node, dict) else None
     if not isinstance(rational, dict) or "value" not in rational or "rate" not in rational:

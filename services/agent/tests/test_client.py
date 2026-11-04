@@ -150,6 +150,7 @@ def test_brief_planner_prompt_carries_tool_registry() -> None:
     assert "measure_audio" in messages[0].content
     assert "render_preview" in messages[0].content
     assert "editor_op" in messages[0].content
+    assert "tape_stop_outro" in messages[0].content
     assert messages[1].content == "Cut pauses and add warm grade"
     with pytest.raises(ValueError):
         build_brief_planner_messages("  ")
@@ -299,6 +300,8 @@ def test_saved_key_endpoint_and_not_echoed(monkeypatch) -> None:
         assert health_body["key_configured"] is True
         assert health_body["keys_configured"]["meta"] is True
         assert health_body["keys_configured"]["openai"] is False
+        assert "last_auth_error" in health_body
+        assert "last_auth_error_at" in health_body
 
         # Clear key
         set_key("meta", None)
@@ -350,3 +353,35 @@ def test_model_selection_and_multi_provider() -> None:
     assert "api.openai.com" in openai_client.transport.base_url
     _MEMORY_KEYS.clear()
 
+
+
+def test_stale_key_reports_its_last_auth_error() -> None:
+    from chair_agent import client as client_module
+
+    def denied(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(401, json={"error": "invalid key"})
+
+    transport = HttpxTransport(
+        "https://example.test/v1",
+        client=httpx.Client(transport=httpx.MockTransport(denied)),
+    )
+    before = client_module.auth_status_snapshot()
+    with pytest.raises(httpx.HTTPStatusError):
+        transport.post_json("/chat/completions", {}, "stale-key")
+    snapshot = client_module.auth_status_snapshot()
+    assert snapshot["last_auth_error"] is not None
+    assert "401" in snapshot["last_auth_error"]
+    assert snapshot["last_auth_error_at"] is not None
+
+    def missing(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(404, json={"error": "no such path"})
+
+    transport404 = HttpxTransport(
+        "https://example.test/v1",
+        client=httpx.Client(transport=httpx.MockTransport(missing)),
+    )
+    with pytest.raises(httpx.HTTPStatusError):
+        transport404.post_json("/chat/completions", {}, "stale-key")
+    # A 404 leaves the last auth error alone.
+    assert client_module.auth_status_snapshot() == snapshot
+    client_module._AUTH_STATUS.update(before)

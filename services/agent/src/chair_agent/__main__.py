@@ -390,9 +390,11 @@ def _pipeline() -> dict[str, Any]:
 
 def _health() -> dict[str, Any]:
     from chair_agent import effects, modules, sounds
+    from chair_agent.client import auth_status_snapshot
     from chair_agent.pieces import macros
 
     keys_status = keys_configured()
+    auth_status = auth_status_snapshot()
     return {
         "service": "agent",
         "ok": True,
@@ -401,6 +403,8 @@ def _health() -> dict[str, Any]:
         "key_configured": keys_status.get("meta", False),
         "keys_configured": keys_status,
         "keys": keys_status,
+        "last_auth_error": auth_status["last_auth_error"],
+        "last_auth_error_at": auth_status["last_auth_error_at"],
         "sounds": sounds.status_snapshot(),
         "effects": effects.status_snapshot(),
         "macros": macros.status_snapshot(),

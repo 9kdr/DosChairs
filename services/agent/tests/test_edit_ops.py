@@ -164,3 +164,41 @@ def test_removal_ops_validate_for_undo_changesets() -> None:
     ]
     validated = validate_changeset(_dumped(items))
     assert [item.op for item in validated.items] == ops
+
+
+def test_sound_ops_validate_against_the_changeset_schema() -> None:
+    from chair_agent.edit_ops import duck_op, sfx_clip_op, sfx_track_op
+
+    items = [
+        sfx_track_op("track-sfx-1", "New audio track for sound cues."),
+        sfx_clip_op(
+            "sfx-riser-1", "audio-sfx-1", "sfx-riser-1", "Riser lands on the cut.",
+            media_ref="/sfx/riser.wav", name="riser.wav",
+            start_seconds=3.0, duration_seconds=2.0,
+        ),
+        duck_op(
+            "duck-1", "music-1", "Duck music under dialogue.",
+            regions_seconds=[(0.0, 2.0), (4.0, 20.0)],
+        ),
+    ]
+    validated = validate_changeset(_dumped(items))
+    assert [item.op for item in validated.items] == [
+        "add_track", "add_clip", "set_gain",
+    ]
+
+
+def test_duck_keyframes_duck_twelve_db_with_ramps() -> None:
+    from chair_agent.edit_ops import duck_keyframes
+
+    points = duck_keyframes([(2.0, 4.0)])
+    assert points == [
+        {"timeSeconds": 1.8, "gainDb": 0.0},
+        {"timeSeconds": 2.0, "gainDb": -12.0},
+        {"timeSeconds": 4.0, "gainDb": -12.0},
+        {"timeSeconds": 4.2, "gainDb": 0.0},
+    ]
+    with pytest.raises(ValueError, match="150-300"):
+        duck_keyframes([(2.0, 4.0)], ramp_seconds=0.5)
+    with pytest.raises(ValueError, match="dialogue region"):
+        from chair_agent.edit_ops import duck_op
+        duck_op("duck-1", "music-1", "Empty.", regions_seconds=[(3.0, 3.0)])

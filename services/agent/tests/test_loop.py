@@ -5,7 +5,15 @@ from pathlib import Path
 import httpx
 import pytest
 from chair_agent.client import HttpxTransport, ModelClient, RoleModels
-from chair_agent.executor import Span, fill_tool_calls, merge_spans
+from chair_agent.executor import (
+    SfxFile,
+    Span,
+    cuts_to_changeset,
+    dialogue_regions,
+    fill_tool_calls,
+    merge_spans,
+    sound_moment,
+)
 from chair_agent.jobs import HandlerResult, Job
 from chair_agent.loop import LoopContext, PreviewRejected, handle_edit, run_loop
 from chair_agent.planner import Plan, PlanStep, plan_brief, plan_with_model
@@ -391,7 +399,7 @@ def test_plan_brief_falls_back_to_rules_on_invalid_answer() -> None:
 
 def test_plan_brief_raises_when_fallback_rules_cannot_plan() -> None:
     client = _fake_client("crash", status_code=500)
-    with pytest.raises(ValueError, match="cleanup v1 plans"):
+    with pytest.raises(ValueError, match="nothing Chair plans yet"):
         plan_brief("make the look warmer with a grade", client=client)
 
 
@@ -428,9 +436,13 @@ def test_handle_edit_records_planner_and_undispatched_message() -> None:
     assert isinstance(result, HandlerResult)
     assert result.ops
     assert all(op["status"] == "pending" for op in result.ops)
+    # The dropped intent is reported, not silently filtered.
+    assert result.skipped == [
+        {"intent": "grade", "reason": "Chair cannot dispatch grade yet"}
+    ]
 
 
-def test_handle_edit_undispatched_only_does_not_crash() -> None:
+def test_handle_edit_undispatched_only_fails_loudly() -> None:
     reply = json.dumps({
         "intents": ["grade"],
         "steps": [{"tool": "grade", "goal": "warm tone"}],
@@ -440,14 +452,12 @@ def test_handle_edit_undispatched_only_does_not_crash() -> None:
     job_input = {**data["context"], "brief": "Make the clip warmer with a grade"}
     silence, transcriber, preview = _LiveSilence(), _LiveTranscriber(), _LivePreview()
     job = _job(job_input)
-    result = handle_edit(
-        job, client=client, silence=silence, transcriber=transcriber, preview=preview
-    )
-
-    assert result.planner == "model"
-    assert result.message == "Cannot dispatch intents yet: grade"
-    assert isinstance(result, HandlerResult)
-    assert result.ops == []
+    # A job that dispatches nothing fails instead of reporting "completed".
+    with pytest.raises(PreviewRejected) as rejected:
+        handle_edit(
+            job, client=client, silence=silence, transcriber=transcriber, preview=preview
+        )
+    assert "Cannot dispatch intents yet: grade" in str(rejected.value)
 
 
 def test_handler_resolves_proxy_from_project_timeline(
@@ -549,3 +559,184 @@ def test_handle_edit_model_pick_drives_planner(monkeypatch: pytest.MonkeyPatch) 
     _MEMORY_KEYS.clear()
 
 
+
+
+def _sound_plan() -> Plan:
+    brief = "riser into the cut at 00:00:05, tape stop at the end, duck music under dialogue"
+    return Plan(
+        brief=brief,
+        intents=["riser_into_cut", "tape_stop_outro", "duck_music_under_dialogue"],
+        steps=[
+            PlanStep(tool="measure_audio", goal="find silent spans on the proxy"),
+            PlanStep(tool="transcribe", goal="find filler words on the proxy"),
+            PlanStep(tool="editor_op", goal="place SFX and ducking on a new audio track"),
+            PlanStep(tool="render_preview", goal="render a low-res preview"),
+        ],
+    )
+
+
+def _sound_sfx() -> dict:
+    return {
+        "riser": SfxFile(
+            kind="riser", path="/sfx/riser.wav", name="riser.wav",
+            duration_seconds=2.0, source="synth", license="generated",
+        ),
+        "tape-stop": SfxFile(
+            kind="tape-stop", path="/sfx/tape-stop.wav", name="tape-stop.wav",
+            duration_seconds=1.2, source="synth", license="generated",
+        ),
+    }
+
+
+def test_rules_plan_covers_the_sound_brief() -> None:
+    plan = plan_brief(
+        "riser into the cut at 00:00:05, tape stop at the end, duck music under dialogue",
+        env={},
+    )
+    assert plan.planner == "rules"
+    assert plan.intents == [
+        "riser_into_cut", "tape_stop_outro", "duck_music_under_dialogue",
+    ]
+    assert [step.tool for step in plan.steps] == [
+        "measure_audio", "transcribe", "editor_op", "render_preview",
+    ]
+
+
+def test_sound_moment_reads_timecodes() -> None:
+    assert sound_moment("riser into the cut at 00:00:05") == 5.0
+    assert sound_moment("hit it at 1:05") == 65.0
+    assert sound_moment("duck under dialogue") is None
+
+
+def test_dialogue_regions_invert_silence() -> None:
+    spans = [Span(start_frames=60, frames=60, kind="silence")]
+    assert dialogue_regions(spans, 600) == [(0, 60), (120, 600)]
+    assert dialogue_regions(spans, 0) == []
+
+
+def test_cuts_leave_duck_silence_out_of_the_blades() -> None:
+    spans = [Span(start_frames=60, frames=60, kind="silence")]
+    duck_only = cuts_to_changeset(
+        spans, changeset_id="cs", base_revision="r", target_id="t", brief="b",
+        intents=["duck_music_under_dialogue"],
+    )
+    assert duck_only.items == []
+    silence = cuts_to_changeset(
+        spans, changeset_id="cs", base_revision="r", target_id="t", brief="b",
+        intents=["silence"],
+    )
+    assert len(silence.items) == 1
+
+
+def test_run_loop_places_riser_duck_and_tape_stop() -> None:
+    planned = _sound_plan()
+    context = LoopContext(
+        proxy_url="file:///proxy.mp4", base_revision="rev-0",
+        target_id="music-1", changeset_id="cs-sound-1",
+        total_frames=600, rate=30.0,
+    )
+    spans = [Span(start_frames=60, frames=60, kind="silence")]
+    result = run_loop(
+        planned.brief, context, spans,
+        artifact_urls=["file:///previews/sound.mp4"],
+        planned=planned, sfx=_sound_sfx(),
+    )
+    assert result.verdict.accepted and result.show_to_ui
+    assert result.skipped == []
+    ops = result.changeset["items"]
+    assert [op["op"] for op in ops] == ["add_track", "add_clip", "add_clip", "set_gain"]
+    riser = next(op for op in ops if op["id"] == "sfx-riser-1")
+    # The riser ends exactly on the 5s cut: 3s start, 2s long at 30fps.
+    assert riser["patch"]["clip"]["timelineRange"]["start"] == {"value": 90, "rate": 30.0}
+    assert riser["patch"]["clip"]["timelineRange"]["duration"] == {"value": 60, "rate": 30.0}
+    tape = next(op for op in ops if op["id"] == "sfx-tape-stop-1")
+    assert tape["patch"]["clip"]["timelineRange"]["start"] == {"value": 600, "rate": 30.0}
+    duck = next(op for op in ops if op["op"] == "set_gain")
+    keyframes = duck["patch"]["keyframes"]
+    assert len(keyframes) == 8
+    assert keyframes[1] == {"timeSeconds": 0.0, "gainDb": -12.0}
+    assert keyframes[2] == {"timeSeconds": 2.0, "gainDb": -12.0}
+    assert keyframes[5] == {"timeSeconds": 4.0, "gainDb": -12.0}
+    assert all(op["status"] == "pending" for op in ops)
+
+
+def test_run_loop_reports_missing_sfx_as_skipped() -> None:
+    planned = _sound_plan()
+    context = LoopContext(
+        proxy_url="file:///proxy.mp4", base_revision="rev-0",
+        target_id="music-1", changeset_id="cs-sound-2",
+        total_frames=600, rate=30.0,
+    )
+    spans = [Span(start_frames=60, frames=60, kind="silence")]
+    result = run_loop(
+        planned.brief, context, spans,
+        artifact_urls=["file:///previews/sound.mp4"],
+        planned=planned, sfx={},
+    )
+    # Ducking still dispatches, so the job completes with the gaps named.
+    assert result.verdict.accepted
+    assert [op["op"] for op in result.changeset["items"]] == ["set_gain"]
+    assert [skip.intent for skip in result.skipped] == [
+        "riser_into_cut", "tape_stop_outro",
+    ]
+    assert all(skip.reason for skip in result.skipped)
+
+
+def test_run_loop_skips_riser_without_a_cut_time() -> None:
+    planned = Plan(
+        brief="add a riser and duck the music",
+        intents=["riser_into_cut", "duck_music_under_dialogue"],
+        steps=[PlanStep(tool="editor_op", goal="place sounds")],
+    )
+    context = LoopContext(
+        proxy_url="file:///proxy.mp4", base_revision="rev-0",
+        target_id="music-1", changeset_id="cs-sound-3",
+        total_frames=600, rate=30.0,
+    )
+    result = run_loop(
+        planned.brief, context, [Span(start_frames=0, frames=30, kind="silence")],
+        artifact_urls=["file:///previews/sound.mp4"],
+        planned=planned, sfx=_sound_sfx(),
+    )
+    assert result.verdict.accepted
+    assert [skip.intent for skip in result.skipped] == ["riser_into_cut"]
+    assert "cut time" in result.skipped[0].reason
+
+
+def test_handle_edit_says_so_on_an_empty_timeline(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "chair_agent.review.read_project_timeline",
+        lambda ref: {"id": "empty", "tracks": [], "markers": []},
+    )
+    with pytest.raises(ValueError, match="Put a clip on the timeline first"):
+        handle_edit(_job({"brief": "duck music under dialogue", "project_id": "x"}))
+
+
+def test_model_intent_variants_still_dispatch() -> None:
+    from chair_agent.executor import canonical_intent
+
+    assert canonical_intent("tape_stop_out") == "tape_stop_outro"
+    assert canonical_intent("Riser_Build") == "riser_into_cut"
+    assert canonical_intent("grade") == "grade"
+    planned = Plan(
+        brief="riser into the cut at 00:00:05, tape stop at the end, duck music",
+        intents=["riser_into_cut", "tape_stop_out", "duck music"],
+        steps=[PlanStep(tool="editor_op", goal="place sounds")],
+    )
+    context = LoopContext(
+        proxy_url="file:///proxy.mp4", base_revision="rev-0",
+        target_id="music-1", changeset_id="cs-sound-4",
+        total_frames=600, rate=30.0,
+    )
+    result = run_loop(
+        planned.brief, context, [Span(start_frames=60, frames=60, kind="silence")],
+        artifact_urls=["file:///previews/sound.mp4"],
+        planned=planned, sfx=_sound_sfx(),
+    )
+    assert result.verdict.accepted
+    assert result.skipped == []
+    assert [op["op"] for op in result.changeset["items"]] == [
+        "add_track", "add_clip", "add_clip", "set_gain",
+    ]

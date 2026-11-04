@@ -10,6 +10,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from chair_agent import sounds
 from chair_agent.beats import StoryPlan
 from chair_agent.client import ModelClient
 from chair_agent.dispatch import (
@@ -18,9 +19,20 @@ from chair_agent.dispatch import (
     build_sidecar_tools,
     dispatch_spans,
 )
-from chair_agent.executor import Span, ToolCall, cuts_to_changeset, fill_tool_calls
+from chair_agent.edit_ops import build_changeset
+from chair_agent.executor import (
+    SfxFile,
+    SkippedIntent,
+    Span,
+    ToolCall,
+    canonical_intent,
+    canonical_intents,
+    cuts_to_changeset,
+    fill_tool_calls,
+    sound_changeset_items,
+)
 from chair_agent.jobs import HandlerResult, Job
-from chair_agent.planner import Plan, plan_brief
+from chair_agent.planner import DISPATCHABLE_INTENTS, SOUND_INTENTS, Plan, plan_brief
 from chair_agent.style import StyleProfile
 from chair_agent.transcribe import TranscriptionAdapter, build_transcription_adapter
 from chair_agent.verifier import AudioEvidence, FrameEvidence, Verdict, verify
@@ -36,6 +48,7 @@ class LoopContext(BaseModel):
     target_id: str
     changeset_id: str
     total_frames: int
+    rate: float = 30.0
 
 
 class LoopResult(BaseModel):
@@ -46,6 +59,7 @@ class LoopResult(BaseModel):
     changeset: dict[str, Any]
     verdict: Verdict
     show_to_ui: bool
+    skipped: list[SkippedIntent] = Field(default_factory=list)
     message: str | None = Field(default=None, exclude=True)
 
 
@@ -67,28 +81,56 @@ def run_loop(
     audio: AudioEvidence | Mapping[str, Any] | None = None,
     client: ModelClient | None = None,
     planned: Plan | None = None,
+    sfx: dict[str, SfxFile] | None = None,
+    sfx_errors: list[SkippedIntent] | None = None,
 ) -> LoopResult:
     """Run plan, execute, verify for one brief against the proxy.
 
     The beat sheet, style profile, and frame/audio evidence are
     optional: absent, the mechanical verdict stands alone as before.
+    Sound intents dispatch to SFX and ducking items; anything the
+    executor cannot dispatch comes back in `skipped` with a plain
+    reason instead of silently vanishing from the job.
     """
     if planned is None:
         planned = plan_brief(brief, client=client)
+    canon = canonical_intents(planned.intents)
     executable_plan = Plan(
         brief=planned.brief,
-        intents=[i for i in planned.intents if i in ("silence", "filler")],
+        intents=[i for i in canon if i in DISPATCHABLE_INTENTS],
         steps=[s for s in planned.steps if s.tool in _EXECUTOR_TOOLS],
     )
     tool_calls = fill_tool_calls(executable_plan, spans, proxy_url=context.proxy_url)
-    changeset = cuts_to_changeset(
+    cuts = cuts_to_changeset(
         spans,
         changeset_id=context.changeset_id,
         base_revision=context.base_revision,
         target_id=context.target_id,
         brief=brief,
+        intents=list(executable_plan.intents),
     )
-    dumped = changeset.model_dump(mode="json", by_alias=True, exclude_none=True)
+    sound_items, sound_skipped = sound_changeset_items(
+        brief,
+        list(executable_plan.intents),
+        spans,
+        total_frames=context.total_frames,
+        rate=context.rate,
+        sfx=sfx or {},
+        duck_target_id=context.target_id,
+    )
+    skipped = _merge_skipped(sfx_errors or [], sound_skipped)
+    skipped.extend(
+        SkippedIntent(intent=intent, reason=f"Chair cannot dispatch {intent} yet")
+        for intent in planned.intents
+        if canonical_intent(intent) not in DISPATCHABLE_INTENTS
+    )
+    combined = build_changeset(
+        context.changeset_id,
+        context.base_revision,
+        [*cuts.items, *sound_items],
+        summary=brief,
+    )
+    dumped = combined.model_dump(mode="json", by_alias=True, exclude_none=True)
     verdict = verify(
         dumped,
         artifact_urls=artifact_urls,
@@ -104,8 +146,91 @@ def run_loop(
         changeset=dumped,
         verdict=verdict,
         show_to_ui=verdict.accepted,
+        skipped=skipped,
         message=planned.message,
     )
+
+
+def _merge_skipped(
+    first: list[SkippedIntent], second: list[SkippedIntent]
+) -> list[SkippedIntent]:
+    """Combine skipped lists; the first reason per intent wins."""
+    seen = {skip.intent for skip in first}
+    return [*first, *[skip for skip in second if skip.intent not in seen]]
+
+
+def _intent_for_kind(kind: str) -> str:
+    return {"riser": "riser_into_cut", "tape-stop": "tape_stop_outro"}[kind]
+
+
+def _resolve_sfx_files(
+    intents: list[str],
+    *,
+    proxy_url: str,
+    total_frames: int,
+    rate: float,
+    synth_url: str | None,
+) -> tuple[dict[str, SfxFile], list[SkippedIntent]]:
+    """Resolve one SFX file per needed kind: library first, sidecar synth.
+
+    Tape stops prefer a render of the program tail through the sidecar;
+    anything else synthesizes a sweep from scratch. Failures come back as
+    skipped entries with the plain reason; the executor reports files that
+    stay missing after all that.
+    """
+    from pathlib import Path
+
+    from chair_agent import sounds
+
+    wanted = [intent for intent in canonical_intents(intents) if intent in SOUND_INTENTS]
+    if not wanted:
+        return {}, []
+    entries = sounds.get_library()
+    kinds: list[str] = []
+    if "riser_into_cut" in wanted:
+        kinds.append("riser")
+    if "tape_stop_outro" in wanted:
+        kinds.append("tape-stop")
+    total_seconds = total_frames / rate if total_frames > 0 and rate > 0 else 0.0
+    files: dict[str, SfxFile] = {}
+    errors: list[SkippedIntent] = []
+    for kind in kinds:
+        entry = sounds.sfx_for_kind(entries, kind)
+        if entry is None and synth_url:
+            try:
+                if kind == "tape-stop" and total_seconds > 0:
+                    entry = sounds.render_tape_stop_entry(
+                        synth_url, proxy_url,
+                        at_seconds=max(0.0, total_seconds - 1.5),
+                    )
+                else:
+                    entry = sounds.fetch_synth_entry(kind, synth_url)
+            except Exception as error:
+                errors.append(SkippedIntent(
+                    intent=_intent_for_kind(kind),
+                    reason=f"sound render failed: {error}",
+                ))
+                continue
+        if entry is None:
+            continue
+        duration = entry.duration
+        if duration is None:
+            duration = sounds.probe_duration(Path(entry.path))
+        if duration is None or duration <= 0:
+            errors.append(SkippedIntent(
+                intent=_intent_for_kind(kind),
+                reason=f"could not read the length of {entry.name}",
+            ))
+            continue
+        files[kind] = SfxFile(
+            kind=kind,
+            path=entry.path,
+            name=entry.name,
+            duration_seconds=round(duration, 3),
+            source=entry.source,
+            license=entry.license,
+        )
+    return files, errors
 
 
 def _resolve_timeline_media(timeline: Mapping[str, Any]) -> tuple[str, int, str]:
@@ -189,6 +314,10 @@ def handle_edit(
         if isinstance(total_frames_raw, (int, float)) and total_frames_raw > 0
         else 0
     )
+    rate_raw = job.input.get("rate", 30.0)
+    if not isinstance(rate_raw, (int, float)) or rate_raw <= 0:
+        raise ValueError("job input 'rate' must be a number above 0")
+    rate = float(rate_raw)
 
     if not proxy_url:
         from chair_agent.review import read_project_timeline
@@ -198,9 +327,16 @@ def handle_edit(
         if not proj_ref and target_id:
             proj_ref = target_id
         timeline = read_project_timeline(proj_ref)
+        clips = [
+            clip
+            for track in timeline.get("tracks", []) or []
+            for clip in (track.get("clips", []) or [])
+        ]
+        if not clips:
+            raise ValueError("Put a clip on the timeline first.")
         resolved_media, resolved_frames, resolved_target = _resolve_timeline_media(timeline)
         if not resolved_media:
-            raise ValueError("project timeline has no clips with media references")
+            raise ValueError("Put a clip on the timeline first.")
         proxy_url = resolved_media
         if total_frames <= 0:
             total_frames = resolved_frames
@@ -215,25 +351,29 @@ def handle_edit(
         target_id=target_id,
         changeset_id=changeset_id,
         total_frames=total_frames,
+        rate=rate,
     )
     model_spec = job.input.get("model") if isinstance(job.input.get("model"), str) else None
     planned = plan_brief(brief, client=client, model=model_spec)
     if "spans" in job.input:
         spans = [Span.model_validate(item) for item in job.input.get("spans", [])]
     else:
-        rate = job.input.get("rate", 30.0)
-        if not isinstance(rate, (int, float)) or rate <= 0:
-            raise ValueError("job input 'rate' must be a number above 0")
+        # Ducking inverts silence into dialogue regions, so it measures
+        # silence too — but the cut filter keeps those spans out of the
+        # blades unless the brief also asks for silence cuts.
+        dispatch_intents = canonical_intents(list(planned.intents))
+        if "duck_music_under_dialogue" in dispatch_intents and "silence" not in dispatch_intents:
+            dispatch_intents.append("silence")
         used_silence = silence if silence is not None else build_sidecar_tools()
         used_transcriber = (
             transcriber if transcriber is not None else build_transcription_adapter()
         )
         spans = dispatch_spans(
-            planned.intents,
+            dispatch_intents,
             context.proxy_url,
             silence=used_silence,
             transcriber=used_transcriber,
-            rate=float(rate),
+            rate=rate,
         )
     if "preview_urls" in job.input:
         artifact_urls = job.input.get("preview_urls", [])
@@ -244,6 +384,13 @@ def handle_edit(
     else:
         used_preview = preview if preview is not None else build_sidecar_tools()
         artifact_urls = [used_preview.render_preview(context.proxy_url)]
+    sfx, sfx_errors = _resolve_sfx_files(
+        list(planned.intents),
+        proxy_url=context.proxy_url,
+        total_frames=context.total_frames,
+        rate=rate,
+        synth_url=sounds.sidecar_url(),
+    )
     result = run_loop(
         brief,
         context,
@@ -254,18 +401,24 @@ def handle_edit(
         frames=job.input.get("frames", []),
         audio=job.input.get("audio"),
         planned=planned,
+        sfx=sfx,
+        sfx_errors=sfx_errors,
     )
     if not result.verdict.accepted:
-        if not spans and planned.message:
-            return HandlerResult(
-                artifacts=[{"url": url} for url in artifact_urls],
-                planner=planned.planner,
-                message=planned.message,
-            )
-        raise PreviewRejected(result.verdict.reasons)
+        reasons = list(result.verdict.reasons)
+        if planned.message and planned.message not in reasons:
+            reasons.append(planned.message)
+        # A job that dispatches nothing fails loudly instead of reporting
+        # "completed" with an empty proposal.
+        raise PreviewRejected(reasons)
+    skipped = [skip.model_dump(mode="json") for skip in result.skipped]
+    message = planned.message
+    if skipped and not message:
+        message = "; ".join(f"{skip['intent']}: {skip['reason']}" for skip in skipped)
     return HandlerResult(
         artifacts=[{"url": url} for url in artifact_urls],
         ops=result.changeset["items"],
         planner=planned.planner,
-        message=planned.message,
+        message=message,
+        skipped=skipped,
     )
