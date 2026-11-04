@@ -13,9 +13,9 @@ Usage:
 Safety: never opens Chair Spike or any other project except restoring the
 startup project at the end; deletes only timelines and comp versions this
 run created; refuses to start while /tmp/chair-resolve.lock is held.
-Never loads a Fusion comp version: LoadFusionCompByName segfaulted Studio
-21.1, so reads go through GetFusionCompByName and undo removes the versions
-the run added (the version list must match the before-state afterwards).
+Reads go through GetFusionCompByName and never load a comp; undo drives
+the real POST /effects/rig/revert route (crash-guarded, #290), and the
+version list must match the before-state afterwards.
 """
 
 import argparse
@@ -325,20 +325,20 @@ class Live:
             tools[name] = len(comp.GetToolList(False) or {}) if comp else 0
         return {"names": names, "tools": tools}
 
-    def undo_comp(self, prev: str | None, before: list) -> str:
-        """Undo the apply: remove the versions it added, keep the rest.
+    def undo_comp(self, op: dict, before: list) -> str:
+        """Undo the apply through the real route, then prove the versions.
 
-        Never loads a comp (see comp_state): the version list must match
-        the before-state exactly afterwards. Returns the display name.
+        POST /effects/rig/revert is the product undo (crash-guarded, #290):
+        it switches back when the Fusion UI is up, else removes the added
+        version. The version list must match the before-state afterwards.
         """
-        item = self._demo_item()
-        names = list(item.GetFusionCompNameList() or [])
-        for name in [entry for entry in names if entry not in before]:
-            item.DeleteFusionCompByName(name)
-        names = list(item.GetFusionCompNameList() or [])
+        prev = (op.get("undo") or {}).get("prev_comp_name",
+                                          op.get("prev_comp_name"))
+        self.post("/effects/rig/revert", {"op": op, **self.locator()})
+        names = self.comp_state()["names"]
         if sorted(names) != sorted(before):
             raise Fail(f"undo left versions {names}, expected {before}")
-        return prev or ""
+        return prev if isinstance(prev, str) else ""
 
     def delete_comp(self, name: str) -> None:
         item = self._demo_item()
@@ -471,6 +471,15 @@ class Dry:
                     "prev_comp_name": prev, "keyframes": 12,
                     "project": PROJECT, "timeline": TIMELINE,
                     "undo": {"prev_comp_name": prev}}
+        if path == "/effects/rig/revert":
+            op = body.get("op", {})
+            made = op.get("comp_name", "")
+            prev = (op.get("undo") or {}).get("prev_comp_name",
+                                              op.get("prev_comp_name"))
+            if made in self.comps:
+                self.comps.remove(made)
+                self.tools.pop(made, None)
+            return {"comp_name": prev, "project": PROJECT, "timeline": TIMELINE}
         if path == "/jobs":
             return {"request_id": "dry-job-1", "status": "queued"}
         if path == "/sounds/apply":
@@ -527,14 +536,13 @@ class Dry:
     def comp_state(self) -> dict:
         return {"names": list(self.comps), "tools": dict(self.tools)}
 
-    def undo_comp(self, prev: str | None, before: list) -> str:
-        self.comps = [name for name in self.comps if name in before]
-        for name in list(self.tools):
-            if name not in self.comps:
-                del self.tools[name]
+    def undo_comp(self, op: dict, before: list) -> str:
+        prev = (op.get("undo") or {}).get("prev_comp_name",
+                                          op.get("prev_comp_name"))
+        self.post("/effects/rig/revert", {"op": op, **self.locator()})
         if sorted(self.comps) != sorted(before):
             raise Fail(f"undo left versions {self.comps}, expected {before}")
-        return prev or ""
+        return prev if isinstance(prev, str) else ""
 
     def delete_comp(self, name: str) -> None:
         if name in self.comps:
@@ -590,7 +598,9 @@ def flow_effect(world, prompts: dict, info: dict, created: dict) -> dict:
         if prev is not None and prev_tools_before != prev_tools_after:
             raise Fail(f"apply touched the previous comp {prev!r}")
         splines = world.keyframe_readback(comp)
-        timed(flow["seconds"], "undo", world.undo_comp, prev,
+        op = {"comp_name": comp, "prev_comp_name": prev,
+              "undo": {"prev_comp_name": prev}}
+        timed(flow["seconds"], "undo", world.undo_comp, op,
               state_before["names"])
         calls, repairs = health_delta(before_health, health_snapshot(world),
                                       "effects")
@@ -672,7 +682,9 @@ def flow_rig(world, prompts: dict, info: dict, created: dict) -> dict:
         if new_tools == 0:
             raise Fail(f"new comp {comp!r} is empty or unreadable")
         splines = world.keyframe_readback(comp)
-        timed(flow["seconds"], "undo", world.undo_comp, prev,
+        op = {"comp_name": comp, "prev_comp_name": prev,
+              "undo": {"prev_comp_name": prev}}
+        timed(flow["seconds"], "undo", world.undo_comp, op,
               state_before["names"])
         calls, repairs = health_delta(before_health, health_snapshot(world),
                                       "effects", "rig")
