@@ -2,13 +2,20 @@ import base64
 import json
 import os
 import threading
+import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 from urllib.parse import unquote, urlsplit
 
 from chair_agent.assets import EditorUnlinkedError, build_assets, import_asset
-from chair_agent.client import configured_models, keys_configured, set_key
+from chair_agent.client import (
+    build_client,
+    configured_models,
+    keys_configured,
+    load_settings,
+    set_key,
+)
 from chair_agent.jobs import (
     Job,
     JobConflict,
@@ -33,6 +40,9 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:
         if self.path == "/health":
             self._send(200, _health())
+            return
+        if urlsplit(self.path).path == "/sounds":
+            self._send(200, _sounds_body(self.path))
             return
         if urlsplit(self.path).path == "/projects":
             self._send(200, detect_projects())
@@ -107,6 +117,27 @@ class Handler(BaseHTTPRequestHandler):
                 self._send(409, _error(error.code, str(error)))
             else:
                 self._send(200, _handle_body(self._base_url(), job))
+            return
+        sounds_path = urlsplit(self.path).path
+        if sounds_path in ("/sounds/refresh", "/sounds/pick", "/sounds/fetch"):
+            try:
+                body = self._body()
+            except ValueError:
+                self._send(400, _error("invalid_json", "request body must be JSON"))
+                return
+            if sounds_path == "/sounds/refresh":
+                self._send(200, _sounds_refresh_body())
+                return
+            if sounds_path == "/sounds/pick":
+                try:
+                    self._send(200, _sounds_pick_body(body))
+                except ValueError as error:
+                    self._send(400, _error("invalid_sounds_pick", str(error)))
+                return
+            try:
+                self._send(200, _sounds_fetch_body(body))
+            except ValueError as error:
+                self._send(400, _error("invalid_sounds_fetch", str(error)))
             return
         project_id = _assets_path(self.path)
         if project_id is not None:
@@ -205,6 +236,8 @@ def _cancel_path(path: str) -> str | None:
 
 
 def _health() -> dict[str, Any]:
+    from chair_agent import sounds
+
     keys_status = keys_configured()
     return {
         "service": "agent",
@@ -214,7 +247,95 @@ def _health() -> dict[str, Any]:
         "key_configured": keys_status.get("meta", False),
         "keys_configured": keys_status,
         "keys": keys_status,
+        "sounds": sounds.status_snapshot(),
     }
+
+
+def _sounds_body(path: str) -> dict[str, Any]:
+    from chair_agent import sounds
+
+    query = dict(urllib.parse.parse_qsl(urlsplit(path).query))
+    entries = sounds.search_library(
+        sounds.get_library(),
+        query=query.get("q", ""),
+        tag=query.get("tag", ""),
+        source=query.get("source", ""),
+    )
+    body: dict[str, Any] = {
+        "sounds": [entry.model_dump(mode="json") for entry in entries],
+        "counts": sounds.status_snapshot()["counts"],
+    }
+    api_key = (os.environ.get("FREESOUND_API_KEY") or "").strip()
+    if query.get("q", "").strip() and api_key:
+        try:
+            remote = sounds.search_freesound(query["q"].strip(), api_key)
+            body["sounds"].extend(entry.model_dump(mode="json") for entry in remote)
+            body["freesound"] = len(remote)
+        except Exception as error:
+            body["freesound_error"] = str(error) or error.__class__.__name__
+    return body
+
+
+def _sounds_refresh_body() -> dict[str, Any]:
+    from chair_agent import sounds
+
+    entries = sounds.refresh_library()
+    return {"sounds": len(entries), "counts": sounds.status_snapshot()["counts"]}
+
+
+def _cue_client() -> Any | None:
+    try:
+        settings = load_settings()
+    except Exception:
+        return None
+    if not settings.models.executor or not settings.api_key:
+        return None
+    try:
+        return build_client()
+    except Exception:
+        return None
+
+
+def _sounds_pick_body(body: dict[str, Any]) -> dict[str, Any]:
+    from chair_agent import sounds
+
+    brief = body.get("brief", "")
+    if not isinstance(brief, str) or not brief.strip():
+        raise ValueError("pick needs a non-empty 'brief' string")
+    context = sounds.CueContext.model_validate({
+        "cuts": body.get("cuts", []),
+        "beats": body.get("beats", []),
+        "words": body.get("words", []),
+    })
+    entries = sounds.get_library()
+    cues, picker = sounds.pick_cues(brief, context, entries, client=_cue_client())
+    changeset = sounds.cues_to_changeset(
+        cues,
+        entries,
+        changeset_id=str(body.get("changeset_id") or "cs-sounds-1"),
+        base_revision=str(body.get("base_revision") or "rev-0"),
+    )
+    return {
+        "picker": picker,
+        "cues": [cue.model_dump(mode="json") for cue in cues],
+        "changeset": changeset.model_dump(mode="json", by_alias=True),
+    }
+
+
+def _sounds_fetch_body(body: dict[str, Any]) -> dict[str, Any]:
+    from chair_agent import sounds
+
+    wanted = body.get("id", "")
+    if not isinstance(wanted, str) or not wanted.strip():
+        raise ValueError("fetch needs an entry 'id'")
+    api_key = (os.environ.get("FREESOUND_API_KEY") or "").strip()
+    if not api_key:
+        raise ValueError("fetch needs FREESOUND_API_KEY")
+    entry = next((e for e in sounds.get_library() if e.id == wanted), None)
+    if entry is None:
+        raise ValueError(f"unknown sound entry: {wanted!r}")
+    dest = sounds.fetch_freesound_entry(entry, api_key=api_key)
+    return {"id": entry.id, "path": str(dest)}
 
 
 def _handle_body(base_url: str, job: Job) -> dict[str, Any]:
