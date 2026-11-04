@@ -97,6 +97,7 @@ class FakeFlow:
     def SetPos(self, tool: FakeTool, x: int, y: int) -> None:
         self.positions[tool.GetAttrs()["TOOLS_Name"]] = (x, y)
 
+    # Live parity: GetPos answers the x grid unit as a float (2026-11-04).
     def GetPos(self, tool: FakeTool) -> float:
         return float(self.positions[tool.GetAttrs()["TOOLS_Name"]][0])
 

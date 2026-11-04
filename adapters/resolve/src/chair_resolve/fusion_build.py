@@ -27,13 +27,17 @@ LAYOUT_DX = 2
 # transform) sits on the side row just above, each merge directly below
 # its own transform. Columns are unique per tool, so nothing overlaps,
 # and a re-applied piece lays the full graph out again from scratch.
+# XYPath modifiers take no position: a standalone path carries no
+# ViewInfo Pos on export, so the graph leaves it unplaced.
 SPINE_ROW = 0
 SIDE_ROW = -2
 
 
 def layout_plan(plan: dict[str, Any]) -> dict[str, tuple[int, int]]:
     """Plan tools -> Flow positions. Pure and deterministic."""
-    side = [t for t in plan["tools"] if t.get("role") not in ("spine", "merge")]
+    side = [
+        t for t in plan["tools"] if t.get("role") not in ("spine", "merge", "xpath")
+    ]
     merges = [t for t in plan["tools"] if t.get("role") == "merge"]
     media = [t for t in plan["tools"] if t.get("role") == "spine"]
     positions: dict[str, tuple[int, int]] = {}
@@ -314,7 +318,11 @@ def arrange(
             continue
         try:
             flow.SetPos(tool, x, y)
-            if can_read and abs(float(flow.GetPos(tool)) - x) > 1e-6:
+            # GetPos answers the x grid unit as a float (measured live).
+            # Masks read back ~0.07 off (their node anchors differ), so
+            # the check tolerates a quarter grid, far below the pitch of
+            # 2 a truly unlanded node would miss by.
+            if can_read and abs(float(flow.GetPos(tool)) - x) > 0.25:
                 ok = False
         except Exception:
             ok = False

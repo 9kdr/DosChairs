@@ -36,18 +36,28 @@ def test_layout_spine_with_side_row_above() -> None:
     assert positions["MediaIn1"] == (0, 0)
     assert positions["MediaOut1"][1] == 0
     assert positions["MediaOut1"][0] == max(x for x, _ in positions.values())
-    assert len(set(positions.values())) == len(names)  # nothing overlaps
+    placed = [t for t in plan["tools"] if t["role"] != "xpath"]
+    assert len(set(positions.values())) == len(placed)  # nothing overlaps
     merges = [t for t in plan["tools"] if t["role"] == "merge"]
     assert [positions[m["name"]][1] for m in merges] == [0] * len(merges)
     merge_xs = [positions[m["name"]][0] for m in merges]
     assert merge_xs == sorted(merge_xs)  # spine runs left to right
-    side = [t for t in plan["tools"] if t["role"] not in ("spine", "merge")]
+    side = [t for t in plan["tools"] if t["role"] not in ("spine", "merge", "xpath")]
     assert {positions[t["name"]][1] for t in side} == {-2}  # one side row
     side_xs = [positions[t["name"]][0] for t in side]
     assert side_xs == sorted(side_xs)  # plan order reads left to right
     for merge in merges:  # each merge sits below its own transform
         xf = next(t for t in side if t["layer"] == merge["layer"] and t["role"] == "transform")
         assert positions[merge["name"]][0] == positions[xf["name"]][0]
+
+
+def test_layout_skips_xpath_modifiers() -> None:
+    """Live: a standalone XYPath carries no Pos on export, so no position."""
+    plan = spec_to_plan(_spec())
+    positions = layout_plan(plan)
+    paths = [t["name"] for t in plan["tools"] if t["role"] == "xpath"]
+    assert paths, "fixture has no xpath entry to exclude"
+    assert not set(paths) & set(positions)
 
 
 def test_layout_is_deterministic_and_ignores_positions() -> None:
@@ -148,7 +158,8 @@ def test_build_lands_on_new_version_with_report() -> None:
     item = FakeItem()
     before = item.AddFusionComp()
     before_count = len(before.GetToolList(False))
-    op = build_comp(item, spec_to_plan(_spec()))
+    plan = spec_to_plan(_spec())
+    op = build_comp(item, plan)
     assert op["comp_name"] == "Comp 3"
     assert op["prev_comp_name"] == "Comp 2"
     assert op["built_by"] == "api"
@@ -160,7 +171,8 @@ def test_build_lands_on_new_version_with_report() -> None:
     assert ["Merge_bg", "Background", "MediaIn1", "Output"] in op["connections"]
     assert ["MediaOut1", "Input", "Merge_title", "Output"] in op["connections"]
     assert op["layout"] is True
-    assert set(comp.flow.positions) == set(op["tools"])
+    placed = {t["name"] for t in plan["tools"] if t["role"] != "xpath"}
+    assert set(comp.flow.positions) == placed
     assert comp.locked is False
     assert comp.undo_log[0] == "chair build" and comp.undo_log[-1] == ("end", True)
     assert remove_effect(item, op) is True
@@ -205,9 +217,11 @@ def _rich_spec() -> dict:
 
 def test_build_sets_values_connections_and_positions() -> None:
     item = FakeItem()
-    op = build_comp(item, spec_to_plan(_rich_spec()))
+    plan = spec_to_plan(_rich_spec())
+    op = build_comp(item, plan)
     comp = item.comps[op["comp_name"]]
-    assert set(op["tools"]) == set(comp.flow.positions)
+    placed = {t["name"] for t in plan["tools"] if t["role"] != "xpath"}
+    assert set(comp.flow.positions) == placed
 
     def tool(name: str):
         found = comp.FindTool(name)
@@ -375,3 +389,17 @@ def test_arrange_reports_unlanded_positions() -> None:
     comp.flow = _LyingFlow()
     tools = {"MediaIn1": comp.FindTool("MediaIn1")}
     assert arrange(comp, FakeItem(), "Comp 1", tools, {"MediaIn1": (0, 0)}, None) is False
+
+
+def test_arrange_tolerates_small_readback_offsets() -> None:
+    """Live: masks read back ~0.07 grid off (their node anchors differ)."""
+    FakeFlow = _FAKES["FakeFlow"]
+
+    class _OffsetFlow(FakeFlow):
+        def GetPos(self, tool):
+            return super().GetPos(tool) + 0.07
+
+    comp = FakeComp()
+    comp.flow = _OffsetFlow()
+    tools = {"MediaIn1": comp.FindTool("MediaIn1")}
+    assert arrange(comp, FakeItem(), "Comp 1", tools, {"MediaIn1": (0, 0)}, None) is True
