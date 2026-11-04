@@ -63,7 +63,9 @@ async function readReference(file: File): Promise<string> {
     const canvas = document.createElement("canvas");
     canvas.width = Math.max(1, Math.round(image.width * scale));
     canvas.height = Math.max(1, Math.round(image.height * scale));
-    canvas.getContext("2d")!.drawImage(image, 0, 0, canvas.width, canvas.height);
+    const context = canvas.getContext("2d");
+    if (!context) throw new Error("no 2d canvas");
+    context.drawImage(image, 0, 0, canvas.width, canvas.height);
     return canvas.toDataURL("image/jpeg", 0.86);
   } finally {
     URL.revokeObjectURL(url);
@@ -72,9 +74,12 @@ async function readReference(file: File): Promise<string> {
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-/** Agent down or no model key: the sample keeps the screen usable. */
+/** Agent down or no usable model key: the sample keeps the screen usable. */
 function agentMissing(error: unknown): boolean {
-  return error instanceof ServiceError && (error.status === undefined || error.status === 502);
+  return (
+    error instanceof ServiceError &&
+    (error.status === undefined || error.status === 502 || error.status === 401 || error.status === 403)
+  );
 }
 
 function RoundIcon({ round }: { round: Round }) {
@@ -107,7 +112,6 @@ export function EffectMaker({
   const [reference, setReference] = useState<{ name: string; url: string } | null>(null);
   const [dragging, setDragging] = useState(false);
   const [spec, setSpec] = useState<EffectSpec | null>(null);
-  const [effectId, setEffectId] = useState<string | null>(null);
   const [rig, setRig] = useState<Rig | null>(null);
   const [controls, setControls] = useState<ControlValues>({});
   const [rounds, setRounds] = useState<Round[]>([]);
@@ -141,9 +145,8 @@ export function EffectMaker({
   const info = live ? exportInfo(live) : null;
   const clip = clips.find((entry) => entry.id === (clipId ?? clips[0]?.id)) ?? null;
 
-  const load = (next: EffectSpec, id: string | null) => {
+  const load = (next: EffectSpec) => {
     setSpec(next);
-    setEffectId(id);
     setRig(rigOf(next));
     setControls(defaultControls(next));
     setApplied(null);
@@ -158,7 +161,7 @@ export function EffectMaker({
     setRounds((current) => current.map((round) => (round.id === id ? { ...round, ...patch } : round)));
 
   const useSample = (why?: string) => {
-    load(sampleEffect(), null);
+    load(sampleEffect());
     addRound({
       kind: "note",
       state: "info",
@@ -188,7 +191,7 @@ export function EffectMaker({
         { signal },
       );
       patchRound(draft, { state: "pass", title: "Draft written", notes: made.notes || "Muse Spark wrote the effect." });
-      load(made.spec, made.id);
+      load(made.spec);
       for (let attempt = 1; attempt <= 2; attempt += 1) {
         const check = addRound({ kind: "check", state: "running", title: `Vision check ${attempt}`, notes: "Comparing a preview frame with the brief." });
         await wait(250);
@@ -206,7 +209,7 @@ export function EffectMaker({
             notes: verdict.notes || (verdict.pass ? "The preview matches the brief." : "The preview differs from the brief."),
           });
           if (verdict.pass || !verdict.revisedSpec) break;
-          load(verdict.revisedSpec, made.id);
+          load(verdict.revisedSpec);
           made.spec = verdict.revisedSpec;
         } catch (error) {
           if (error instanceof Error && error.name === "AbortError") throw error;
@@ -224,7 +227,7 @@ export function EffectMaker({
       } else {
         const message = error instanceof Error ? error.message : "Generation failed.";
         patchRound(draft, { state: "error", title: "Draft failed", notes: message });
-        if (agentMissing(error) && !spec) useSample("Muse Spark is not connected, so the sample stands in.");
+        if (agentMissing(error) && !spec) useSample("Muse Spark is not connected or the key was refused, so the sample stands in.");
       }
     } finally {
       setBusy(false);
