@@ -23,6 +23,14 @@ import {
   type SoundApplied,
   type SoundApplyInput,
 } from "../effects/sounds-api";
+import {
+  applyCut,
+  cutApplyErrorMessage,
+  cutUndoErrorMessage,
+  revertCut,
+  type CutApplied,
+  type CutApplyInput,
+} from "./cuts-api";
 import type { RunningTask, TaskLane } from "./RunningTasks";
 import type { TaskActivity } from "./TaskActivity";
 import { readTaskThread, writeTaskThread } from "./threadStore";
@@ -327,11 +335,13 @@ const appliedJobs = new Map<string, Promise<void>>();
 /** What one finished task wrote to Resolve, for its card's Undo and Redo. */
 export type LandedWrite = {
   requestId: string;
+  /** Which route landed it: the card's Undo and Redo go back to the same one. */
+  kind: "sound" | "cut";
   line: string;
   detail: string | null;
   state: "landed" | "undone" | "failed";
   undo: { project: string; timeline: string; originalTimeline: string } | null;
-  redo: SoundApplyInput | null;
+  redo: SoundApplyInput | CutApplyInput | null;
   /** The finished turn, kept so a failed write can retry it. */
   entry: LiveJobEntry | null;
 };
@@ -362,9 +372,11 @@ export function hasSoundItems(job: AgentJob): boolean {
     const shape = patch as Record<string, unknown>;
     if (record.op === "add_track") {
       const track = shape.track;
-      return (
-        typeof track === "object" && track !== null && (track as Record<string, unknown>).kind === "audio"
-      );
+      const kind =
+        typeof track === "object" && track !== null
+          ? (track as Record<string, unknown>).kind
+          : shape.kind;
+      return kind === "audio";
     }
     if (record.op === "add_clip") {
       if (typeof shape.kind === "string" && shape.kind) return true;
@@ -374,7 +386,54 @@ export function hasSoundItems(job: AgentJob): boolean {
   });
 }
 
-function landedLine(applied: SoundApplied): { line: string; detail: string | null } {
+const CUT_OPS = new Set([
+  "trim",
+  "move",
+  "ripple",
+  "remove_clip",
+  "remove_track",
+  "add_marker",
+  "remove_marker",
+]);
+
+/**
+ * True when a finished job carries cuts: trim, move, ripple, clip or
+ * track removal, markers, a picture insert, or a video track. Sound
+ * shapes (a kind, an audio target or track) are out: those land
+ * through the sound route, which also reports what it skipped.
+ */
+export function hasCutItems(job: AgentJob): boolean {
+  const ops = job.changeset?.ops ?? [];
+  return ops.some((op) => {
+    if (typeof op !== "object" || op === null) return false;
+    const record = op as Record<string, unknown>;
+    if (typeof record.op === "string" && CUT_OPS.has(record.op)) return true;
+    const patch = record.patch;
+    if (typeof patch !== "object" || patch === null) return false;
+    const shape = patch as Record<string, unknown>;
+    if (record.op === "add_track") {
+      const track = shape.track;
+      const kind =
+        typeof track === "object" && track !== null
+          ? (track as Record<string, unknown>).kind
+          : shape.kind;
+      return kind !== "audio";
+    }
+    if (record.op === "add_clip") {
+      if (typeof shape.kind === "string" && shape.kind) return false;
+      return !(
+        typeof record.targetId === "string" && SOUND_CLIP_TARGET.test(record.targetId)
+      );
+    }
+    return false;
+  });
+}
+
+type LandedReport = Pick<SoundApplied, "timelineName" | "skipped" | "fallback"> & {
+  originalTimeline: string | null;
+};
+
+function landedLine(applied: LandedReport): { line: string; detail: string | null } {
   const line =
     applied.skipped.length > 0
       ? `Added to ${applied.timelineName} · ${applied.skipped.length} skipped`
@@ -386,10 +445,15 @@ function landedLine(applied: SoundApplied): { line: string; detail: string | nul
   return { line, detail: bits.length > 0 ? bits.join("\n") : null };
 }
 
-function landedFromApplied(requestId: string, applied: SoundApplied): LandedWrite {
+function landedFromApplied(
+  requestId: string,
+  applied: SoundApplied | CutApplied,
+  kind: LandedWrite["kind"],
+): LandedWrite {
   const { line, detail } = landedLine(applied);
   return {
     requestId,
+    kind,
     line,
     detail,
     state: "landed",
@@ -418,10 +482,11 @@ export async function applyFinishedSound(entry: LiveJobEntry, options: ApplyOpti
   if (!job || job.status !== "completed" || !hasSoundItems(job)) return;
   try {
     const applied = await applySound({ jobId: job.request_id }, options);
-    landedByTask.set(entry.task.id, landedFromApplied(job.request_id, applied));
+    landedByTask.set(entry.task.id, landedFromApplied(job.request_id, applied, "sound"));
   } catch (error) {
     landedByTask.set(entry.task.id, {
       requestId: job.request_id,
+      kind: "sound",
       line: `Failed: ${soundApplyErrorMessage(error)}`,
       detail: error instanceof Error ? error.message : null,
       state: "failed",
@@ -450,13 +515,59 @@ export function maybeApplyFinishedSound(
   return pending;
 }
 
+/**
+ * Write one finished cut turn to Resolve: a new "(cut copy)"
+ * timeline, never touching the original. Jobs that also carry sound
+ * stay on the sound route, which reports the cuts it skipped.
+ */
+export async function applyFinishedCut(entry: LiveJobEntry, options: ApplyOptions = {}): Promise<void> {
+  const job = entry.job;
+  if (!job || job.status !== "completed" || !hasCutItems(job) || hasSoundItems(job)) return;
+  try {
+    const applied = await applyCut({ jobId: job.request_id }, options);
+    landedByTask.set(entry.task.id, landedFromApplied(job.request_id, applied, "cut"));
+  } catch (error) {
+    landedByTask.set(entry.task.id, {
+      requestId: job.request_id,
+      kind: "cut",
+      line: `Failed: ${cutApplyErrorMessage(error)}`,
+      detail: error instanceof Error ? error.message : null,
+      state: "failed",
+      undo: null,
+      redo: null,
+      entry,
+    });
+  }
+}
+
+/**
+ * Fire the cut write once per job; board ticks and threads share this. The
+ * promise settles when the card's write state is known, so threads
+ * await it before their final paint.
+ */
+export function maybeApplyFinishedCut(
+  entry: LiveJobEntry,
+  options: ApplyOptions = {},
+): Promise<void> {
+  const job = entry.job;
+  if (!job || job.status !== "completed" || !hasCutItems(job) || hasSoundItems(job)) {
+    return Promise.resolve();
+  }
+  const known = appliedJobs.get(job.request_id);
+  if (known) return known;
+  const pending = applyFinishedCut(entry, options);
+  appliedJobs.set(job.request_id, pending);
+  return pending;
+}
+
 /** Retry a failed write: forget it and fire the finished turn again. */
 export function retryLandedWrite(taskId: string, options: ApplyOptions = {}): void {
   const landed = landedByTask.get(taskId);
   if (!landed || landed.state !== "failed" || !landed.entry) return;
   appliedJobs.delete(landed.requestId);
   landedByTask.delete(taskId);
-  maybeApplyFinishedSound(landed.entry, options);
+  if (landed.kind === "cut") maybeApplyFinishedCut(landed.entry, options);
+  else maybeApplyFinishedSound(landed.entry, options);
 }
 
 /**
@@ -467,8 +578,10 @@ export function retryLandedWrite(taskId: string, options: ApplyOptions = {}): vo
 export async function undoLandedWrite(taskId: string, options: ApplyOptions = {}): Promise<boolean> {
   const landed = landedByTask.get(taskId);
   if (!landed || landed.state !== "landed" || !landed.undo) return false;
+  const undo = landed.kind === "cut" ? revertCut : revertSound;
+  const message = landed.kind === "cut" ? cutUndoErrorMessage : soundUndoErrorMessage;
   try {
-    await revertSound(
+    await undo(
       {
         ...(landed.undo.project ? { project: landed.undo.project } : {}),
         timeline: landed.undo.timeline,
@@ -477,7 +590,7 @@ export async function undoLandedWrite(taskId: string, options: ApplyOptions = {}
       options,
     );
   } catch (error) {
-    landedByTask.set(taskId, { ...landed, line: `Undo failed: ${soundUndoErrorMessage(error)}` });
+    landedByTask.set(taskId, { ...landed, line: `Undo failed: ${message(error)}` });
     return false;
   }
   landedByTask.set(taskId, {
@@ -493,11 +606,13 @@ export async function undoLandedWrite(taskId: string, options: ApplyOptions = {}
 export async function redoLandedWrite(taskId: string, options: ApplyOptions = {}): Promise<boolean> {
   const landed = landedByTask.get(taskId);
   if (!landed || landed.state !== "undone" || !landed.redo) return false;
+  const apply = landed.kind === "cut" ? applyCut : applySound;
+  const message = landed.kind === "cut" ? cutApplyErrorMessage : soundApplyErrorMessage;
   try {
-    const applied = await applySound(landed.redo, options);
-    landedByTask.set(taskId, landedFromApplied(landed.requestId, applied));
+    const applied = await apply(landed.redo, options);
+    landedByTask.set(taskId, landedFromApplied(landed.requestId, applied, landed.kind));
   } catch (error) {
-    landedByTask.set(taskId, { ...landed, line: `Redo failed: ${soundApplyErrorMessage(error)}` });
+    landedByTask.set(taskId, { ...landed, line: `Redo failed: ${message(error)}` });
     return false;
   }
   return true;
@@ -670,7 +785,10 @@ export function useLiveTasks(createdTasks: readonly RunningTask[], refreshKey?: 
           settleLiveTask(taskId);
           submitErrors.delete(taskId);
         }
-        for (const entry of entries) void maybeApplyFinishedSound(entry);
+        for (const entry of entries) {
+          void maybeApplyFinishedSound(entry);
+          void maybeApplyFinishedCut(entry);
+        }
         if (live) setRows([...waitingRowsFor(tasks), ...stale, ...merged.rows, ...landedRowsFor(tasks)]);
       } finally {
         ticking = false;
@@ -717,17 +835,16 @@ export function textForJob(job: AgentJob): string {
   const previewBit =
     previews === 0 ? "no previews" : previews === 1 ? "1 preview" : `${previews} previews`;
   const opBit = ops === 0 ? "no edits" : ops === 1 ? "1 edit" : `${ops} edits`;
-  // Finished sound turns fire the Resolve write on arrival; the reply
-  // says it landed, with Undo on the card. Other edit ops are planned
-  // cuts that don't land yet: described honestly, never silently landed.
+  // Finished turns fire the Resolve write on arrival; the reply says
+  // it landed, with Undo on the card. Jobs with no landable items
+  // say so honestly instead of claiming a landing.
   let text: string;
   if (ops === 0) {
     text = `Done: ${previewBit}, ${opBit}. Nothing changed.`;
-  } else if (hasSoundItems(job)) {
+  } else if (hasSoundItems(job) || hasCutItems(job)) {
     text = `Done: ${previewBit}, ${opBit}. Landed on a copy in Resolve. Undo is on the card.`;
   } else {
-    const cuts = ops === 1 ? "1 cut" : `${ops} cuts`;
-    text = `Planned ${cuts}. Cuts don't land in Resolve yet.`;
+    text = `Done: ${previewBit}, ${opBit}. Nothing landed in Resolve yet.`;
   }
   if (previews > 0) {
     text += ` Preview files: ${job.artifacts.map((artifact) => artifact.url).join(", ")}.`;
@@ -953,7 +1070,10 @@ export function useTaskThread(
           const entry = { requestId: job.request_id, task, job };
           // The final paint waits for the write to settle: the header
           // reads the card's write state, so it must already be known.
-          void maybeApplyFinishedSound(entry).then(() => {
+          void Promise.all([
+            maybeApplyFinishedSound(entry),
+            maybeApplyFinishedCut(entry),
+          ]).then(() => {
             live(() => {
               paint(say(textForJob(job)));
               if (primary) {
@@ -1029,7 +1149,10 @@ export function useTaskThread(
         const entry = { requestId: job.request_id, task, job };
         // The final paint waits for the write to settle: the header
         // reads the card's write state, so it must already be known.
-        void maybeApplyFinishedSound(entry).then(() => {
+        void Promise.all([
+          maybeApplyFinishedSound(entry),
+          maybeApplyFinishedCut(entry),
+        ]).then(() => {
           live(() => {
             setTurns((current) =>
               current.map((turn) => (turn.id === liveId ? { ...turn, text: textForJob(job) } : turn)),
