@@ -158,6 +158,32 @@ class Handler(BaseHTTPRequestHandler):
             self._module_post(*module_route)
             return
         effects_path = urlsplit(self.path).path
+        if effects_path == "/effects/rig/generate":
+            try:
+                body = self._body()
+            except ValueError:
+                self._send(400, _error("invalid_json", "request body must be JSON"))
+                return
+            try:
+                self._send(200, _rig_generate_body(body))
+            except Exception as error:
+                self._send(_rig_status(error), _error("invalid_rig", str(error)))
+            return
+        if effects_path == "/effects/rig/apply":
+            try:
+                body = self._body()
+            except ValueError:
+                self._send(400, _error("invalid_json", "request body must be JSON"))
+                return
+            try:
+                self._send(200, _rig_apply_body(body))
+            except _ResolveUnavailable as error:
+                self._send(503, _error("resolve_unavailable", str(error)))
+            except _ResolveFailed as error:
+                self._send(502, _error("resolve_failed", str(error)))
+            except Exception as error:
+                self._send(_rig_status(error), _error("invalid_rig", str(error)))
+            return
         if effects_path == "/effects/generate":
             try:
                 body = self._body()
@@ -386,7 +412,7 @@ def _pipeline() -> dict[str, Any]:
 
 
 def _health() -> dict[str, Any]:
-    from chair_agent import effects, modules, sounds
+    from chair_agent import effects, modules, rig, sounds
     from chair_agent.pieces import macros
 
     keys_status = keys_configured()
@@ -400,6 +426,7 @@ def _health() -> dict[str, Any]:
         "keys": keys_status,
         "sounds": sounds.status_snapshot(),
         "effects": effects.status_snapshot(),
+        "rig": rig.status_snapshot(),
         "macros": macros.status_snapshot(),
         "modules": modules.status_snapshot() | {"model": modules.module_model()},
         "pipeline": _pipeline(),
@@ -506,6 +533,175 @@ def _sounds_fetch_body(body: dict[str, Any]) -> dict[str, Any]:
         raise ValueError(f"unknown sound entry: {wanted!r}")
     dest = sounds.fetch_freesound_entry(entry, api_key=api_key)
     return {"id": entry.id, "path": str(dest)}
+
+
+class _ResolveUnavailable(Exception):
+    pass
+
+
+class _ResolveFailed(Exception):
+    pass
+
+
+def _rig_status(error: Exception) -> int:
+    from chair_agent import rig
+    from chair_agent.rig import InvalidRig
+
+    if isinstance(error, InvalidRig):
+        return rig.error_status(error)
+    return 400
+
+
+def _rig_generate_body(body: dict[str, Any]) -> dict[str, Any]:
+    from chair_agent import rig
+
+    canvas = body.get("canvas", {})
+    if not isinstance(canvas, dict):
+        raise ValueError("generate needs a 'canvas' object with width and height")
+    try:
+        width = int(canvas.get("width", 0))
+        height = int(canvas.get("height", 0))
+        fps = float(body.get("fps", 0))
+        duration_sec = float(body.get("durationSec", 0))
+    except (TypeError, ValueError) as error:
+        raise ValueError(f"bad generate body: {error}") from error
+    return rig.generate_rig(
+        str(body.get("brief", "")),
+        width=width,
+        height=height,
+        fps=fps,
+        duration_sec=duration_sec,
+    )
+
+
+def _resolve_timeline_item(
+    project_name: Any, timeline_name: Any, track_type: str, track_index: int,
+    clip_index: int,
+) -> tuple[Any, str, str]:
+    """Find a timeline clip through Studio scripting. Never creates anything.
+
+    Returns (item, project name, timeline name). Raises _ResolveUnavailable
+    without the adapter/scripting host, _ResolveFailed when the names or
+    the clip do not resolve.
+    """
+    try:
+        from chair_resolve import resolve_app  # noqa: F401
+        import DaVinciResolveScript as bmd
+    except ImportError as error:
+        raise _ResolveUnavailable(
+            "the Resolve adapter or scripting host is missing here; run the "
+            f"agent where chair-adapter-resolve and DaVinciResolveScript import ({error})"
+        ) from error
+    try:
+        from chair_resolve import add_effect as _add  # noqa: F401
+    except ImportError as error:
+        raise _ResolveUnavailable(
+            f"chair-adapter-resolve is not importable ({error})"
+        ) from error
+    del _add
+    try:
+        resolve = bmd.scriptapp("Resolve")
+        manager = resolve.GetProjectManager()
+        project = None
+        if isinstance(project_name, str) and project_name.strip():
+            project = manager.GetProjectByName(project_name.strip())
+        if project is None:
+            project = manager.GetCurrentProject()
+        if project is None:
+            raise _ResolveFailed("Resolve Studio has no project open.")
+        timeline = None
+        if isinstance(timeline_name, str) and timeline_name.strip():
+            wanted = timeline_name.strip()
+            for index in range(1, project.GetTimelineCount() + 1):
+                candidate = project.GetTimelineByIndex(index)
+                if candidate is not None and candidate.GetName() == wanted:
+                    timeline = candidate
+                    break
+            if timeline is None:
+                raise _ResolveFailed(f"Timeline {wanted!r} is not in this project.")
+        else:
+            timeline = project.GetCurrentTimeline()
+        if timeline is None:
+            raise _ResolveFailed("Resolve Studio has no current timeline.")
+        items = timeline.GetItemListInTrack(track_type, track_index) or []
+        if clip_index < 0 or clip_index >= len(items):
+            raise _ResolveFailed(
+                f"Clip {clip_index} is not on {track_type} track {track_index} "
+                f"(has {len(items)} clips)."
+            )
+        return items[clip_index], project.GetName(), timeline.GetName()
+    except (_ResolveUnavailable, _ResolveFailed):
+        raise
+    except Exception as error:
+        raise _ResolveFailed(f"Resolve scripting failed: {error}") from error
+
+
+def _rig_apply_body(body: dict[str, Any]) -> dict[str, Any]:
+    """Apply a baked rig (or plain spec) to a Resolve clip as a new comp version.
+
+    add_effect always lands on a NEW comp version: the current one stays
+    untouched, and prev_comp_name in the answer is the undo back.
+    """
+    from chair_agent import rig  # noqa: F401  (keeps the route's errors typed)
+    from chair_agent.effects import InvalidEffect, get_effect
+
+    spec = body.get("spec")
+    if not isinstance(spec, dict):
+        effect_id = body.get("effectId", "")
+        if not isinstance(effect_id, str) or not effect_id.strip():
+            raise InvalidEffect("apply needs an inline 'spec' or an 'effectId'")
+        spec = get_effect(effect_id.strip()).spec
+    baked = body.get("baked")
+    if baked is not None and not isinstance(baked, dict):
+        raise InvalidEffect("apply 'baked' must map layer id to prop key lists")
+    sequences = body.get("sequences")
+    if sequences is not None and not isinstance(sequences, dict):
+        raise InvalidEffect("apply 'sequences' must map layer id to {files: [...]}")
+    try:
+        track_index = int(body.get("trackIndex", 1))
+        clip_index = int(body.get("clipIndex", 0))
+    except (TypeError, ValueError) as error:
+        raise InvalidEffect(f"bad apply body: {error}") from error
+    track_type = body.get("trackType", "video")
+    if track_type not in ("video", "audio"):
+        raise InvalidEffect("apply 'trackType' must be 'video' or 'audio'")
+    item, project_name, timeline_name = _resolve_timeline_item(
+        body.get("project"), body.get("timeline"), track_type, track_index, clip_index,
+    )
+    from chair_resolve import add_effect
+
+    try:
+        op = add_effect(
+            item, dict(spec), baked=baked, sequences=sequences,
+            cache_dir=body.get("cacheDir") or None,
+        )
+    except Exception as error:
+        raise _ResolveFailed(f"add_effect failed: {error}") from error
+    if "fallback" in op:
+        return {
+            "effect_id": spec.get("id"),
+            "fallback": op["fallback"],
+            "project": project_name,
+            "timeline": timeline_name,
+        }
+    keyframes = 0
+    if isinstance(baked, dict):
+        for props in baked.values():
+            if not isinstance(props, dict):
+                continue
+            for keys in props.values():
+                if isinstance(keys, list):
+                    keyframes += len(keys)
+    return {
+        "effect_id": op.get("effect_id"),
+        "comp_name": op.get("comp_name"),
+        "prev_comp_name": op.get("prev_comp_name"),
+        "paths": op.get("paths", {}),
+        "keyframes": keyframes,
+        "project": project_name,
+        "timeline": timeline_name,
+        "undo": op.get("undo"),
+    }
 
 
 def _effects_status(error: Exception) -> int:

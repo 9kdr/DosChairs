@@ -170,6 +170,25 @@ def test_generate_shader_layers_ship_as_ograf_titles(isolated) -> None:
     assert "OGraf" in fallback["reason"]
 
 
+def test_generate_look_tagged_shader_stays_native(isolated) -> None:
+    spec = _spec(layers=[
+        {"id": "dith", "type": "shader",
+         "params": {"look": "dither", "levels": 4}},
+        {"id": "fade", "type": "shape",
+         "params": {"kind": "rect", "fill": "#000000"}},
+    ])
+    assert effects.pick_export_target(spec) == {"target": "fusion-macro"}
+    prompt = effects.build_generate_messages(
+        "dither", width=1920, height=1080, fps=30, duration_sec=2.0)[0].content
+    assert "params.look" in prompt
+
+
+def test_generate_untagged_shader_still_ships_ograf(isolated) -> None:
+    spec = _spec(layers=[{"id": "custom", "type": "shader",
+                          "params": {"entry": "main"}}])
+    assert effects.pick_export_target(spec)["target"] == "ograf"
+
+
 def test_verify_pass_fail_revise_and_round_limit(isolated) -> None:
     record = effects.generate_effect(
         "title", width=1920, height=1080, fps=30, duration_sec=3.0,
