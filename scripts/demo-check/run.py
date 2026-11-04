@@ -26,7 +26,7 @@ import sys
 import time
 import urllib.error
 import urllib.request
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 PROMPTS_PATH = os.path.join(HERE, "prompts.json")
@@ -150,7 +150,7 @@ def format_table(report: dict) -> str:
     lines = [
         f"demo check {report['timestamp']} {report['mode']}"
         f" agent={report['agent']}",
-        f"flow    result  steps                          reason",
+        "flow    result  steps                          reason",
     ]
     for flow in report["flows"]:
         steps = " ".join(
@@ -173,7 +173,7 @@ def report_path(now: datetime) -> str:
 
 def write_report(report: dict) -> str:
     os.makedirs(REPORT_DIR, exist_ok=True)
-    path = report_path(datetime.now(timezone.utc))
+    path = report_path(datetime.now(UTC))
     report["path"] = path
     with open(path, "w", encoding="utf-8") as handle:
         json.dump(report, handle, indent=2)
@@ -535,8 +535,9 @@ class Dry:
         raise Fail(f"dry run has no canned {path}")
 
     def bake(self, rig: dict, spec: dict, fps: float) -> dict:
-        keys = lambda n: [{"time": round(i * 0.1, 1), "value": float(i)}
-                          for i in range(n)]
+        def keys(n: int) -> list:
+            return [{"time": round(i * 0.1, 1), "value": float(i)}
+                    for i in range(n)]
         return {"targetId": "cursor",
                 "baked": {"cursor": {"x": keys(4), "y": keys(4),
                                      "rotation": keys(3), "scaleX": keys(3),
@@ -662,26 +663,19 @@ def flow_rig(world, prompts: dict, info: dict, created: dict) -> dict:
         canvas = {"width": info["width"], "height": info["height"]}
         generate_body = {"brief": flow["prompt"], "canvas": canvas,
                          "fps": info["fps"], "durationSec": info["duration_sec"]}
-        t0 = time.perf_counter()
-        try:
-            drafted = world.post("/effects/rig/generate", generate_body)
-        finally:
-            flow["seconds"]["generate"] = round(time.perf_counter() - t0, 1)
+        drafted = timed(flow["seconds"], "generate", world.post,
+                        "/effects/rig/generate", generate_body)
         rig = drafted.get("rig", {})
         flow["evidence"]["rig_notes"] = drafted.get("notes", "")
         input_path = rig.get("inputPath")
         flow["evidence"]["input_path_keys"] = len(input_path or [])
         if not isinstance(input_path, list) or not input_path:
             raise Fail("rig draft came back with no input path")
-        t0 = time.perf_counter()
-        try:
-            carrier = world.post("/effects/generate", {
-                "prompt": flow["prompt"], "canvas": canvas,
-                "fps": info["fps"], "durationSec": info["duration_sec"],
-                "rig": rig})
-        finally:
-            flow["seconds"]["generate"] = round(
-                flow["seconds"]["generate"] + time.perf_counter() - t0, 1)
+        carrier = timed(
+            flow["seconds"], "generate", world.post, "/effects/generate",
+            {"prompt": flow["prompt"], "canvas": canvas,
+             "fps": info["fps"], "durationSec": info["duration_sec"],
+             "rig": rig})
         carrier_id = carrier.get("id", "")
         spec = carrier.get("spec")
         flow["evidence"]["carrier_id"] = carrier_id
@@ -886,7 +880,7 @@ def main(argv: list[str] | None = None) -> int:
     world = Dry(args.agent) if args.dry_run else Live(args.agent)
     mode = "dry-run" if args.dry_run else "live"
     report = {
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
         "agent": args.agent, "mode": mode, "project": PROJECT,
         "timeline": TIMELINE, "flows": [], "path": "",
     }
