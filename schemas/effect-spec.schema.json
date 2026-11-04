@@ -1,0 +1,197 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/9kdr/DosChairs/schemas/effect-spec.schema.json",
+  "title": "EffectSpec",
+  "description": "One effect spec for the Chair Effect Maker. Previews live in the browser (WebGL) and exports to DaVinci Resolve as a Fusion macro, a Fuse, or a rendered alpha clip.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "id", "name", "durationSec", "fps", "width", "height", "layers"],
+  "properties": {
+    "schemaVersion": { "const": "0.1.0" },
+    "id": { "type": "string", "minLength": 1 },
+    "name": { "type": "string", "minLength": 1 },
+    "durationSec": { "type": "number", "exclusiveMinimum": 0 },
+    "fps": { "type": "number", "exclusiveMinimum": 0 },
+    "width": { "type": "integer", "exclusiveMinimum": 0 },
+    "height": { "type": "integer", "exclusiveMinimum": 0 },
+    "layers": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/layer" }
+    },
+    "controls": {
+      "type": "array",
+      "default": [],
+      "items": { "$ref": "#/$defs/control" }
+    },
+    "shader": { "$ref": "#/$defs/shader" },
+    "rig": { "$ref": "#/$defs/rig" },
+    "export": { "$ref": "#/$defs/export" }
+  },
+  "$defs": {
+    "keyframe": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["time", "value"],
+      "properties": {
+        "time": { "type": "number", "minimum": 0 },
+        "value": { "type": "number" },
+        "easing": {
+          "enum": ["linear", "easeIn", "easeOut", "easeInOut", "hold"],
+          "default": "linear"
+        },
+        "inHandle": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": { "type": "number" },
+          "description": "[dtSec, dv] Bezier handle into this key, Resolve Bezierspline form."
+        },
+        "outHandle": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": { "type": "number" },
+          "description": "[dtSec, dv] Bezier handle out of this key, Resolve Bezierspline form."
+        }
+      }
+    },
+    "curve": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["keyframes"],
+      "properties": {
+        "keyframes": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/keyframe" }
+        }
+      }
+    },
+    "layer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "type"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "type": { "enum": ["shape", "text", "image", "shader"] },
+        "name": { "type": "string" },
+        "params": {
+          "type": "object",
+          "description": "shape: kind(rect|ellipse), fill, opacity, x, y, scaleX, scaleY, rotation. text: string, font, size, fill. image: src. shader: entry. Static values; animated ones move to curves.",
+          "default": {}
+        },
+        "curves": {
+          "type": "object",
+          "description": "Animated layer property name to keyframed curve.",
+          "default": {},
+          "additionalProperties": { "$ref": "#/$defs/curve" }
+        },
+        "blend": {
+          "enum": ["normal", "add", "multiply", "screen"],
+          "default": "normal"
+        },
+        "visible": { "type": "boolean", "default": true }
+      }
+    },
+    "control": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "label", "type", "default", "target"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "label": { "type": "string", "minLength": 1 },
+        "type": { "enum": ["number", "color", "text", "bool"] },
+        "default": {},
+        "min": { "type": "number" },
+        "max": { "type": "number" },
+        "target": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["layerId", "param"],
+          "properties": {
+            "layerId": { "type": "string", "minLength": 1 },
+            "param": { "type": "string", "minLength": 1 }
+          },
+          "description": "Which layer param this published control drives."
+        }
+      }
+    },
+    "shader": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source"],
+      "properties": {
+        "source": {
+          "type": "string",
+          "minLength": 1,
+          "description": "GLSL ES 3.00 fragment shader source."
+        },
+        "uniforms": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "controlId"],
+            "properties": {
+              "name": { "type": "string", "minLength": 1 },
+              "controlId": { "type": "string", "minLength": 1 }
+            },
+            "description": "Binds a shader uniform to a published control."
+          }
+        }
+      }
+    },
+    "rig": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["inputPath"],
+      "properties": {
+        "inputPath": {
+          "type": "array",
+          "minItems": 1,
+          "description": "Rough position path keyed by the user in Resolve.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["time", "x", "y"],
+            "properties": {
+              "time": { "type": "number", "minimum": 0 },
+              "x": { "type": "number" },
+              "y": { "type": "number" }
+            }
+          }
+        },
+        "stiffness": { "type": "number", "exclusiveMinimum": 0, "default": 90 },
+        "damping": { "type": "number", "exclusiveMinimum": 0, "default": 12 },
+        "mass": { "type": "number", "exclusiveMinimum": 0, "default": 1 },
+        "swing": { "type": "boolean", "default": true },
+        "tilt": { "type": "boolean", "default": true },
+        "squash": { "type": "boolean", "default": true },
+        "overshoot": { "type": "boolean", "default": true }
+      }
+    },
+    "export": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["target"],
+      "properties": {
+        "target": {
+          "enum": ["fusion-macro", "fusion-fuse", "rendered-clip", "ograf"],
+          "description": "Most native Resolve target that can express this spec."
+        },
+        "fallback": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["capability", "reason"],
+          "properties": {
+            "capability": { "type": "string", "minLength": 1 },
+            "reason": { "type": "string", "minLength": 1 }
+          },
+          "description": "Set when the preferred target was not possible."
+        }
+      }
+    }
+  }
+}

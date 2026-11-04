@@ -1,0 +1,77 @@
+{
+  "schemaVersion": "0.1.0",
+  "id": "bounce-title",
+  "name": "Bouncing title",
+  "durationSec": 3,
+  "fps": 30,
+  "width": 1920,
+  "height": 1080,
+  "layers": [
+    {
+      "id": "bg",
+      "type": "shape",
+      "name": "Backdrop",
+      "params": { "kind": "rect", "fill": "#101418", "opacity": 1, "x": 960, "y": 540, "scaleX": 1920, "scaleY": 1080, "rotation": 0 }
+    },
+    {
+      "id": "ball",
+      "type": "shape",
+      "name": "Ball",
+      "params": { "kind": "ellipse", "fill": "#ffb000", "opacity": 1, "scaleX": 120, "scaleY": 120, "rotation": 0 },
+      "curves": {
+        "y": {
+          "keyframes": [
+            { "time": 0, "value": 200, "easing": "easeIn" },
+            { "time": 0.5, "value": 880, "easing": "easeOut" },
+            { "time": 1, "value": 420, "easing": "easeIn" },
+            { "time": 1.4, "value": 880, "easing": "easeOut" },
+            { "time": 1.8, "value": 640, "easing": "easeIn" },
+            { "time": 2.1, "value": 880, "easing": "easeOut" },
+            { "time": 2.4, "value": 810, "easing": "easeInOut" },
+            { "time": 2.7, "value": 880, "easing": "linear" }
+          ]
+        },
+        "x": {
+          "keyframes": [
+            { "time": 0, "value": 240, "easing": "linear" },
+            { "time": 2.7, "value": 1680, "easing": "linear" }
+          ]
+        }
+      }
+    },
+    {
+      "id": "title",
+      "type": "text",
+      "name": "Title",
+      "params": { "string": "Hello, Chair", "font": "sans-serif", "size": 96, "fill": "#ffffff", "x": 960, "y": 200, "opacity": 1 },
+      "curves": {
+        "opacity": {
+          "keyframes": [
+            { "time": 0, "value": 0, "easing": "easeOut" },
+            { "time": 0.6, "value": 1, "easing": "linear" }
+          ]
+        }
+      }
+    }
+  ],
+  "controls": [
+    { "id": "ball-color", "label": "Ball color", "type": "color", "default": "#ffb000", "target": { "layerId": "ball", "param": "fill" } },
+    { "id": "title-text", "label": "Title text", "type": "text", "default": "Hello, Chair", "target": { "layerId": "title", "param": "string" } }
+  ],
+  "rig": {
+    "inputPath": [
+      { "time": 0, "x": 240, "y": 200 },
+      { "time": 0.5, "x": 700, "y": 880 },
+      { "time": 1, "x": 1100, "y": 420 },
+      { "time": 1.5, "x": 1500, "y": 880 }
+    ],
+    "stiffness": 90,
+    "damping": 12,
+    "mass": 1,
+    "swing": true,
+    "tilt": true,
+    "squash": true,
+    "overshoot": true
+  },
+  "export": { "target": "fusion-macro" }
+}

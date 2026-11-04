@@ -18,6 +18,7 @@ const pairs = [
   ["plan-grade.schema.json", "plans/grade.plan.json"],
   ["plan-motion.schema.json", "plans/motion.plan.json"],
   ["story-plan.schema.json", "plans/story.plan.json"],
+  ["effect-spec.schema.json", "effects/bounce-title.effect.json"],
 ];
 
 const ajv = new Ajv2020({ allErrors: true, strict: true });
