@@ -1,10 +1,7 @@
 import { RefreshCwIcon } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
-import {
-  SegmentedControl,
-  SegmentedControlItem,
-} from "@/components/ui/segmented-control";
+import { Tabs, TabsList, TabsTab } from "@/components/ui/tabs";
 import { useServiceHealth } from "@/lib/services/useServices";
 import type { EditorInfo } from "../home/data";
 import { fetchDetectedSnapshot } from "../home/projects";
@@ -23,8 +20,8 @@ type SettingsScreenProps = {
 };
 
 /**
- * Settings shell: a segmented control switching the three sections,
- * with Recheck at the right. No title header — the dock names the
+ * Settings shell: underline tabs switching the three sections, with
+ * Recheck at the right. No title header — the dock names the
  * destination, and each section keeps only its one-line intro.
  */
 export function SettingsScreen(_props: SettingsScreenProps) {
@@ -66,23 +63,24 @@ export function SettingsScreen(_props: SettingsScreenProps) {
 
   return (
     <div className="mx-auto flex w-full max-w-4xl flex-col gap-8">
-      <div className="flex items-center justify-between gap-3">
-        <SegmentedControl aria-label="Settings sections">
-          {SECTIONS.map((entry) => (
-            <SegmentedControlItem
-              key={entry.id}
-              data-checked={section === entry.id ? "" : undefined}
-              aria-pressed={section === entry.id}
-              onClick={() => setSection(entry.id)}
-            >
-              {entry.label}
-            </SegmentedControlItem>
-          ))}
-        </SegmentedControl>
+      <div className="flex items-end justify-between gap-3 border-b border-white/[0.06]">
+        <Tabs
+          value={section}
+          onValueChange={(value) => setSection(value as SectionId)}
+        >
+          <TabsList variant="underline" size="sm" aria-label="Settings sections">
+            {SECTIONS.map((entry) => (
+              <TabsTab key={entry.id} value={entry.id}>
+                {entry.label}
+              </TabsTab>
+            ))}
+          </TabsList>
+        </Tabs>
         <Button
           type="button"
           variant="ghost"
           size="sm"
+          className="mb-1 shrink-0"
           onClick={refreshAll}
           disabled={agent.phase === "checking"}
         >

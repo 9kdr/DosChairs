@@ -46,6 +46,21 @@ function newItem(title: string, patch: Partial<BoardItem>): BoardItem {
   };
 }
 
+/** The link's host for display, or the raw value when it is not a URL. Null without a URL. */
+function boardHost(url: string | undefined): string | null {
+  if (!url) return null;
+  try {
+    return new URL(url).host;
+  } catch {
+    return url;
+  }
+}
+
+/** A pasted link is born titled by its host; the person can rename it after. */
+function newLinkItem(url: string): BoardItem {
+  return newItem(boardHost(url) ?? "Link", { kind: "link", url });
+}
+
 /**
  * Text that reads as content and swaps for an input on click. Type lives on
  * the inner span (a plain element), never on the Button, so the app's type
@@ -136,10 +151,7 @@ export function PlanBoard({ items, digests, digesting, onChange, onDigest, onFil
     const value = url.trim();
     if (!value) return;
     const looksImage = /\.(png|jpe?g|gif|webp|avif)(\?|#|$)/i.test(value) || value.startsWith("data:image/");
-    onChange([
-      ...items,
-      newItem(looksImage ? "Image" : "Link", looksImage ? { images: [value] } : { kind: "link", url: value }),
-    ]);
+    onChange([...items, looksImage ? newItem("Image", { images: [value] }) : newLinkItem(value)]);
     setUrl("");
   };
 
@@ -156,10 +168,7 @@ export function PlanBoard({ items, digests, digesting, onChange, onDigest, onFil
       event.preventDefault();
       const value = match[1];
       const looksImage = /\.(png|jpe?g|gif|webp|avif)(\?|#|$)/i.test(value);
-      onChange([
-        ...items,
-        newItem(looksImage ? "Image" : "Link", looksImage ? { images: [value] } : { kind: "link", url: value }),
-      ]);
+      onChange([...items, looksImage ? newItem("Image", { images: [value] }) : newLinkItem(value)]);
     }
   };
 
@@ -193,15 +202,15 @@ export function PlanBoard({ items, digests, digesting, onChange, onDigest, onFil
           {items.map((item, index) => {
             const cover = item.images[0];
             const digest = digests[item.id];
-            const name = item.title || "board item";
-            const host = (() => {
-              if (!item.url) return null;
-              try {
-                return new URL(item.url).host;
-              } catch {
-                return item.url;
-              }
-            })();
+            const host = boardHost(item.url);
+            // A link keeps its default title ("Link", "Link 2") until the
+            // person names it; the card shows the host until then. Editing
+            // still edits the stored title.
+            const title =
+              item.kind === "link" && (item.title === "" || /^Link( \d+)?$/.test(item.title))
+                ? (host ?? item.title)
+                : item.title;
+            const name = title || "board item";
             return (
               <motion.li
                 key={item.id}
@@ -237,9 +246,6 @@ export function PlanBoard({ items, digests, digesting, onChange, onDigest, onFil
                       style={ditherMaskStyle(0.35)}
                     />
                     <Link2 className="relative size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-                    <span className="relative w-full truncate text-center text-meta text-muted-foreground">
-                      {host}
-                    </span>
                   </a>
                 ) : (
                   <span
@@ -251,6 +257,7 @@ export function PlanBoard({ items, digests, digesting, onChange, onDigest, onFil
                 <div className="flex min-w-0 flex-1 flex-col justify-center gap-0.5 p-3">
                   <InlineEdit
                     value={item.title}
+                    displayValue={title}
                     placeholder="Title"
                     ariaLabel="Board item title"
                     textClassName="flex-1 truncate text-title font-medium text-neutral-100"
