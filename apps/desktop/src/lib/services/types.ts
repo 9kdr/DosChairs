@@ -30,7 +30,7 @@ export type AgentArtifact = {
   content_type?: string | null;
 };
 
-/** A proposed edit. Applying it stays gated on a human accept in the UI. */
+/** Edits a finished turn produced. Sound turns land on Resolve right away; the rest stays described. */
 export type AgentChangeset = {
   status: "proposed";
   ops: Record<string, unknown>[];

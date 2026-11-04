@@ -5,7 +5,6 @@ import {
   advanceMirror,
   canUndoTask,
   historyForTask,
-  reviewItem,
   tryHistoryEntry,
   undoSummaryForTask,
 } from "./store";
@@ -74,30 +73,6 @@ function makeTimeline(): Timeline {
   });
   return timeline;
 }
-
-describe("reviewItem", () => {
-  it("accepts one item and leaves the rest pending", () => {
-    const before = makeChangeset();
-    const after = reviewItem(before, "item-trim-interview", "accepted");
-
-    expect(after.items.find((item) => item.id === "item-trim-interview")?.status).toBe("accepted");
-    expect(
-      after.items.filter((item) => item.id !== "item-trim-interview").map((item) => item.status),
-    ).toEqual(["pending", "pending"]);
-    // The input is untouched: review builds a new changeset.
-    expect(before.items.every((item) => item.status === "pending")).toBe(true);
-  });
-
-  it("rejects one item", () => {
-    const after = reviewItem(makeChangeset(), "item-hook-marker", "rejected");
-    expect(after.items.find((item) => item.id === "item-hook-marker")?.status).toBe("rejected");
-  });
-
-  it("ignores unknown ids", () => {
-    const before = makeChangeset();
-    expect(reviewItem(before, "item-missing", "accepted")).toBe(before);
-  });
-});
 
 describe("tryHistoryEntry", () => {
   it("shapes one accepted item with its real inverse", () => {

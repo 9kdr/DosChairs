@@ -290,23 +290,16 @@ def arrange(
     positions: dict[str, tuple[int, int]],
     resolve: Any = None,
 ) -> bool:
-    """Set Flow positions. True only when every node landed."""
+    """Set Flow positions. True only when every node landed.
+
+    Best-effort on the current page only: opening the Fusion page or
+    loading the comp to reach a frame segfaulted Studio 21.1 (#290), so a
+    comp with no frame keeps its automatic layout (False).
+    """
     frame = getattr(comp, "CurrentFrame", None)
-    if frame is None and resolve is not None:
-        try:
-            resolve.OpenPage("fusion")
-        except Exception:
-            return False
-        frame = getattr(comp, "CurrentFrame", None)
-    if frame is None and comp_name is not None:
-        loader = getattr(item, "LoadFusionCompByName", None)
-        if callable(loader):
-            try:
-                comp = loader(comp_name) or comp
-            except Exception:
-                pass
-            frame = getattr(comp, "CurrentFrame", None)
-    flow = getattr(frame, "FlowView", None) if frame is not None else None
+    if frame is None:
+        return False
+    flow = getattr(frame, "FlowView", None)
     if flow is None or not callable(getattr(flow, "SetPos", None)):
         return False
     can_read = callable(getattr(flow, "GetPos", None))

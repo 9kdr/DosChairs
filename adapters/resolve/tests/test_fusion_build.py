@@ -385,13 +385,11 @@ def test_arrange_needs_a_frame() -> None:
     opened: list[str] = []
     resolve = types.SimpleNamespace(OpenPage=lambda page: opened.append(page))
     assert arrange(object(), item, "Comp 9", {}, {}, resolve) is False
-    assert opened == ["fusion"]  # tried the Fusion page, still no frame
-    item2 = FakeItem()
+    assert opened == []  # never forces the Fusion page open (#290)
+    assert item.loaded == []  # and never loads the comp to reach a frame
     comp = FakeComp()
-    item2.comps["Comp 9"] = comp
     tools = {"MediaIn1": comp.FindTool("MediaIn1")}
-    assert arrange(object(), item2, "Comp 9", tools, {"MediaIn1": (0, 0)}, None) is True
-    assert item2.loaded == ["Comp 9"]
+    assert arrange(comp, item, "Comp 1", tools, {"MediaIn1": (0, 0)}, None) is True
     assert comp.flow.positions == {"MediaIn1": (0, 0)}
     assert comp.flow.framed is True
 

@@ -407,17 +407,40 @@ def _import_planned_fusion(
 
 
 def remove_effect(item: Any, op: dict[str, Any]) -> bool:
-    """Undo add_effect: switch the item back to its previous comp version."""
+    """Undo add_effect: the previous comp version stands again.
+
+    A scripted load segfaults Studio 21.1 when the target comp's Fusion UI
+    was never built (#290), so the switch-back runs only when the previous
+    comp already has a frame; otherwise the added version is removed and
+    the name list proves the previous one stands.
+    """
     if "fallback" in op:
         return True
     undo = op.get("undo") or {}
     prev = undo.get("prev_comp_name", op.get("prev_comp_name"))
-    if not prev:
+    if prev:
+        get_comp = getattr(item, "GetFusionCompByName", None)
+        target = get_comp(prev) if callable(get_comp) else None
+        loader = getattr(item, "LoadFusionCompByName", None)
+        if (
+            target is not None
+            and getattr(target, "CurrentFrame", None) is not None
+            and callable(loader)
+        ):
+            return bool(loader(prev))
+    made = op.get("comp_name")
+    if not made:
         return False
-    loader = getattr(item, "LoadFusionCompByName", None)
-    if loader is None:
+    if made not in (item.GetFusionCompNameList() or []):
+        return True
+    delete = getattr(item, "DeleteFusionCompByName", None)
+    if delete is None:
         return False
-    return bool(loader(prev))
+    try:
+        delete(made)
+    except Exception:
+        return False
+    return made not in (item.GetFusionCompNameList() or [])
 
 
 def _plan_effect(plan: dict[str, Any], manifest: Manifest, clip_id: str, effect: Any) -> None:

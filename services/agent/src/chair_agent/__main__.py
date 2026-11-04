@@ -224,6 +224,21 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as error:
                 self._send(400, _error("invalid_rig", str(error)))
             return
+        if effects_path == "/effects/rig/revert":
+            try:
+                body = self._body()
+            except ValueError:
+                self._send(400, _error("invalid_json", "request body must be JSON"))
+                return
+            try:
+                self._send(200, _rig_revert_body(body))
+            except _ResolveUnavailable as error:
+                self._send(503, _error("resolve_unavailable", str(error)))
+            except _ResolveFailed as error:
+                self._send(502, _error("resolve_failed", str(error)))
+            except Exception as error:
+                self._send(_rig_status(error), _error("invalid_rig", str(error)))
+            return
         if effects_path == "/effects/generate":
             try:
                 body = self._body()
@@ -812,6 +827,51 @@ def _rig_apply_body(body: dict[str, Any]) -> dict[str, Any]:
         "project": project_name,
         "timeline": timeline_name,
         "undo": op.get("undo"),
+    }
+
+
+def _rig_revert_body(body: dict[str, Any]) -> dict[str, Any]:
+    """Undo a piece apply: the previous comp version stands again.
+
+    Takes the apply answer's op (or the desktop's toComp): remove_effect
+    switches back when the Fusion UI is already up, else removes the added
+    version. Never touches any other clip or project.
+    """
+    from chair_agent.effects import InvalidEffect
+
+    op = body.get("op")
+    if isinstance(op, dict):
+        op = dict(op)
+    else:
+        to_comp = body.get("toComp", "")
+        if not isinstance(to_comp, str) or not to_comp.strip():
+            raise InvalidEffect("revert needs an 'op' or a 'toComp'")
+        op = {"undo": {"prev_comp_name": to_comp.strip()}}
+    try:
+        track_index = int(body.get("trackIndex", 1))
+        clip_index = int(body.get("clipIndex", 0))
+    except (TypeError, ValueError) as error:
+        raise InvalidEffect(f"bad revert body: {error}") from error
+    track_type = body.get("trackType", "video")
+    if track_type not in ("video", "audio"):
+        raise InvalidEffect("revert 'trackType' must be 'video' or 'audio'")
+    item, project_name, timeline_name = _resolve_timeline_item(
+        body.get("project"), body.get("timeline"), track_type, track_index, clip_index,
+    )
+    from chair_resolve import remove_effect
+
+    try:
+        undone = remove_effect(item, op)
+    except Exception as error:
+        raise _ResolveFailed(f"remove_effect failed: {error}") from error
+    if not undone:
+        raise _ResolveFailed("Resolve could not undo this piece.")
+    undo = op.get("undo") or {}
+    prev = undo.get("prev_comp_name", op.get("prev_comp_name"))
+    return {
+        "comp_name": prev if isinstance(prev, str) else None,
+        "project": project_name,
+        "timeline": timeline_name,
     }
 
 
