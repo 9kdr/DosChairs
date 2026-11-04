@@ -226,6 +226,7 @@ def test_cuts_apply_writes_a_named_copy(
         assert applied["clips_changed"] == 2
         assert applied["clips_added"] == 0
         assert [skip["intent"] for skip in applied["skipped"]] == ["spd-1"]
+        assert "retime the clip in Studio by hand" in applied["skipped"][0]["reason"]
         assert applied["fallback"] is None
         assert len(written) == 1
         assert written[0]["name"] == "Timeline 1 (cut copy)"

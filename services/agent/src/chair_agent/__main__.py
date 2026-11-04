@@ -1227,6 +1227,13 @@ _CUT_APPLY_OPS = frozenset({
     "add_track", "remove_track", "add_marker", "remove_marker",
 })
 
+# Ops the writer answers itself: supported ones land, the rest skip with
+# their manifest fallback (or the Piece Maker pointer for effects).
+_CUT_WRITER_OPS = _CUT_APPLY_OPS | frozenset({
+    "set_speed", "add_transition", "remove_transition",
+    "add_effect", "remove_effect", "set_gain", "mute_clip",
+})
+
 _CUT_REPORT_COUNTS = (
     ("tracks_added", "tracks_added"),
     ("tracks_removed", "tracks_removed"),
@@ -1317,7 +1324,7 @@ def _cuts_apply_body(body: dict[str, Any], controller: JobController) -> dict[st
     skipped: list[dict[str, str]] = []
     cut: list[dict[str, Any]] = []
     for item in items:
-        if item.op in _CUT_APPLY_OPS:
+        if item.op in _CUT_WRITER_OPS:
             cut.append(item.model_dump(mode="json", by_alias=True))
         else:
             skipped.append({
