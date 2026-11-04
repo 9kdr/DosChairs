@@ -120,6 +120,14 @@ def test_prompt_is_built_from_the_approved_imports_file() -> None:
         modules.build_generate_messages("  ")
 
 
+def test_rig_prompt_names_the_spring_controls() -> None:
+    developer = modules.build_generate_messages("a cursor", kind="rig")[0].content
+    assert "target X and Y" in developer
+    assert "mass" in developer
+    plain = modules.build_generate_messages("a cursor")[0].content
+    assert "Rig controls" not in plain
+
+
 @needs_toolchain
 def test_generate_checks_and_stores(isolated) -> None:
     client = FakeClient([fenced(GOOD)])
