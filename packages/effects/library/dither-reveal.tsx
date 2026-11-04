@@ -1,6 +1,7 @@
 /**
- * Dither Reveal (gold module): a Paper dithering shader wiped away over
- * eight seconds to reveal the title underneath.
+ * Dither Reveal (gold module): a Paper dithering shader confined to the
+ * title band, wiped away over the reveal seconds to uncover the title.
+ * Pixels outside the band stay transparent.
  *
  * Seeking: the Paper mount is parked at speed 0 and pinned with
  * `setFrame(t * 1000 * speed)`; the wipe itself is pure CSS (`clip-path`
@@ -69,7 +70,15 @@ export default function DitherReveal(p: Props): React.ReactElement {
     if (!hostRef.current) return;
     try {
       if (!mountRef.current) {
-        mountRef.current = new ShaderMount(hostRef.current, ditheringFragmentShader, {}, undefined, 0, frame);
+        // Paper only queries uniform locations for keys passed here; every key
+        // the effect later sets must be present, or the dither stays blank.
+        mountRef.current = new ShaderMount(hostRef.current, ditheringFragmentShader, {
+          u_colorBack: getShaderColorFromString(uniforms.colorBack),
+          u_colorFront: getShaderColorFromString(uniforms.colorFront),
+          u_shape: uniforms.shape,
+          u_type: 4,
+          u_pxSize: uniforms.size,
+        }, undefined, 0, frame);
       }
       const mount = mountRef.current;
       mount.setUniforms({
@@ -122,8 +131,11 @@ export default function DitherReveal(p: Props): React.ReactElement {
         ref={hostRef}
         style={{
           position: "absolute",
-          inset: 0,
-          clipPath: `inset(0 ${(1 - wipe) * 100}% 0 0)`,
+          left: 0,
+          right: 0,
+          top: "36%",
+          height: "28%",
+          clipPath: `inset(0 ${wipe * 100}% 0 0)`,
         }}
       />
     </div>

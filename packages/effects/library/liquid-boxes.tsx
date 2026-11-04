@@ -14,12 +14,12 @@ import { Renderer, Program, Mesh, Triangle } from "ogl";
 import { stagger } from "motion";
 import { ShaderMount, getShaderColorFromString, grainGradientFragmentShader } from "@paper-design/shaders";
 import type { EffectProps, PropSpec } from "@chair/effects";
-import { clamp, hexToRgb01, num } from "@chair/effects";
+import { PAPER_OBJECT_SIZING, clamp, hexToRgb01, num } from "@chair/effects";
 
 export const meta = {
   id: "liquid-boxes",
   name: "Liquid Boxes",
-  kind: "generator",
+  kind: "background",
   durationSec: 8,
   fps: 30,
   width: 1920,
@@ -134,7 +134,19 @@ export default function LiquidBoxes(p: Props): React.ReactElement {
         },
       });
       renderer.render({ scene: new Mesh(gl, { geometry: new Triangle(gl), program }) });
-      mount = new ShaderMount(grainRef.current, grainGradientFragmentShader, {}, undefined, 0, Math.round(t * 1000));
+      // Paper only queries uniform locations for keys passed here; every key the
+      // grain later sets must be present, or the grain layer stays blank.
+      // PAPER_OBJECT_SIZING: the mount never sets the vertex sizing uniforms.
+      mount = new ShaderMount(grainRef.current, grainGradientFragmentShader, {
+        ...PAPER_OBJECT_SIZING,
+        u_colorBack: getShaderColorFromString(c("paper", "#f1ebdd")),
+        u_colors: [c("ink", "#101018"), c("accent", "#ff6a00"), c("paper", "#f1ebdd")].map((hex) => getShaderColorFromString(hex)),
+        u_colorsCount: 3,
+        u_softness: 0.5,
+        u_intensity: 0.8,
+        u_noise: grain,
+        u_shape: 2,
+      }, undefined, 0, Math.round(t * 1000));
       mount.setUniforms({
         u_colorBack: getShaderColorFromString(c("paper", "#f1ebdd")),
         u_colors: [c("ink", "#101018"), c("accent", "#ff6a00"), c("paper", "#f1ebdd")].map((hex) => getShaderColorFromString(hex)),

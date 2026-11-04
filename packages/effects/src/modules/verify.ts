@@ -35,11 +35,12 @@ export interface VerifyOutcome {
   shaderFailed?: boolean;
   shaderLog?: string | null;
   /**
-   * Fraction of sampled pixels visibly painted when the biggest canvas is
-   * composited over black and over white (max channel deviation above
-   * 10/255 from the backing counts). Composite-aware, so unmultiplied color
-   * leaking from transparent areas counts; null when there is no canvas or
-   * its buffer cannot be read.
+   * Fraction of the FRAME visibly painted: the painted share of the biggest
+   * canvas (composited over black and over white; max channel deviation
+   * above 10/255 from the backing counts) times the canvas share of the
+   * stage. Composite-aware, so unmultiplied color leaking from transparent
+   * areas counts; 0 when a canvas exists but occupies no visible area, null
+   * when there is no canvas or its buffer cannot be read.
    */
   paintCoverage?: number | null;
 }
@@ -142,12 +143,18 @@ function measure() {
       }
     }
     let biggest = null;
-    let biggestArea = 0;
+    let biggestClientArea = 0;
+    let canvasCount = 0;
     for (const c of stage.querySelectorAll("canvas")) {
-      const a = (c.width || 0) * (c.height || 0);
-      if (a > biggestArea) { biggestArea = a; biggest = c; }
+      canvasCount++;
+      const a = (c.clientWidth || 0) * (c.clientHeight || 0);
+      if (a > biggestClientArea) { biggestClientArea = a; biggest = c; }
     }
-    if (biggest && biggestArea > 0) {
+    // A canvas that occupies no visible area paints nothing; with no canvas at
+    // all there is simply nothing to measure.
+    if (canvasCount > 0 && biggestClientArea === 0) {
+      facts.paintCoverage = 0;
+    } else if (biggest) {
       const small = document.createElement("canvas");
       small.width = 192; small.height = 108;
       const ctx = small.getContext("2d", { willReadFrequently: true });
@@ -170,7 +177,10 @@ function measure() {
       }
       let hit = 0;
       for (let p = 0; p < n; p++) if (worst[p] > 10) hit++;
-      facts.paintCoverage = Math.round((hit / n) * 1000) / 1000;
+      // Coverage is a fraction of the FRAME: the painted share of the canvas
+      // times the canvas share of the stage. A small canvas can never wash.
+      const frameFraction = Math.min(1, biggestClientArea / (width * height));
+      facts.paintCoverage = Math.round((hit / n) * frameFraction * 1000) / 1000;
     }
   } catch (err) {
     facts.text = "verify measure crashed: " + String((err && err.message) || err);

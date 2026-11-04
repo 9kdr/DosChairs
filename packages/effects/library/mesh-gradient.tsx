@@ -10,7 +10,7 @@
 import React from "react";
 import { ShaderMount, getShaderColorFromString, meshGradientFragmentShader } from "@paper-design/shaders";
 import type { EffectProps, PropSpec } from "@chair/effects";
-import { clamp, num } from "@chair/effects";
+import { PAPER_OBJECT_SIZING, clamp, num } from "@chair/effects";
 
 export const meta = {
   id: "mesh-gradient",
@@ -63,7 +63,18 @@ export default function MeshGradient(p: Props): React.ReactElement {
     if (!hostRef.current) return;
     try {
       if (!mountRef.current) {
-        mountRef.current = new ShaderMount(hostRef.current, meshGradientFragmentShader, {}, undefined, 0, frame);
+        // Paper only queries uniform locations for keys passed here; every key
+        // the effect later sets must be present, or the gradient stays blank.
+        // PAPER_OBJECT_SIZING: the mount never sets the vertex sizing
+        // uniforms, and u_scale 0 divides the object UVs to infinity.
+        mountRef.current = new ShaderMount(hostRef.current, meshGradientFragmentShader, {
+          ...PAPER_OBJECT_SIZING,
+          u_colors: colors.map((hex) => getShaderColorFromString(hex)),
+          u_colorsCount: colors.length,
+          u_distortion: distortion,
+          u_swirl: swirl,
+          u_grainMixer: grain,
+        }, undefined, 0, frame);
       }
       const mount = mountRef.current;
       mount.setUniforms({
