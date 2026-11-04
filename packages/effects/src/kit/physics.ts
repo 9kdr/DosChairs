@@ -135,9 +135,9 @@ export function simulateFollower(
     springStep(sx, num(history, xName, tau + dt), dt, opts);
     springStep(sy, num(history, yName, tau + dt), dt, opts);
     // Pendulum about the tip: gravity restores, the tip's acceleration pumps.
-    // θ is clockwise-positive on a y-down canvas, so the coupling keeps its
-    // plus sign (virtual work: Q = mL(ax cosθ + ay sinθ)): accelerating right
-    // tips the body to the left, braking swings it forward.
+    // theta is clockwise-positive on a y-down canvas, so the coupling keeps
+    // its plus sign (virtual work: Q = mL(ax cos + ay sin)): accelerating
+    // right tips the body to the left, braking swings it forward.
     const ax = (sx.v - prevVx) / dt;
     const ay = (sy.v - prevVy) / dt;
     prevVx = sx.v;

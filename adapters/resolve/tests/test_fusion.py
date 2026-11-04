@@ -1,4 +1,5 @@
 import json
+import math
 import re
 import runpy
 from pathlib import Path
@@ -581,6 +582,30 @@ def test_image_hotspot_becomes_transform_pivot() -> None:
     plan = spec_to_plan(spec)
     xf = next(tool for tool in plan["tools"] if tool["name"] == "Xf_cursor")
     assert xf["values"]["Pivot"] == [0.14, 0.92]
+
+
+def test_baked_radians_become_fusion_degrees() -> None:
+    spec = _spec()
+    spec["layers"].append(
+        {
+            "id": "cursor",
+            "type": "image",
+            "params": {"src": "/media/cursor.png", "x": 960, "y": 540},
+            "curves": {
+                "rotation": {
+                    "keyframes": [
+                        {"time": 0.0, "value": 0.0},
+                        {"time": 0.5, "value": 0.7},
+                    ]
+                }
+            },
+        }
+    )
+    keys = _key_frames(spec_to_comp(spec)["text"], "Xf_cursorAngle")
+    assert [frame for frame, _ in keys] == [0, 15]
+    values = [float(text.split(",")[0]) for _, text in keys]
+    assert values[0] == 0
+    assert abs(values[1] - 0.7 * 180 / math.pi) < 1e-3
 
 
 def test_image_without_hotspot_keeps_centre_pivot() -> None:

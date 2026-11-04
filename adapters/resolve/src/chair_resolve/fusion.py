@@ -624,7 +624,8 @@ class _Graph:
         for prop, input_name, default, scale in (
             ("scaleX", "Width", float(params.get("scaleX", self.width)), self.width),
             ("scaleY", "Height", float(params.get("scaleY", self.height)), self.height),
-            ("rotation", "Angle", float(params.get("rotation", 0)), 1),
+            # Spec rotation is radians (the preview's unit); mask Angle is degrees.
+            ("rotation", "Angle", float(params.get("rotation", 0)), math.pi / 180),
         ):
             keys = self.curve(layer, prop)
             if keys is None:
@@ -1327,6 +1328,11 @@ class _Graph:
         is_shape = layer["type"] == "shape"
         rot_keys = None if is_shape else self.curve(layer, "rotation")
         if rot_keys is not None:
+            # Spec rotation is radians (the preview's unit); Fusion Angle is degrees.
+            rot_keys = [
+                {**k, "value": float(k["value"]) * 180.0 / math.pi} for k in rot_keys
+            ]
+        if rot_keys is not None:
             blocks.append(_spline_block(f"{name}Angle", _spline_keys(rot_keys, self.fps)))
             inputs.append(
                 f"\t\t\t\tAngle = Input {{\n"
@@ -1337,11 +1343,10 @@ class _Graph:
             if entry is not None:
                 entry["splines"]["Angle"] = self._rec_keys(rot_keys)
         elif not is_shape and float(params.get("rotation", 0)) != 0:
-            inputs.append(
-                f"\t\t\t\tAngle = Input {{ Value = {_num(float(params['rotation']))}, }},"
-            )
+            static_deg = float(params["rotation"]) * 180.0 / math.pi
+            inputs.append(f"\t\t\t\tAngle = Input {{ Value = {_num(static_deg)}, }},")
             if entry is not None:
-                entry["values"]["Angle"] = float(params["rotation"])
+                entry["values"]["Angle"] = static_deg
         if is_shape:
             scale_keys = self.curve(layer, "scale")
             size_default = float(params.get("scale", 1))
@@ -1732,7 +1737,8 @@ def _control_inputs(
     if param == "rotation" and ctype == "number":
         if ltype == "shape":
             return None  # mask Angle is not a published control
-        return [(_tool_id("Xf", layer["id"]), "Angle", float(params.get("rotation", 0)))]
+        default_deg = float(params.get("rotation", 0)) * 180.0 / math.pi
+        return [(_tool_id("Xf", layer["id"]), "Angle", default_deg)]
     if param == "opacity" and ctype == "number":
         return [(_tool_id("Merge", layer["id"]), "Blend", float(params.get("opacity", 1)))]
     if param == "blur" and ctype == "number":
