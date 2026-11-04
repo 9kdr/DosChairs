@@ -137,6 +137,24 @@ def test_generate_checks_and_stores(isolated) -> None:
 
 
 @needs_toolchain
+def test_generate_covers_rig_briefs_with_a_cursor_piece(isolated) -> None:
+    """A cursor brief is a normal piece: kind rig, checked, keyframable target (#273)."""
+    source = (
+        ROOT / "packages" / "effects" / "modules" / "expressive-mouse.tsx"
+    ).read_text()
+    client = FakeClient([fenced(source)])
+    record = modules.generate_module(
+        "cursor swings in with momentum, overshoots, settles, then bounces",
+        kind="rig", client=client,
+    )
+    assert record.meta and record.meta["kind"] == "rig"
+    assert record.checks["deterministic"] is True
+    ids = [prop["id"] for prop in record.props]
+    for prop in ("targetX", "targetY", "stiffness", "damping", "mass", "overshoot"):
+        assert prop in ids
+
+
+@needs_toolchain
 def test_generate_repairs_once_for_prose_then_for_a_clock(isolated) -> None:
     client = FakeClient(["I think you want a fade.", fenced(GOOD)])
     record = modules.generate_module("fade a label in", client=client)

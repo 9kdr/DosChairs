@@ -4,15 +4,16 @@
  * Opening a task starts (or resumes, via a stable idempotency key) one real
  * agent turn scoped to that task; every note after that starts its own turn.
  * Poll updates stream each turn's live status into the thread, and the
- * terminal job record becomes the reply: real request ids, real artifact and
- * proposal counts, or the agent's verbatim error. Nothing here applies a
- * changeset or touches the timeline; finished turns only describe proposals.
+ * terminal job record becomes the reply: real artifact and edit counts,
+ * or the agent's verbatim error. Finished sound turns fire the Resolve
+ * write on arrival; the thread says what landed instead of asking
+ * anyone to accept. Nothing here touches the timeline itself.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ServiceError, type FetchFn, type ServicesClient } from "../lib/services/client";
 import { agentBaseUrl } from "../lib/services/config";
 import { isAgentTerminal } from "../lib/services/types";
-import type { AgentJob } from "../lib/services/types";
+import type { AgentJob, AgentJobStatus } from "../lib/services/types";
 import { useServicesClient } from "../lib/services/useServices";
 import {
   applySound,
@@ -22,6 +23,14 @@ import {
   type SoundApplied,
   type SoundApplyInput,
 } from "../effects/sounds-api";
+import {
+  applyCut,
+  cutApplyErrorMessage,
+  cutUndoErrorMessage,
+  revertCut,
+  type CutApplied,
+  type CutApplyInput,
+} from "./cuts-api";
 import type { RunningTask, TaskLane } from "./RunningTasks";
 import type { TaskActivity } from "./TaskActivity";
 import { readTaskThread, writeTaskThread } from "./threadStore";
@@ -316,17 +325,25 @@ export function clearPollFailure(requestId: string): void {
   pollFailures.delete(requestId);
 }
 
-/** Jobs whose finished sound already went to Resolve: each applies once. */
-const appliedJobs = new Set<string>();
+/**
+ * Finished sound jobs and their writes: each applies once, and every
+ * waiter shares the same settle, so the thread paints its final state
+ * only after the card's write state is known.
+ */
+const appliedJobs = new Map<string, Promise<void>>();
 
 /** What one finished task wrote to Resolve, for its card's Undo and Redo. */
 export type LandedWrite = {
   requestId: string;
+  /** Which route landed it: the card's Undo and Redo go back to the same one. */
+  kind: "sound" | "cut";
   line: string;
+  /** One entry per skipped op, for the card's reasons hint. */
+  skipped: { intent: string; reason: string }[];
   detail: string | null;
   state: "landed" | "undone" | "failed";
   undo: { project: string; timeline: string; originalTimeline: string } | null;
-  redo: SoundApplyInput | null;
+  redo: SoundApplyInput | CutApplyInput | null;
   /** The finished turn, kept so a failed write can retry it. */
   entry: LiveJobEntry | null;
 };
@@ -357,9 +374,11 @@ export function hasSoundItems(job: AgentJob): boolean {
     const shape = patch as Record<string, unknown>;
     if (record.op === "add_track") {
       const track = shape.track;
-      return (
-        typeof track === "object" && track !== null && (track as Record<string, unknown>).kind === "audio"
-      );
+      const kind =
+        typeof track === "object" && track !== null
+          ? (track as Record<string, unknown>).kind
+          : shape.kind;
+      return kind === "audio";
     }
     if (record.op === "add_clip") {
       if (typeof shape.kind === "string" && shape.kind) return true;
@@ -369,7 +388,54 @@ export function hasSoundItems(job: AgentJob): boolean {
   });
 }
 
-function landedLine(applied: SoundApplied): { line: string; detail: string | null } {
+const CUT_OPS = new Set([
+  "trim",
+  "move",
+  "ripple",
+  "remove_clip",
+  "remove_track",
+  "add_marker",
+  "remove_marker",
+]);
+
+/**
+ * True when a finished job carries cuts: trim, move, ripple, clip or
+ * track removal, markers, a picture insert, or a video track. Sound
+ * shapes (a kind, an audio target or track) are out: those land
+ * through the sound route, which also reports what it skipped.
+ */
+export function hasCutItems(job: AgentJob): boolean {
+  const ops = job.changeset?.ops ?? [];
+  return ops.some((op) => {
+    if (typeof op !== "object" || op === null) return false;
+    const record = op as Record<string, unknown>;
+    if (typeof record.op === "string" && CUT_OPS.has(record.op)) return true;
+    const patch = record.patch;
+    if (typeof patch !== "object" || patch === null) return false;
+    const shape = patch as Record<string, unknown>;
+    if (record.op === "add_track") {
+      const track = shape.track;
+      const kind =
+        typeof track === "object" && track !== null
+          ? (track as Record<string, unknown>).kind
+          : shape.kind;
+      return kind !== "audio";
+    }
+    if (record.op === "add_clip") {
+      if (typeof shape.kind === "string" && shape.kind) return false;
+      return !(
+        typeof record.targetId === "string" && SOUND_CLIP_TARGET.test(record.targetId)
+      );
+    }
+    return false;
+  });
+}
+
+type LandedReport = Pick<SoundApplied, "timelineName" | "skipped" | "fallback"> & {
+  originalTimeline: string | null;
+};
+
+function landedLine(applied: LandedReport): { line: string; detail: string | null } {
   const line =
     applied.skipped.length > 0
       ? `Added to ${applied.timelineName} · ${applied.skipped.length} skipped`
@@ -381,11 +447,17 @@ function landedLine(applied: SoundApplied): { line: string; detail: string | nul
   return { line, detail: bits.length > 0 ? bits.join("\n") : null };
 }
 
-function landedFromApplied(requestId: string, applied: SoundApplied): LandedWrite {
+function landedFromApplied(
+  requestId: string,
+  applied: SoundApplied | CutApplied,
+  kind: LandedWrite["kind"],
+): LandedWrite {
   const { line, detail } = landedLine(applied);
   return {
     requestId,
+    kind,
     line,
+    skipped: applied.skipped.map((skip) => ({ intent: skip.intent, reason: skip.reason })),
     detail,
     state: "landed",
     undo:
@@ -413,11 +485,13 @@ export async function applyFinishedSound(entry: LiveJobEntry, options: ApplyOpti
   if (!job || job.status !== "completed" || !hasSoundItems(job)) return;
   try {
     const applied = await applySound({ jobId: job.request_id }, options);
-    landedByTask.set(entry.task.id, landedFromApplied(job.request_id, applied));
+    landedByTask.set(entry.task.id, landedFromApplied(job.request_id, applied, "sound"));
   } catch (error) {
     landedByTask.set(entry.task.id, {
       requestId: job.request_id,
+      kind: "sound",
       line: `Failed: ${soundApplyErrorMessage(error)}`,
+      skipped: [],
       detail: error instanceof Error ? error.message : null,
       state: "failed",
       undo: null,
@@ -427,13 +501,68 @@ export async function applyFinishedSound(entry: LiveJobEntry, options: ApplyOpti
   }
 }
 
-/** Fire the write once per job; board ticks and threads share this. */
-export function maybeApplyFinishedSound(entry: LiveJobEntry, options: ApplyOptions = {}): void {
+/**
+ * Fire the write once per job; board ticks and threads share this. The
+ * promise settles when the card's write state is known, so threads
+ * await it before their final paint.
+ */
+export function maybeApplyFinishedSound(
+  entry: LiveJobEntry,
+  options: ApplyOptions = {},
+): Promise<void> {
   const job = entry.job;
-  if (!job || job.status !== "completed" || !hasSoundItems(job)) return;
-  if (appliedJobs.has(job.request_id)) return;
-  appliedJobs.add(job.request_id);
-  void applyFinishedSound(entry, options);
+  if (!job || job.status !== "completed" || !hasSoundItems(job)) return Promise.resolve();
+  const known = appliedJobs.get(job.request_id);
+  if (known) return known;
+  const pending = applyFinishedSound(entry, options);
+  appliedJobs.set(job.request_id, pending);
+  return pending;
+}
+
+/**
+ * Write one finished cut turn to Resolve: a new "(cut copy)"
+ * timeline, never touching the original. Jobs that also carry sound
+ * stay on the sound route, which reports the cuts it skipped.
+ */
+export async function applyFinishedCut(entry: LiveJobEntry, options: ApplyOptions = {}): Promise<void> {
+  const job = entry.job;
+  if (!job || job.status !== "completed" || !hasCutItems(job) || hasSoundItems(job)) return;
+  try {
+    const applied = await applyCut({ jobId: job.request_id }, options);
+    landedByTask.set(entry.task.id, landedFromApplied(job.request_id, applied, "cut"));
+  } catch (error) {
+    landedByTask.set(entry.task.id, {
+      requestId: job.request_id,
+      kind: "cut",
+      line: `Failed: ${cutApplyErrorMessage(error)}`,
+      skipped: [],
+      detail: error instanceof Error ? error.message : null,
+      state: "failed",
+      undo: null,
+      redo: null,
+      entry,
+    });
+  }
+}
+
+/**
+ * Fire the cut write once per job; board ticks and threads share this. The
+ * promise settles when the card's write state is known, so threads
+ * await it before their final paint.
+ */
+export function maybeApplyFinishedCut(
+  entry: LiveJobEntry,
+  options: ApplyOptions = {},
+): Promise<void> {
+  const job = entry.job;
+  if (!job || job.status !== "completed" || !hasCutItems(job) || hasSoundItems(job)) {
+    return Promise.resolve();
+  }
+  const known = appliedJobs.get(job.request_id);
+  if (known) return known;
+  const pending = applyFinishedCut(entry, options);
+  appliedJobs.set(job.request_id, pending);
+  return pending;
 }
 
 /** Retry a failed write: forget it and fire the finished turn again. */
@@ -442,7 +571,8 @@ export function retryLandedWrite(taskId: string, options: ApplyOptions = {}): vo
   if (!landed || landed.state !== "failed" || !landed.entry) return;
   appliedJobs.delete(landed.requestId);
   landedByTask.delete(taskId);
-  maybeApplyFinishedSound(landed.entry, options);
+  if (landed.kind === "cut") maybeApplyFinishedCut(landed.entry, options);
+  else maybeApplyFinishedSound(landed.entry, options);
 }
 
 /**
@@ -453,8 +583,10 @@ export function retryLandedWrite(taskId: string, options: ApplyOptions = {}): vo
 export async function undoLandedWrite(taskId: string, options: ApplyOptions = {}): Promise<boolean> {
   const landed = landedByTask.get(taskId);
   if (!landed || landed.state !== "landed" || !landed.undo) return false;
+  const undo = landed.kind === "cut" ? revertCut : revertSound;
+  const message = landed.kind === "cut" ? cutUndoErrorMessage : soundUndoErrorMessage;
   try {
-    await revertSound(
+    await undo(
       {
         ...(landed.undo.project ? { project: landed.undo.project } : {}),
         timeline: landed.undo.timeline,
@@ -463,7 +595,7 @@ export async function undoLandedWrite(taskId: string, options: ApplyOptions = {}
       options,
     );
   } catch (error) {
-    landedByTask.set(taskId, { ...landed, line: `Undo failed: ${soundUndoErrorMessage(error)}` });
+    landedByTask.set(taskId, { ...landed, line: `Undo failed: ${message(error)}` });
     return false;
   }
   landedByTask.set(taskId, {
@@ -479,11 +611,13 @@ export async function undoLandedWrite(taskId: string, options: ApplyOptions = {}
 export async function redoLandedWrite(taskId: string, options: ApplyOptions = {}): Promise<boolean> {
   const landed = landedByTask.get(taskId);
   if (!landed || landed.state !== "undone" || !landed.redo) return false;
+  const apply = landed.kind === "cut" ? applyCut : applySound;
+  const message = landed.kind === "cut" ? cutApplyErrorMessage : soundApplyErrorMessage;
   try {
-    const applied = await applySound(landed.redo, options);
-    landedByTask.set(taskId, landedFromApplied(landed.requestId, applied));
+    const applied = await apply(landed.redo, options);
+    landedByTask.set(taskId, landedFromApplied(landed.requestId, applied, landed.kind));
   } catch (error) {
-    landedByTask.set(taskId, { ...landed, line: `Redo failed: ${soundApplyErrorMessage(error)}` });
+    landedByTask.set(taskId, { ...landed, line: `Redo failed: ${message(error)}` });
     return false;
   }
   return true;
@@ -656,7 +790,10 @@ export function useLiveTasks(createdTasks: readonly RunningTask[], refreshKey?: 
           settleLiveTask(taskId);
           submitErrors.delete(taskId);
         }
-        for (const entry of entries) maybeApplyFinishedSound(entry);
+        for (const entry of entries) {
+          void maybeApplyFinishedSound(entry);
+          void maybeApplyFinishedCut(entry);
+        }
         if (live) setRows([...waitingRowsFor(tasks), ...stale, ...merged.rows, ...landedRowsFor(tasks)]);
       } finally {
         ticking = false;
@@ -702,9 +839,18 @@ export function textForJob(job: AgentJob): string {
   const ops = job.changeset?.ops.length ?? 0;
   const previewBit =
     previews === 0 ? "no previews" : previews === 1 ? "1 preview" : `${previews} previews`;
-  const opBit =
-    ops === 0 ? "no proposed changes" : ops === 1 ? "1 proposed change" : `${ops} proposed changes`;
-  let text = `Done: ${previewBit}, ${opBit}.`;
+  const opBit = ops === 0 ? "no edits" : ops === 1 ? "1 edit" : `${ops} edits`;
+  // Finished turns fire the Resolve write on arrival; the reply says
+  // it landed, with Undo on the card. Jobs with no landable items
+  // say so honestly instead of claiming a landing.
+  let text: string;
+  if (ops === 0) {
+    text = `Done: ${previewBit}, ${opBit}. Nothing changed.`;
+  } else if (hasSoundItems(job) || hasCutItems(job)) {
+    text = `Done: ${previewBit}, ${opBit}. Landed on a copy in Resolve. Undo is on the card.`;
+  } else {
+    text = `Done: ${previewBit}, ${opBit}. Nothing landed in Resolve yet.`;
+  }
   if (previews > 0) {
     text += ` Preview files: ${job.artifacts.map((artifact) => artifact.url).join(", ")}.`;
   }
@@ -759,8 +905,7 @@ export function activityForLiveJob(job: AgentJob): TaskActivity {
   const ops = job.changeset?.ops.length ?? 0;
   const previewBit =
     previews === 0 ? "no previews" : previews === 1 ? "1 preview" : `${previews} previews`;
-  const opBit =
-    ops === 0 ? "no proposed changes" : ops === 1 ? "1 proposed change" : `${ops} proposed changes`;
+  const opBit = ops === 0 ? "no edits" : ops === 1 ? "1 edit" : `${ops} edits`;
   const done =
     job.status === "completed"
       ? { headline: `Done: ${opBit}, ${previewBit}`, result: `Done: ${opBit}, ${previewBit}` }
@@ -815,6 +960,47 @@ function firstLine(text: string): string {
 }
 
 /**
+ * The rail's live step label for the thread header, if it shows an
+ * active step. Null while nothing is active (or off the live thread).
+ */
+export function activeStepLabel(activity: TaskActivity | null): string | null {
+  if (!activity) return null;
+  return activity.steps.find((step) => step.state === "active")?.label ?? null;
+}
+
+/** Everything live the thread header reads, at one render. */
+export type HeaderState = {
+  /** The thread's latest settled turn outcome, if a turn settled. */
+  terminal: AgentJobStatus | null;
+  /** The card's Resolve-write state, if the task has one. */
+  landed: LandedWrite["state"] | null;
+  /** The rail's live step label, if it shows one. */
+  step: string | null;
+  /** False only for the demo stand-in, which keeps the old line. */
+  live: boolean;
+  /** Last resort while nothing live has painted. */
+  fallback: string;
+};
+
+/**
+ * The thread header's status: the card's write state first (Landed,
+ * Undone, or a failed write), then the settled turn (Failed, Stopped,
+ * or Planned when nothing landed), then the live step. Null means a
+ * live thread with no step text: render the quiet spinner.
+ */
+export function headerStatusFor(state: HeaderState): string | null {
+  if (state.landed === "landed") return "Landed";
+  if (state.landed === "undone") return "Undone";
+  if (state.landed === "failed") return "Failed";
+  if (state.terminal === "failed") return "Failed";
+  if (state.terminal === "canceled" || state.terminal === "moderated") return "Stopped";
+  if (state.terminal === "completed") return "Planned";
+  if (state.terminal === "queued" || state.terminal === "in_progress") return state.step;
+  if (state.step !== null) return state.step;
+  return state.live ? null : state.fallback;
+}
+
+/**
  * One task's thread: turns plus the activity rail's live state (null while the
  * demo flag owns the rail). Opening the task spawns one turn per lane
  * subagent; lanes with no connected tools report honestly instead of
@@ -828,7 +1014,7 @@ export function useTaskThread(
   task: RunningTask,
   note: TaskNote | null,
   resolveLocalReply?: (text: string) => string | null,
-): { turns: Turn[]; activity: TaskActivity | null } {
+): { turns: Turn[]; activity: TaskActivity | null; terminal: AgentJobStatus | null } {
   const client = useServicesClient();
   const demo = useMemo(() => isThreadDemo(), []);
   const agents = useMemo(() => spawnSubagents(task), [task]);
@@ -836,6 +1022,7 @@ export function useTaskThread(
   const [activity, setActivity] = useState<TaskActivity | null>(() =>
     demo ? null : activityForLivePending(),
   );
+  const [terminal, setTerminal] = useState<AgentJobStatus | null>(null);
   const openedRef = useRef<string | null>(null);
   const seenNote = useRef<number | null>(null);
   const taskRef = useRef(task);
@@ -885,10 +1072,20 @@ export function useTaskThread(
         },
       }).then(
         (job) => {
-          maybeApplyFinishedSound({ requestId: job.request_id, task, job });
-          live(() => {
-            paint(say(textForJob(job)));
-            if (primary) setActivity(activityForLiveJob(job));
+          const entry = { requestId: job.request_id, task, job };
+          // The final paint waits for the write to settle: the header
+          // reads the card's write state, so it must already be known.
+          void Promise.all([
+            maybeApplyFinishedSound(entry),
+            maybeApplyFinishedCut(entry),
+          ]).then(() => {
+            live(() => {
+              paint(say(textForJob(job)));
+              if (primary) {
+                setTerminal(job.status);
+                setActivity(activityForLiveJob(job));
+              }
+            });
           });
         },
         (error: unknown) =>
@@ -903,7 +1100,10 @@ export function useTaskThread(
                   : turn,
               ),
             );
-            if (primary) setActivity(activityForLiveError(headlineForSubmitError(error)));
+            if (primary) {
+              setTerminal("failed");
+              setActivity(activityForLiveError(headlineForSubmitError(error)));
+            }
           }),
       );
     });
@@ -951,12 +1151,20 @@ export function useTaskThread(
       },
     }).then(
       (job) => {
-        maybeApplyFinishedSound({ requestId: job.request_id, task, job });
-        live(() => {
-          setTurns((current) =>
-            current.map((turn) => (turn.id === liveId ? { ...turn, text: textForJob(job) } : turn)),
-          );
-          setActivity(activityForLiveJob(job));
+        const entry = { requestId: job.request_id, task, job };
+        // The final paint waits for the write to settle: the header
+        // reads the card's write state, so it must already be known.
+        void Promise.all([
+          maybeApplyFinishedSound(entry),
+          maybeApplyFinishedCut(entry),
+        ]).then(() => {
+          live(() => {
+            setTurns((current) =>
+              current.map((turn) => (turn.id === liveId ? { ...turn, text: textForJob(job) } : turn)),
+            );
+            setTerminal(job.status);
+            setActivity(activityForLiveJob(job));
+          });
         });
       },
       (error: unknown) =>
@@ -966,10 +1174,11 @@ export function useTaskThread(
               turn.id === liveId ? { ...turn, text: replyForSubmitError(error) } : turn,
             ),
           );
+          setTerminal("failed");
           setActivity(activityForLiveError(headlineForSubmitError(error)));
         }),
     );
   }, [note, task, client, demo, resolveLocalReply]);
 
-  return useMemo(() => ({ turns, activity }), [turns, activity]);
+  return useMemo(() => ({ turns, activity, terminal }), [turns, activity, terminal]);
 }

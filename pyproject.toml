@@ -29,7 +29,7 @@ src = ["services", "adapters"]
 select = ["E", "F", "I", "UP", "B"]
 
 [tool.pytest.ini_options]
-testpaths = ["services", "adapters"]
+testpaths = ["services", "adapters", "scripts/demo-check"]
 addopts = "-q --import-mode=importlib"
 
 [tool.uv]

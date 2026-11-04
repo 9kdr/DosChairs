@@ -284,6 +284,24 @@ def test_build_writes_squash_pair() -> None:
     assert xf.values["XSize"] == 1
 
 
+def test_build_lands_rig_bake_on_text_carrier() -> None:
+    """#294: a rig bake (rotation + scale/scaley) lands on a text carrier."""
+    spec = _spec()
+    baked = {"title": {
+        "rotation": [{"time": 0, "value": 0}, {"time": 1, "value": 0.2}],
+        "scale": [{"time": 0, "value": 1}, {"time": 1, "value": 1.1}],
+        "scaley": [{"time": 0, "value": 1}, {"time": 1, "value": 0.9}],
+    }}
+    item = FakeItem()
+    op = build_comp(item, spec_to_plan(spec, baked=baked))
+    assert op["keyframes"]["Xf_titleAngle"] == 2
+    assert op["keyframes"]["Xf_titleXSize"] == 2
+    assert op["keyframes"]["Xf_titleYSize"] == 2
+    assert "Xf_titleSize" not in op["keyframes"]
+    xf = item.comps[op["comp_name"]].FindTool("Xf_title")
+    assert xf.values["UseSizeAndAspect"] == 0
+
+
 def test_build_absorbs_modifier_seed_key() -> None:
     """A curve starting after 0 still lands exactly: the seed is overwritten."""
     spec = _spec()
@@ -367,13 +385,11 @@ def test_arrange_needs_a_frame() -> None:
     opened: list[str] = []
     resolve = types.SimpleNamespace(OpenPage=lambda page: opened.append(page))
     assert arrange(object(), item, "Comp 9", {}, {}, resolve) is False
-    assert opened == ["fusion"]  # tried the Fusion page, still no frame
-    item2 = FakeItem()
+    assert opened == []  # never forces the Fusion page open (#290)
+    assert item.loaded == []  # and never loads the comp to reach a frame
     comp = FakeComp()
-    item2.comps["Comp 9"] = comp
     tools = {"MediaIn1": comp.FindTool("MediaIn1")}
-    assert arrange(object(), item2, "Comp 9", tools, {"MediaIn1": (0, 0)}, None) is True
-    assert item2.loaded == ["Comp 9"]
+    assert arrange(comp, item, "Comp 1", tools, {"MediaIn1": (0, 0)}, None) is True
     assert comp.flow.positions == {"MediaIn1": (0, 0)}
     assert comp.flow.framed is True
 

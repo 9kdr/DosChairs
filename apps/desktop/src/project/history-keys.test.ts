@@ -43,7 +43,7 @@ describe("historyKeyAction", () => {
     expect(historyKeyAction(press("u", { shiftKey: true }))).toBe("undoHere");
   });
 
-  it("keeps a/r for Ask-first decisions, Enter to expand, ? for help", () => {
+  it("still maps a/r (the card ignores them), Enter to expand, ? for help", () => {
     expect(historyKeyAction(press("a"))).toBe("accept");
     expect(historyKeyAction(press("r"))).toBe("reject");
     expect(historyKeyAction(press("Enter"))).toBe("toggle");
@@ -101,15 +101,20 @@ describe("moveHistoryFocus", () => {
 });
 
 describe("HISTORY_SHORTCUTS", () => {
-  it("names every shortcut the history answers to", () => {
-    expect(HISTORY_SHORTCUTS).toHaveLength(8);
+  it("names every shortcut the history answers to, with no accept step", () => {
+    expect(HISTORY_SHORTCUTS).toHaveLength(6);
     for (const shortcut of HISTORY_SHORTCUTS) {
       expect(shortcut.keys.length).toBeGreaterThan(0);
       expect(shortcut.label.length).toBeGreaterThan(0);
     }
     const keys = HISTORY_SHORTCUTS.flatMap((shortcut) => shortcut.keys);
-    for (const key of ["j", "k", "u", "Shift U", "Enter", "a", "r", "?"]) {
+    for (const key of ["j", "k", "u", "Shift U", "Enter", "?"]) {
       expect(keys).toContain(key);
     }
+    expect(keys).not.toContain("a");
+    expect(keys).not.toContain("r");
+    const labels = HISTORY_SHORTCUTS.map((shortcut) => shortcut.label).join("\n");
+    expect(labels).not.toContain("Accept");
+    expect(labels).not.toContain("Reject");
   });
 });

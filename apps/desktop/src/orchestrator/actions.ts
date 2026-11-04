@@ -4,6 +4,8 @@ export type ActionKey =
   | "preset"
   | "again"
   | "script"
+  // "accept" is gone from ACTIONS below, so nothing parses to it; the
+  // member stays until #288 removes ProjectShell's dead accept branch.
   | "accept"
   | "brief";
 
@@ -19,7 +21,6 @@ export const ACTIONS: readonly Action[] = [
   { key: "preset", hint: "Apply a named preset", slot: "preset name" },
   { key: "again", hint: "Another pass, same rules", slot: "" },
   { key: "script", hint: "Use the pinned script", slot: "which part" },
-  { key: "accept", hint: "Accept this proposal", slot: "" },
   { key: "brief", hint: "Open the plan", slot: "" },
 ];
 

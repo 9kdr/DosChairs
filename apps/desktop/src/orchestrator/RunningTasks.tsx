@@ -5,6 +5,7 @@ import { DitherShader } from "@/lib/dither";
 import type { DitherColor } from "@/lib/dither";
 import { Button } from "@/components/ui/button";
 import { DitherArt } from "@/components/dither-art";
+import { InfoHint } from "@/components/info-hint";
 import { Empty, EmptyArt } from "@/components/ui/empty";
 import { cn } from "@/lib/utils";
 import { historyForTask, type HistoryEntry } from "../project/store";
@@ -378,6 +379,24 @@ function TaskRow({
             </p>
             <p className="truncate text-meta text-muted-foreground" title={status.detail ?? undefined}>
               {LANE_LABEL[task.lane]} · {status.short}
+              {landed && landed.skipped.length > 0 ? (
+                <>
+                  {" "}
+                  <InfoHint>
+                    {landed.skipped.length === 1 ? (
+                      landed.skipped[0]!.reason
+                    ) : (
+                      <span>
+                        {landed.skipped.map((skip) => (
+                          <span key={skip.intent} className="block">
+                            {skip.reason}
+                          </span>
+                        ))}
+                      </span>
+                    )}
+                  </InfoHint>
+                </>
+              ) : null}
             </p>
           </div>
           <div className="flex shrink-0 items-center gap-1.5">

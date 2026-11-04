@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Menu, MenuGroup, MenuGroupLabel, MenuPopup, MenuRadioGroup, MenuRadioItem, MenuTrigger } from "@/components/ui/menu";
 import { acceptsChairRef, readChairRefs, type ChairRef } from "@/lib/chair-ref";
 import { useServiceHealth } from "@/lib/services/useServices";
+import { modelLabel, orchestratorLabel } from "@/lib/model-label";
 import { cn } from "@/lib/utils";
 import { filterActions, type Action } from "@/orchestrator/actions";
 import { enabledModels, PROVIDERS, type ProviderId } from "@/settings/providers";
@@ -48,19 +49,8 @@ export function orchestratorOptions(
       provider: provider.id,
       custom: opts?.customModels?.[provider.id],
       disabled: opts?.disabledModels?.[provider.id],
-    }).map((name) => `${name} (${provider.label})`),
+    }).map((name) => modelLabel(name, provider.label)),
   );
-}
-
-/**
- * Short trigger label for a picker option: the human model name, no
- * provider suffix. Unknown ids pass through unchanged.
- */
-export function orchestratorLabel(option: string): string {
-  const id = option.replace(/ \([^()]*\)$/, "");
-  const family = /^muse-([a-z]+)/.exec(id)?.[1];
-  if (family == null) return id;
-  return `Muse ${family.charAt(0).toUpperCase()}${family.slice(1)}`;
 }
 
 export type OrchestratorGroup = { provider: string; items: string[] };

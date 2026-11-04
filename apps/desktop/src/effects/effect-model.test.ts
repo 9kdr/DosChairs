@@ -39,6 +39,22 @@ describe("bakeRig", () => {
     const bake = bakeRig(spec, null);
     expect(bake).toEqual({ spec, keys: 0, frames: 0 });
   });
+
+  it("bakes squash multipliers onto a text target, not just shapes (#294)", () => {
+    const spec = sampleEffect();
+    spec.layers.find((layer) => layer.id === "ball")!.curves = {};
+    const title = spec.layers.find((layer) => layer.id === "title")!;
+    title.curves = {
+      x: { keyframes: [{ time: 0, value: 100 }] },
+      y: { keyframes: [{ time: 0, value: 100 }] },
+    };
+    expect(rigTargetId(spec)).toBe("title");
+    const bake = bakeRig(spec, rigOf(spec));
+    const curves = bake.spec.layers.find((layer) => layer.id === "title")!.curves!;
+    for (const prop of ["x", "y", "rotation", "scale", "scaley"]) {
+      expect(curves[prop]?.keyframes.length, prop).toBeGreaterThan(1);
+    }
+  });
 });
 
 describe("exportInfo", () => {

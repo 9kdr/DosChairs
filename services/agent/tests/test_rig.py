@@ -1,4 +1,8 @@
-"""Mouse rig: brief drafts a Rig, apply lands baked keys as a new comp (#256)."""
+"""Apply-piece route: baked keys land as a new comp, never touching the old one (#273).
+
+The brief-to-Rig model route is gone: a cursor brief goes through the piece
+path (POST /effects/modules/generate, kind rig) like every other piece.
+"""
 
 import json
 import sys
@@ -9,129 +13,14 @@ from pathlib import Path
 from urllib.request import Request, urlopen
 
 import pytest
-from chair_agent import rig
 from chair_agent.__main__ import Handler
-from chair_agent.client import Completion
-from chair_agent.rig import InvalidRig
-
-
-def _rig(**overrides):
-    base = {
-        "inputPath": [
-            {"time": 0, "x": 200, "y": 800},
-            {"time": 0.5, "x": 960, "y": 540},
-            {"time": 0.9, "x": 1200, "y": 500},
-        ],
-        "stiffness": 90,
-        "damping": 8,
-        "mass": 1,
-        "swing": True,
-        "tilt": True,
-        "squash": True,
-        "overshoot": True,
-    }
-    base.update(overrides)
-    return base
 
 
 @pytest.fixture()
 def isolated(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("CHAIR_AGENT_STATE_DIR", str(tmp_path / "state"))
     monkeypatch.setenv("CHAIR_ROOT", str(Path(__file__).resolve().parents[3]))
-    rig._STATUS.update({
-        "generated": 0, "repairs": 0,
-        "last_latency_ms": None, "last_error": None,
-    })
     return tmp_path
-
-
-class FakeClient:
-    """Queued execute completion texts."""
-
-    def __init__(self, execute=()):
-        self.execute_texts = list(execute)
-        self.execute_calls = 0
-        self.last_messages = None
-
-    def execute(self, messages):
-        self.execute_calls += 1
-        self.last_messages = messages
-        return Completion(model="muse-spark-1", text=self.execute_texts.pop(0))
-
-
-def test_generate_validates_and_returns_rig(isolated) -> None:
-    client = FakeClient(execute=[json.dumps(_rig())])
-    out = rig.generate_rig(
-        "cursor swings in with momentum, overshoots, settles, then bounces",
-        width=1920, height=1080, fps=30, duration_sec=3.0, client=client,
-    )
-    assert out["rig"]["stiffness"] == 90
-    assert len(out["rig"]["inputPath"]) == 3
-    assert "Muse Spark" in out["notes"]
-    assert client.execute_calls == 1
-    developer = next(m.content for m in client.last_messages if m.role == "developer")
-    assert "inputPath" in developer and "overshoot" in developer
-    assert "1920x1080" in developer
-    snapshot = rig.status_snapshot()
-    assert snapshot["generated"] == 1
-    assert snapshot["last_error"] is None
-    assert isinstance(snapshot["last_latency_ms"], float)
-
-
-def test_generate_rejects_bad_physics_then_repairs(isolated) -> None:
-    bad = _rig(damping="soft")
-    client = FakeClient(execute=[json.dumps(bad), json.dumps(_rig())])
-    out = rig.generate_rig("swing in", width=1920, height=1080, fps=30,
-                           duration_sec=2.0, client=client)
-    assert client.execute_calls == 2
-    assert "repaired on retry" in out["notes"]
-    assert rig.status_snapshot()["repairs"] == 1
-
-    always_bad = FakeClient(execute=[json.dumps(bad)] * 3)
-    with pytest.raises(InvalidRig, match="failed validation 3 times"):
-        rig.generate_rig("swing in", width=1920, height=1080, fps=30,
-                         duration_sec=2.0, client=always_bad)
-    assert always_bad.execute_calls == 3
-
-
-def test_validate_rig_rejects_keys_off_canvas_or_past_duration(isolated) -> None:
-    bounds = {"width": 1920, "height": 1080, "duration_sec": 3.0}
-    with pytest.raises(InvalidRig, match="outside the 0..1920 canvas"):
-        rig.validate_rig(_rig(inputPath=[{"time": 0, "x": 2000, "y": 10}]), **bounds)
-    with pytest.raises(InvalidRig, match="outside the 0..1080 canvas"):
-        rig.validate_rig(_rig(inputPath=[{"time": 0, "x": 10, "y": -5}]), **bounds)
-    with pytest.raises(InvalidRig, match="past the 3s duration"):
-        rig.validate_rig(_rig(inputPath=[{"time": 5, "x": 10, "y": 10}]), **bounds)
-    kept = rig.validate_rig(
-        _rig(inputPath=[{"time": 3.0, "x": 1920, "y": 1080}]), **bounds
-    )
-    assert kept["inputPath"][0]["x"] == 1920
-
-
-def test_generate_repairs_off_canvas_keys(isolated) -> None:
-    bad = _rig(inputPath=[{"time": 0, "x": 5000, "y": 10}])
-    client = FakeClient(execute=[json.dumps(bad), json.dumps(_rig())])
-    out = rig.generate_rig(
-        "swing in", width=1920, height=1080, fps=30, duration_sec=3.0,
-        client=client,
-    )
-    assert client.execute_calls == 2
-    assert "repaired on retry" in out["notes"]
-    assert rig.status_snapshot()["repairs"] == 1
-
-
-def test_generate_rejects_empty_brief_backwards_time_and_bad_flags(isolated) -> None:
-    client = FakeClient(execute=[])
-    with pytest.raises(InvalidRig, match="non-empty 'brief'"):
-        rig.generate_rig(" ", width=1920, height=1080, fps=30,
-                         duration_sec=3.0, client=client)
-    with pytest.raises(InvalidRig, match="must not go backwards"):
-        rig.validate_rig(_rig(inputPath=[
-            {"time": 0.5, "x": 1, "y": 1}, {"time": 0.2, "x": 2, "y": 2}]))
-    with pytest.raises(InvalidRig, match="must be a boolean"):
-        rig.validate_rig(_rig(squash="yes"))
-    with pytest.raises(InvalidRig, match="positive number"):
-        rig.validate_rig(_rig(mass=0))
 
 
 class _FakeItem:
@@ -208,9 +97,7 @@ def _spec() -> dict:
     }
 
 
-def test_http_rig_generate_and_apply(isolated, monkeypatch) -> None:
-    client = FakeClient(execute=[json.dumps(_rig())])
-    monkeypatch.setattr("chair_agent.rig._model_client", lambda: client)
+def test_http_apply_lands_a_new_comp_with_undo(isolated, monkeypatch) -> None:
     item = _FakeItem()
     _install_resolve_stubs(monkeypatch, item)
     server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
@@ -218,42 +105,25 @@ def test_http_rig_generate_and_apply(isolated, monkeypatch) -> None:
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     try:
-        generate = Request(
-            f"http://127.0.0.1:{port}/effects/rig/generate",
-            data=json.dumps({
-                "brief": "cursor swings in with momentum, overshoots, settles",
-                "canvas": {"width": 1920, "height": 1080},
-                "fps": 30, "durationSec": 3.0,
-            }).encode(),
-            headers={"Content-Type": "application/json"},
-            method="POST",
-        )
-        with urlopen(generate) as response:
-            created = json.load(response)
-        assert len(created["rig"]["inputPath"]) == 3
-
-        apply = Request(
-            f"http://127.0.0.1:{port}/effects/rig/apply",
-            data=json.dumps({
-                "spec": _spec(),
-                "baked": {"ball": {"x": [{"time": 0, "value": 1}]}},
-                "project": "Chair Captest",
-                "timeline": "Chair Captest 256",
-            }).encode(),
-            headers={"Content-Type": "application/json"},
-            method="POST",
-        )
-        with urlopen(apply) as response:
-            applied = json.load(response)
-        assert applied["comp_name"] == "Comp 2"
-        assert applied["prev_comp_name"] == "Comp 1"
-        assert applied["paths"] == {"ball": "native:Transform"}
-        assert applied["keyframes"] == 1
-        assert applied["timeline"] == "Chair Captest 256"
-
-        with urlopen(f"http://127.0.0.1:{port}/health") as response:
-            health = json.load(response)
-        assert health["rig"]["generated"] == 1
+        for path in ("/effects/rig/apply", "/effects/apply"):
+            apply = Request(
+                f"http://127.0.0.1:{port}{path}",
+                data=json.dumps({
+                    "spec": _spec(),
+                    "baked": {"ball": {"x": [{"time": 0, "value": 1}]}},
+                    "project": "Chair Captest",
+                    "timeline": "Chair Captest 256",
+                }).encode(),
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            with urlopen(apply) as response:
+                applied = json.load(response)
+            assert applied["comp_name"] == "Comp 2"
+            assert applied["prev_comp_name"] == "Comp 1"
+            assert applied["paths"] == {"ball": "native:Transform"}
+            assert applied["keyframes"] == 1
+            assert applied["timeline"] == "Chair Captest 256"
     finally:
         server.shutdown()
         thread.join(timeout=2)
