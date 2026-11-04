@@ -404,6 +404,10 @@ function commandText(parts: readonly Piece[], key: string) {
   return rest.length > 0 ? `${key} ${rest}` : key;
 }
 
+/** The model pick reads as text with a chevron, not a button. Shared by the trigger and the key CTA. */
+const MODEL_TRIGGER_CLASS =
+  "max-w-44 gap-1 px-1.5 font-normal text-muted-foreground hover:bg-transparent hover:text-neutral-200";
+
 /**
  * Command bar for the open project. A click expands the bar. The project
  * view behind it stays where it is.
@@ -488,8 +492,8 @@ export function ChatPrompt({
 
   const draft = serialize(parts);
   const plain = plainText(parts);
-  // Visual only: the send button stays muted until there is something to
-  // send, then turns bright. The `disabled` prop below is the real gate.
+  // Ready to send: something to send, and a model to send with. Drives
+  // both the real gate (`disabled`) and the muted-until-ready look.
   const sendReady = (draft.trim().length > 0 || files.length > 0) && options.length > 0;
 
   // A picked suggestion fills the composer once, ready to send or edit.
@@ -1188,7 +1192,7 @@ export function ChatPrompt({
                         type="button"
                         size="sm"
                         variant="ghost"
-                        className="max-w-44 gap-1 px-1.5 font-normal text-muted-foreground hover:bg-transparent hover:text-neutral-200"
+                        className={MODEL_TRIGGER_CLASS}
                         onClick={() => onOpenSettings?.()}
                       >
                         <KeyRound />
@@ -1208,7 +1212,7 @@ export function ChatPrompt({
                               type="button"
                               size="sm"
                               variant="ghost"
-                              className="max-w-44 gap-1 px-1.5 font-normal text-muted-foreground hover:bg-transparent hover:text-neutral-200"
+                              className={MODEL_TRIGGER_CLASS}
                             />
                           }
                         >
@@ -1270,7 +1274,7 @@ export function ChatPrompt({
                       size="icon-sm"
                       variant="send"
                       aria-label="Send"
-                      disabled={(!draft.trim() && files.length === 0) || options.length === 0}
+                      disabled={!sendReady}
                       className={
                         sendReady
                           ? undefined
