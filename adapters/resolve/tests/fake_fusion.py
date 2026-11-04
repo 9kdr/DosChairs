@@ -8,6 +8,7 @@ Semantics verified on Mel's Studio 21.1 while building #270:
 - SetKeyFrames merges (it never deletes)
 - GetFusionCompNameList answers {} when the item has no comps
 - LoadFusionCompByName answers the comp object
+- GetFusionCompByName answers the comp object without loading it
 """
 
 from __future__ import annotations
@@ -200,6 +201,9 @@ class FakeItem:
             comp.AddTool("Transform")
         self.comps[self.names[-1]] = comp
         return comp
+
+    def GetFusionCompByName(self, name: str) -> Any:
+        return self.comps.get(name)
 
     def LoadFusionCompByName(self, name: str) -> Any:
         self.loaded.append(name)
