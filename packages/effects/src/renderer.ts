@@ -101,20 +101,36 @@ function num(v: unknown, fallback: number): number {
   return typeof v === "number" && Number.isFinite(v) ? v : fallback;
 }
 
-/** Quad corners (0..1 uv space) for a rotated rect centered at x,y with size w,h. */
+/**
+ * Quad corners (0..1 uv space) for a rotated rect with size w,h. The hotspot
+ * (hx, hy, normalized from the top-left, default the centre) lands on x,y and
+ * is the rotation pivot: a cursor's tip stays on the path while the body
+ * swings around it.
+ */
 export function quadCorners(
   x: number, y: number, w: number, h: number, rotation: number,
+  hx = 0.5, hy = 0.5,
 ): { uv: number[]; px: number[] } {
   const c = Math.cos(rotation);
   const s = Math.sin(rotation);
   const uvs = [0, 0, 1, 0, 0, 1, 1, 1];
   const px: number[] = [];
   for (let i = 0; i < 4; i++) {
-    const ox = (uvs[i * 2]! - 0.5) * w;
-    const oy = (uvs[i * 2 + 1]! - 0.5) * h;
+    const ox = (uvs[i * 2]! - hx) * w;
+    const oy = (uvs[i * 2 + 1]! - hy) * h;
     px.push(x + ox * c - oy * s, y + ox * s + oy * c);
   }
   return { uv: uvs, px };
+}
+
+/** Normalized hotspot from top-left; out-of-range values fall back to centre. */
+export function hotspotOf(r: Record<string, string | number | boolean>): { hx: number; hy: number } {
+  const hx = num(r["hotspotX"], 0.5);
+  const hy = num(r["hotspotY"], 0.5);
+  return {
+    hx: hx >= 0 && hx <= 1 ? hx : 0.5,
+    hy: hy >= 0 && hy <= 1 ? hy : 0.5,
+  };
 }
 
 function uploadQuad(
@@ -260,11 +276,15 @@ export function renderFrame(
         if (!entry) continue;
         // The rig bakes squash on text/image carriers as scale/scaley
         // multipliers (the pair the Resolve Transform reads); Y falls back
-        // to the uniform scale, mirroring the adapter (#294).
+        // to the uniform scale, mirroring the adapter (#294). Image layers
+        // read hotspotX/hotspotY so a cursor rotates about its tip; text
+        // stays centred like its full-frame TextPlus node in Resolve.
+        const spot = layer.type === "image" ? hotspotOf(r) : { hx: 0.5, hy: 0.5 };
         const corners = quadCorners(
           num(r["x"], spec.width / 2), num(r["y"], spec.height / 2),
           w * num(r["scale"], 1), h * num(r["scaley"], num(r["scale"], 1)),
           num(r["rotation"], 0),
+          spot.hx, spot.hy,
         );
         uploadQuad(gl, c, c.tex, "aPos", corners, spec.width, spec.height);
         gl.activeTexture(gl.TEXTURE0);

@@ -169,7 +169,10 @@
         "swing": { "type": "boolean", "default": true },
         "tilt": { "type": "boolean", "default": true },
         "squash": { "type": "boolean", "default": true },
-        "overshoot": { "type": "boolean", "default": true }
+        "overshoot": { "type": "boolean", "default": false },
+        "swingLength": { "type": "number", "exclusiveMinimum": 0, "default": 90 },
+        "swingDamping": { "type": "number", "minimum": 0, "default": 5 },
+        "maxSwing": { "type": "number", "minimum": 0, "default": 0.7 }
       }
     },
     "export": {

@@ -328,6 +328,29 @@ def _fx_list(params: dict[str, Any]) -> list[dict[str, Any]]:
     return [entry for entry in fx if isinstance(entry, dict)]
 
 
+def _hotspot(params: dict[str, Any]) -> tuple[float, float] | None:
+    """Image hotspot as a Fusion Pivot (normalized, Y up).
+
+    Reads hotspotX/hotspotY (normalized from the top-left, like the preview).
+    None when absent, centred, or out of range: the Transform keeps its
+    default centre pivot.
+    """
+    hx = params.get("hotspotX", 0.5)
+    hy = params.get("hotspotY", 0.5)
+    if (
+        isinstance(hx, bool)
+        or not isinstance(hx, (int, float))
+        or isinstance(hy, bool)
+        or not isinstance(hy, (int, float))
+    ):
+        return None
+    if not (0 <= hx <= 1 and 0 <= hy <= 1):
+        return None
+    if hx == 0.5 and hy == 0.5:
+        return None
+    return (float(hx), 1.0 - float(hy))
+
+
 def _num(value: float) -> str:
     if isinstance(value, bool):
         raise TypeError("bool is not a number")
@@ -601,7 +624,8 @@ class _Graph:
         for prop, input_name, default, scale in (
             ("scaleX", "Width", float(params.get("scaleX", self.width)), self.width),
             ("scaleY", "Height", float(params.get("scaleY", self.height)), self.height),
-            ("rotation", "Angle", float(params.get("rotation", 0)), 1),
+            # Spec rotation is radians (the preview's unit); mask Angle is degrees.
+            ("rotation", "Angle", float(params.get("rotation", 0)), math.pi / 180),
         ):
             keys = self.curve(layer, prop)
             if keys is None:
@@ -1286,10 +1310,28 @@ class _Graph:
             if entry is not None:
                 entry["values"]["Center"] = [cx, cy]
         assert entry is not None or self.record is None
+        # Cursor tip pivot: image layers read hotspotX/hotspotY, so the tip
+        # lands on Center and the swing rotates about it. Every other layer
+        # type keeps the default centre pivot: its input is full-frame, where
+        # a pivot would shift the picture instead of the drawing.
+        if layer["type"] == "image":
+            hotspot = _hotspot(params)
+            if hotspot is not None:
+                px, py = hotspot
+                inputs.append(
+                    f"\t\t\t\tPivot = Input {{ Value = {{ {_num(px)}, {_num(py)}, }}, }},"
+                )
+                if entry is not None:
+                    entry["values"]["Pivot"] = [px, py]
         # Shape layers carry rotation and scaleX/scaleY on the mask node
         # itself (scalar splines, which survive import); Transform skips them.
         is_shape = layer["type"] == "shape"
         rot_keys = None if is_shape else self.curve(layer, "rotation")
+        if rot_keys is not None:
+            # Spec rotation is radians (the preview's unit); Fusion Angle is degrees.
+            rot_keys = [
+                {**k, "value": float(k["value"]) * 180.0 / math.pi} for k in rot_keys
+            ]
         if rot_keys is not None:
             blocks.append(_spline_block(f"{name}Angle", _spline_keys(rot_keys, self.fps)))
             inputs.append(
@@ -1301,11 +1343,10 @@ class _Graph:
             if entry is not None:
                 entry["splines"]["Angle"] = self._rec_keys(rot_keys)
         elif not is_shape and float(params.get("rotation", 0)) != 0:
-            inputs.append(
-                f"\t\t\t\tAngle = Input {{ Value = {_num(float(params['rotation']))}, }},"
-            )
+            static_deg = float(params["rotation"]) * 180.0 / math.pi
+            inputs.append(f"\t\t\t\tAngle = Input {{ Value = {_num(static_deg)}, }},")
             if entry is not None:
-                entry["values"]["Angle"] = float(params["rotation"])
+                entry["values"]["Angle"] = static_deg
         if is_shape:
             scale_keys = self.curve(layer, "scale")
             size_default = float(params.get("scale", 1))
@@ -1696,7 +1737,8 @@ def _control_inputs(
     if param == "rotation" and ctype == "number":
         if ltype == "shape":
             return None  # mask Angle is not a published control
-        return [(_tool_id("Xf", layer["id"]), "Angle", float(params.get("rotation", 0)))]
+        default_deg = float(params.get("rotation", 0)) * 180.0 / math.pi
+        return [(_tool_id("Xf", layer["id"]), "Angle", default_deg)]
     if param == "opacity" and ctype == "number":
         return [(_tool_id("Merge", layer["id"]), "Blend", float(params.get("opacity", 1)))]
     if param == "blur" and ctype == "number":

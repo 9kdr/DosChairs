@@ -5,7 +5,7 @@
  * physics model. The desktop bake and the spec preview share it.
  */
 import type { History } from "./types.js";
-import { simulateFollower } from "./physics.js";
+import { DEFAULT_MAX_SWING, DEFAULT_SWING_DAMPING, DEFAULT_SWING_LENGTH, simulateFollower } from "./physics.js";
 import type { Rig, RigFrame, RigPathKey } from "../types.js";
 
 export interface RigOptions {
@@ -31,17 +31,18 @@ function targetAt(path: RigPathKey[], t: number): { x: number; y: number } {
 }
 
 /**
- * Run the expressive-mouse rig: the follower chases the rough input path on a
- * spring (momentum + overshoot), with swing/tilt into velocity and
- * squash-and-stretch. Returns one frame per 1/fps, plus settle time.
+ * Run the expressive-mouse rig: the tip tracks the rough input path (tight by
+ * default, momentum + overshoot when asked), the body swings about the tip as
+ * a pendulum, with squash-and-stretch. Returns one frame per 1/fps, plus
+ * settle time.
  */
 export function simulateRig(rig: Rig, fps: number, opts: RigOptions = {}): RigFrame[] {
   const k = rig.stiffness ?? 90;
   const m = rig.mass ?? 1;
-  // Overshoot off is exactly critical damping: the fastest settle with no
-  // overshoot, whatever the damping slider says.
-  const c = rig.overshoot === false ? 2 * Math.sqrt(k * m) : (rig.damping ?? 12);
-  const tiltOn = rig.swing !== false || rig.tilt !== false;
+  // Overshoot off (the default) is exactly critical damping: the fastest
+  // settle with no overshoot, so the tip tracks the target closely.
+  const c = rig.overshoot === true ? (rig.damping ?? 12) : 2 * Math.sqrt(k * m);
+  const swingOn = rig.swing !== false || rig.tilt !== false;
   const squashOn = rig.squash !== false;
   const history: History = (name, t) => {
     const target = targetAt(rig.inputPath, t);
@@ -59,8 +60,9 @@ export function simulateRig(rig: Rig, fps: number, opts: RigOptions = {}): RigFr
       stiffness: k,
       damping: c,
       mass: m,
-      tiltGain: tiltOn ? 0.0011 : 0,
-      maxTilt: tiltOn ? 0.7 : 0,
+      swingLength: rig.swingLength ?? DEFAULT_SWING_LENGTH,
+      swingDamping: rig.swingDamping ?? DEFAULT_SWING_DAMPING,
+      maxSwing: swingOn ? (rig.maxSwing ?? DEFAULT_MAX_SWING) : 0,
       stretchGain: squashOn ? 0.00045 : 0,
       maxStretch: squashOn ? 0.45 : 0,
       squashKick: squashOn ? 0.0004 : 0,

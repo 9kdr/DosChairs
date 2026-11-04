@@ -14,6 +14,14 @@ import { num } from "./types.js";
 export const PHYSICS_DT = 1 / 240;
 /** Longest span simulated per call; later time holds the final state's inputs. */
 export const MAX_SIM_SEC = 120;
+/** Restoring pull of the swing pendulum in px/s^2. Fixed: the feel lives in swingLength. */
+export const PENDULUM_GRAVITY = 6000;
+/** Default pendulum length in px; shorter is snappier. */
+export const DEFAULT_SWING_LENGTH = 90;
+/** Default pendulum damping in 1/s. */
+export const DEFAULT_SWING_DAMPING = 5;
+/** Default swing clamp in radians. */
+export const DEFAULT_MAX_SWING = 0.7;
 
 export interface SpringOptions {
   stiffness?: number;
@@ -69,9 +77,12 @@ export function followProp(
 }
 
 export interface FollowerOptions extends SpringOptions {
-  /** Radians of tilt per px/s of horizontal velocity. */
-  tiltGain?: number;
-  maxTilt?: number;
+  /** Pendulum length in px; shorter is snappier. Default 90. */
+  swingLength?: number;
+  /** Pendulum damping in 1/s. Default 3. */
+  swingDamping?: number;
+  /** Max swing in radians; 0 switches the swing off. Default 0.7. */
+  maxSwing?: number;
   /** Stretch along motion per px/s of speed. */
   stretchGain?: number;
   maxStretch?: number;
@@ -84,7 +95,7 @@ export interface FollowerPose {
   y: number;
   vx: number;
   vy: number;
-  /** Radians, positive clockwise. Springy: swings past and settles. */
+  /** Radians, positive clockwise. Pendulum about the tip: swings opposite the tip's acceleration, then settles. */
   tilt: number;
   /** Scale along the motion direction (>1 stretched, <1 squashed). */
   scaleAlong: number;
@@ -96,8 +107,9 @@ export interface FollowerPose {
 
 /**
  * The expressive-mouse rig: a follower chasing the (x, y) target props on a
- * spring (overshoot), tilting into its velocity on a second spring (swing),
- * and squashing when it brakes. Everything integrates at PHYSICS_DT from 0..t.
+ * spring (overshoot), its body swinging about the tip as a damped pendulum
+ * driven by the tip's acceleration, and squashing when it brakes. Everything
+ * integrates at PHYSICS_DT from 0..t.
  */
 export function simulateFollower(
   history: History,
@@ -106,17 +118,43 @@ export function simulateFollower(
   t: number,
   opts: FollowerOptions = {},
 ): FollowerPose {
-  const { tiltGain = 0.0011, maxTilt = 0.7, stretchGain = 0.00045, maxStretch = 0.45, squashKick = 0.0004 } = opts;
+  const { stretchGain = 0.00045, maxStretch = 0.45, squashKick = 0.0004 } = opts;
+  const swingLength = Math.max(opts.swingLength ?? DEFAULT_SWING_LENGTH, 1e-6);
+  const swingDamping = Math.max(opts.swingDamping ?? DEFAULT_SWING_DAMPING, 0);
+  const maxSwing = Math.max(opts.maxSwing ?? DEFAULT_MAX_SWING, 0);
   const sx: SpringState = { x: num(history, xName, 0), v: 0 };
   const sy: SpringState = { x: num(history, yName, 0), v: 0 };
-  const tilt: SpringState = { x: 0, v: 0 };
   const squash: SpringState = { x: 0, v: 0 };
+  let tilt = 0;
+  let tiltVel = 0;
+  let prevVx = 0;
+  let prevVy = 0;
   let prevSpeed = 0;
   let heading = 0;
   runFixed(t, (tau, dt) => {
     springStep(sx, num(history, xName, tau + dt), dt, opts);
     springStep(sy, num(history, yName, tau + dt), dt, opts);
-    springStep(tilt, clamp(sx.v * tiltGain, -maxTilt, maxTilt), dt, { stiffness: 140, damping: 9 });
+    // Pendulum about the tip: gravity restores, the tip's acceleration pumps.
+    // theta is clockwise-positive on a y-down canvas, so the coupling keeps
+    // its plus sign (virtual work: Q = mL(ax cos + ay sin)): accelerating
+    // right tips the body to the left, braking swings it forward.
+    const ax = (sx.v - prevVx) / dt;
+    const ay = (sy.v - prevVy) / dt;
+    prevVx = sx.v;
+    prevVy = sy.v;
+    const alpha =
+      (-(PENDULUM_GRAVITY / swingLength) * Math.sin(tilt) +
+        (ax * Math.cos(tilt) + ay * Math.sin(tilt)) / swingLength -
+        swingDamping * tiltVel);
+    tiltVel += alpha * dt;
+    tilt += tiltVel * dt;
+    if (tilt > maxSwing) {
+      tilt = maxSwing;
+      if (tiltVel > 0) tiltVel = 0;
+    } else if (tilt < -maxSwing) {
+      tilt = -maxSwing;
+      if (tiltVel < 0) tiltVel = 0;
+    }
     const speed = Math.hypot(sx.v, sy.v);
     if (speed > 30) heading = Math.atan2(sy.v, sx.v);
     // Braking kicks the squash spring; it then rings and settles.
@@ -131,7 +169,7 @@ export function simulateFollower(
     y: sy.x,
     vx: sx.v,
     vy: sy.v,
-    tilt: tilt.x,
+    tilt,
     scaleAlong: 1 + s,
     scaleAcross: 1 / (1 + s),
     heading,

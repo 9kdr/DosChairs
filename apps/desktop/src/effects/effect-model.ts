@@ -24,13 +24,16 @@ export const RIG_SLIDERS = [
   { key: "stiffness", label: "Stiffness", min: 10, max: 400, step: 1, fallback: 90 },
   { key: "damping", label: "Damping", min: 1, max: 60, step: 0.5, fallback: 12 },
   { key: "mass", label: "Mass", min: 0.2, max: 4, step: 0.1, fallback: 1 },
+  { key: "swingLength", label: "Swing length", min: 20, max: 400, step: 1, fallback: 90 },
+  { key: "swingDamping", label: "Swing damping", min: 0, max: 12, step: 0.1, fallback: 5 },
+  { key: "maxSwing", label: "Max swing", min: 0, max: 1.5, step: 0.05, fallback: 0.7 },
 ] as const;
 
 export const RIG_TOGGLES = [
   { key: "swing", label: "Swing" },
   { key: "tilt", label: "Tilt" },
   { key: "squash", label: "Squash" },
-  { key: "overshoot", label: "Overshoot" },
+  { key: "overshoot", label: "Overshoot", defaultOn: false },
 ] as const;
 
 export type RigSliderKey = (typeof RIG_SLIDERS)[number]["key"];

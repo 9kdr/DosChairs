@@ -54,3 +54,50 @@ describe("rig sim", () => {
     expect(peak(over)).toBeGreaterThanOrEqual(peak(flat));
   });
 });
+
+/** Dash right, then hold: the pendulum's swing, forward kick, and settle. */
+const dash: Rig = {
+  inputPath: [
+    { time: 0, x: 200, y: 540 },
+    { time: 0.6, x: 1600, y: 540 },
+    { time: 1.6, x: 1600, y: 540 },
+  ],
+};
+
+describe("pendulum swing", () => {
+  it("swings opposite to acceleration: left while dashing right", () => {
+    const frames = simulateRig(dash, 30);
+    const early = frames.filter((f) => f.time > 0 && f.time <= 0.3);
+    expect(Math.max(...early.map((f) => f.rotation))).toBeGreaterThan(0.2);
+  });
+
+  it("swings forward when the tip stops, then settles to rest", () => {
+    const frames = simulateRig(dash, 30);
+    const braking = frames.filter((f) => f.time >= 0.6 && f.time <= 1.2);
+    expect(Math.min(...braking.map((f) => f.rotation))).toBeLessThan(-0.1);
+    const last = frames[frames.length - 1]!;
+    expect(Math.abs(last.rotation)).toBeLessThan(0.05);
+  });
+
+  it("lands the tip on the target", () => {
+    const frames = simulateRig(dash, 30);
+    const last = frames[frames.length - 1]!;
+    expect(Math.hypot(last.x - 1600, last.y - 540)).toBeLessThan(5);
+  });
+
+  it("stays flat when swing and tilt are both off", () => {
+    const frames = simulateRig({ ...dash, swing: false, tilt: false }, 30);
+    expect(frames.every((f) => f.rotation === 0)).toBe(true);
+  });
+
+  it("clamps the swing to maxSwing", () => {
+    const frames = simulateRig({ ...dash, maxSwing: 0.2 }, 30);
+    expect(Math.max(...frames.map((f) => Math.abs(f.rotation)))).toBeLessThanOrEqual(0.200001);
+  });
+
+  it("tracks the target closely by default, overshoot only when asked", () => {
+    const peak = (frames: { x: number }[]) => Math.max(...frames.map((f) => f.x));
+    expect(peak(simulateRig(dash, 30))).toBeLessThanOrEqual(peak(simulateRig({ ...dash, overshoot: true }, 30)));
+    expect(simulateRig(dash, 30)).toEqual(simulateRig({ ...dash, overshoot: false }, 30));
+  });
+});
