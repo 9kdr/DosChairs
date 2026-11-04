@@ -4,7 +4,7 @@
  * every call is a synchronous function of the inputs, so the same
  * (layers, t) always records the same ops.
  */
-import { parseColor } from "./renderer.js";
+import { hotspotOf, parseColor } from "./renderer.js";
 import type { ResolvedLayer } from "./curves.js";
 import type { RigFrame } from "./types.js";
 
@@ -87,9 +87,12 @@ function drawImage(
   const iw = num(img.naturalWidth ?? img.width, 0);
   const ih = num(img.naturalHeight ?? img.height, 0);
   if (!iw || !ih) return;
+  const spot = hotspotOf(r);
+  const w = num(r["scaleX"], iw);
+  const h = num(r["scaleY"], ih);
   ctx.save();
   ctx.globalAlpha = num(r["opacity"], 1);
-  ctx.drawImage(img, -num(r["scaleX"], iw) / 2, -num(r["scaleY"], ih) / 2, num(r["scaleX"], iw), num(r["scaleY"], ih));
+  ctx.drawImage(img, -spot.hx * w, -spot.hy * h, w, h);
   ctx.restore();
 }
 

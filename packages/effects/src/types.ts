@@ -67,6 +67,12 @@ export interface Rig {
   tilt?: boolean;
   squash?: boolean;
   overshoot?: boolean;
+  /** Pendulum length in px; lower is snappier. Default 90. */
+  swingLength?: number;
+  /** Pendulum damping in 1/s. Default 5. */
+  swingDamping?: number;
+  /** Max swing in radians. Default 0.7. */
+  maxSwing?: number;
 }
 
 export type ExportTarget = "fusion-macro" | "fusion-fuse" | "rendered-clip" | "ograf";

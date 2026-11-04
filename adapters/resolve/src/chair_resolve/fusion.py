@@ -328,6 +328,29 @@ def _fx_list(params: dict[str, Any]) -> list[dict[str, Any]]:
     return [entry for entry in fx if isinstance(entry, dict)]
 
 
+def _hotspot(params: dict[str, Any]) -> tuple[float, float] | None:
+    """Image hotspot as a Fusion Pivot (normalized, Y up).
+
+    Reads hotspotX/hotspotY (normalized from the top-left, like the preview).
+    None when absent, centred, or out of range: the Transform keeps its
+    default centre pivot.
+    """
+    hx = params.get("hotspotX", 0.5)
+    hy = params.get("hotspotY", 0.5)
+    if (
+        isinstance(hx, bool)
+        or not isinstance(hx, (int, float))
+        or isinstance(hy, bool)
+        or not isinstance(hy, (int, float))
+    ):
+        return None
+    if not (0 <= hx <= 1 and 0 <= hy <= 1):
+        return None
+    if hx == 0.5 and hy == 0.5:
+        return None
+    return (float(hx), 1.0 - float(hy))
+
+
 def _num(value: float) -> str:
     if isinstance(value, bool):
         raise TypeError("bool is not a number")
@@ -1286,6 +1309,19 @@ class _Graph:
             if entry is not None:
                 entry["values"]["Center"] = [cx, cy]
         assert entry is not None or self.record is None
+        # Cursor tip pivot: image layers read hotspotX/hotspotY, so the tip
+        # lands on Center and the swing rotates about it. Every other layer
+        # type keeps the default centre pivot: its input is full-frame, where
+        # a pivot would shift the picture instead of the drawing.
+        if layer["type"] == "image":
+            hotspot = _hotspot(params)
+            if hotspot is not None:
+                px, py = hotspot
+                inputs.append(
+                    f"\t\t\t\tPivot = Input {{ Value = {{ {_num(px)}, {_num(py)}, }}, }},"
+                )
+                if entry is not None:
+                    entry["values"]["Pivot"] = [px, py]
         # Shape layers carry rotation and scaleX/scaleY on the mask node
         # itself (scalar splines, which survive import); Transform skips them.
         is_shape = layer["type"] == "shape"

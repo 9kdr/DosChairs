@@ -10,6 +10,7 @@ from chair_resolve.fusion import (
     rig_frames_to_baked,
     spec_to_comp,
     spec_to_macro,
+    spec_to_plan,
 )
 from chair_resolve.manifest import MANIFEST
 from chair_resolve.write import add_effect, load_effect_spec, remove_effect
@@ -558,3 +559,37 @@ def test_shader_spec_skips_with_rendered_clip_fallback(tmp_path: Path) -> None:
     assert summary["fusion"] == 0
     assert summary["skipped"] == 1
     assert item2.imported == []
+
+
+def test_image_hotspot_becomes_transform_pivot() -> None:
+    spec = _spec()
+    spec["layers"].append(
+        {
+            "id": "cursor",
+            "type": "image",
+            "params": {
+                "src": "/media/cursor.png",
+                "x": 960,
+                "y": 540,
+                "hotspotX": 0.14,
+                "hotspotY": 0.08,
+            },
+        }
+    )
+    text = spec_to_comp(spec)["text"]
+    assert "Pivot = Input { Value = { 0.14, 0.92, }, }," in text
+    plan = spec_to_plan(spec)
+    xf = next(tool for tool in plan["tools"] if tool["name"] == "Xf_cursor")
+    assert xf["values"]["Pivot"] == [0.14, 0.92]
+
+
+def test_image_without_hotspot_keeps_centre_pivot() -> None:
+    spec = _spec()
+    spec["layers"].append(
+        {
+            "id": "logo",
+            "type": "image",
+            "params": {"src": "/media/logo.png", "x": 100, "y": 100},
+        }
+    )
+    assert "Pivot" not in spec_to_comp(spec)["text"]

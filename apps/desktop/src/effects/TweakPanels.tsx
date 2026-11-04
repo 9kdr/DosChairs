@@ -210,7 +210,7 @@ export function RigPanel({
                   {toggle.label}
                   <Switch
                     aria-label={toggle.label}
-                    checked={rig[toggle.key] !== false}
+                    checked={rig[toggle.key] ?? ("defaultOn" in toggle ? toggle.defaultOn : true)}
                     onCheckedChange={(checked) => onChange({ [toggle.key]: checked })}
                   />
                 </label>

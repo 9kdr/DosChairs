@@ -3,7 +3,7 @@
 // uses) over the demo's swing-in target path with the generated prop
 // values, and print the follower poses. Reads one JSON file, prints poses.
 // Run: node --import ./ts-register.mjs ./sim-rig.ts values.json
-import { simulateFollower } from "../../packages/effects/src/kit/physics.js";
+import { DEFAULT_SWING_LENGTH, simulateFollower } from "../../packages/effects/src/kit/physics.js";
 import { readFileSync } from "node:fs";
 
 type PathKey = { time: number; x: number; y: number };
@@ -57,7 +57,7 @@ function history(name: string, t: number): number | string | boolean | undefined
 }
 
 // Same mapping as the expressive-mouse reference module: overshoot off is
-// exactly critical damping; swing scales the tilt gains.
+// exactly critical damping; swing scales the pendulum's length and max swing.
 const damping =
   values.overshoot === false
     ? 2 * Math.sqrt(values.stiffness * Math.max(values.mass, 1e-6))
@@ -66,8 +66,8 @@ const opts = {
   stiffness: values.stiffness,
   damping,
   mass: values.mass,
-  tiltGain: 0.0011 * values.swing,
-  maxTilt: 0.7 * Math.max(values.swing, 0.01),
+  swingLength: DEFAULT_SWING_LENGTH / Math.min(Math.max(values.swing, 0.01), 2),
+  maxSwing: 0.7 * Math.max(values.swing, 0),
   stretchGain: 0.00045 * values.squash,
   maxStretch: 0.45 * Math.max(values.squash, 0.01),
 };

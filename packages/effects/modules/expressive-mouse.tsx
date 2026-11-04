@@ -3,13 +3,14 @@
  *
  * Keyframe the invisible target (Target X / Target Y) in the Inspector the way
  * you would a rough mouse path. The cursor you see never follows it rigidly:
- * it chases the target on a spring (overshoot), swings and tilts into its own
- * velocity, and squashes when it brakes. Springs, swing, and squash are
- * re-simulated from 0..t at a fixed 240 Hz step from history(), so scrubbing
- * to any frame in any order paints the same frame.
+ * its tip chases the target on a spring (overshoot), its body swings about
+ * the tip as a pendulum driven by the tip's acceleration, and it squashes
+ * when it brakes. Springs, swing, and squash are re-simulated from 0..t at a
+ * fixed 240 Hz step from history(), so scrubbing to any frame in any order
+ * paints the same frame.
  */
 import React from "react";
-import { hexToRgba, num, simulateFollower } from "@chair/effects";
+import { DEFAULT_SWING_LENGTH, hexToRgba, num, simulateFollower } from "@chair/effects";
 import type { EffectProps, PropSpec } from "@chair/effects";
 
 export const meta = {
@@ -73,8 +74,9 @@ export default function ExpressiveMouse(p: Props): React.ReactElement {
     stiffness,
     damping,
     mass,
-    tiltGain: 0.0011 * swing,
-    maxTilt: 0.7 * Math.max(swing, 0.01),
+    // Swing 1 is the default pendulum; 0 freezes it flat, 2 doubles the snap.
+    swingLength: DEFAULT_SWING_LENGTH / Math.min(Math.max(swing, 0.01), 2),
+    maxSwing: 0.7 * Math.max(swing, 0),
     stretchGain: 0.00045 * squash,
     maxStretch: 0.45 * Math.max(squash, 0.01),
   });
