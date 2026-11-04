@@ -1,4 +1,4 @@
-"""Effect modules: Muse Wonder writes one TSX file, Chair bundles it for Resolve.
+"""Effect modules: Muse Spark writes one TSX file, Chair bundles it for Resolve.
 
 An effect module is a single TSX file (``meta``, ``props``, a default React
 component that is a pure function of props and ``t``). The agent asks Muse
@@ -30,7 +30,8 @@ from pydantic import BaseModel, ConfigDict
 
 from chair_agent.client import Message, ModelClient
 
-DEFAULT_MODULE_MODEL = "muse-wonder-1.0"
+DEFAULT_MODULE_MODEL = "muse-spark-1.3-contributor"
+WONDER_MODULE_MODEL = "muse-wonder-1.0"
 MODEL_ENV = "CHAIR_MODULE_MODEL"
 OGRAF_DIR_ENV = "CHAIR_OGRAF_DIR"
 _CLI_TIMEOUT_SECONDS = 90
@@ -346,12 +347,22 @@ def build_generate_messages(
 ) -> list[Message]:
     if not brief.strip():
         raise InvalidModule("generate needs a non-empty 'brief'")
+    try:
+        from chair_agent.skills import context_for
+
+        skills_block = context_for(brief)
+    except Exception:
+        skills_block = ""
     developer = [
         CONTRACT + catalogue_text(),
         "Two working reference modules to copy the shape from:\n" + _example_sources(),
         f"Canvas: {width}x{height}, {fps} fps, {duration_sec}s. Use exactly these numbers in meta."
         + (f" meta.kind must be '{kind}'." if kind else ""),
     ]
+    if skills_block:
+        developer.append(
+            "House skills and the closest library entries (follow them):\n" + skills_block
+        )
     blocks = _reference_blocks(references, piece_ids)
     if blocks:
         developer.append(
@@ -399,7 +410,7 @@ def module_model(env: Mapping[str, str] | None = None) -> str:
     return (source.get(MODEL_ENV) or "").strip() or DEFAULT_MODULE_MODEL
 
 
-def _model_client() -> ModelClient:
+def _model_client(model: str | None = None) -> ModelClient:
     import httpx
 
     from chair_agent.client import HttpxTransport, RoleModels, load_settings
@@ -411,7 +422,7 @@ def _model_client() -> ModelClient:
         )
     try:
         return ModelClient(
-            models=RoleModels(planner=None, executor=module_model(), verifier=None),
+            models=RoleModels(planner=None, executor=model or module_model(), verifier=None),
             transport=HttpxTransport(
                 settings.base_url, client=httpx.Client(timeout=_MODEL_TIMEOUT_SECONDS)
             ),
@@ -524,11 +535,12 @@ def generate_module(
     piece_ids: Sequence[str] | None = None,
     client: ModelClient | None = None,
     env: Mapping[str, str] | None = None,
+    model: str | None = None,
 ) -> ModuleRecord:
-    """Draft with Muse Wonder, check, repair once on any failure, then store."""
+    """Draft with Muse Spark (or `model=` for Wonder), check, repair once, then store."""
     if width <= 0 or height <= 0 or fps <= 0 or duration_sec <= 0:
         raise InvalidModule("canvas width, height, fps, and durationSec must be positive")
-    active = client if client is not None else _model_client()
+    active = client if client is not None else _model_client(model)
     model = getattr(getattr(active, "models", None), "executor", None) or module_model(env)
     messages = build_generate_messages(
         brief, kind=kind, width=width, height=height, fps=fps,

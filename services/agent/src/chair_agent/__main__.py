@@ -558,6 +558,9 @@ def _modules_generate_body(body: dict[str, Any]) -> dict[str, Any]:
         raise ValueError(f"bad generate body: {error}") from error
     references = body.get("references")
     pieces = body.get("pieces")
+    mode = body.get("mode", "spark")
+    if mode not in ("spark", "wonder"):
+        raise ValueError("mode must be 'spark' or 'wonder'")
     record = modules.generate_module(
         str(body.get("brief", "")),
         kind=body.get("kind") if isinstance(body.get("kind"), str) else None,
@@ -567,6 +570,7 @@ def _modules_generate_body(body: dict[str, Any]) -> dict[str, Any]:
         duration_sec=duration_sec,
         references=references if isinstance(references, list) else None,
         piece_ids=[str(p) for p in pieces] if isinstance(pieces, list) else None,
+        model=modules.WONDER_MODULE_MODEL if mode == "wonder" else None,
     )
     return _module_summary(record)
 

@@ -194,10 +194,34 @@ def test_install_needs_a_bundle(isolated) -> None:
 
 
 def test_module_model_is_overridable_by_env() -> None:
-    assert modules.module_model({}) == "muse-wonder-1.0"
-    assert modules.module_model({"CHAIR_MODULE_MODEL": "muse-spark-1.3-contributor"}) == (
-        "muse-spark-1.3-contributor"
+    assert modules.module_model({}) == "muse-spark-1.3-contributor"
+    assert modules.module_model({"CHAIR_MODULE_MODEL": "muse-wonder-1.0"}) == (
+        "muse-wonder-1.0"
     )
+
+
+def test_wonder_model_is_selected_by_mode(isolated, monkeypatch) -> None:
+    seen: dict = {}
+
+    def fake_client(model=None):
+        seen["model"] = model
+        return FakeClient([fenced(GOOD)])
+
+    monkeypatch.setattr(modules, "_model_client", fake_client)
+    record = modules.generate_module("fade", model=modules.WONDER_MODULE_MODEL)
+    assert seen["model"] == modules.WONDER_MODULE_MODEL == "muse-wonder-1.0"
+    assert record.model == "muse-wonder-1.0"
+    defaulted = modules.generate_module("fade", model=None)
+    assert seen["model"] is None
+    assert defaulted.model == "muse-wonder-1.0"  # the FakeClient's executor, not the default
+
+
+def test_generate_prompt_carries_skills_and_library() -> None:
+    messages = modules.build_generate_messages("smoothly merging liquid boxes")
+    developer = "\n\n".join(m.content for m in messages if m.role == "developer")
+    assert "House skills" in developer
+    assert "liquid-boxes" in developer
+    assert len(developer) <= 30000  # catalogue + references + capped skills block
 
 
 def test_status_codes() -> None:
@@ -210,7 +234,7 @@ def test_status_codes() -> None:
 @needs_toolchain
 def test_http_generate_bundle_preview_install_and_health(isolated, monkeypatch) -> None:
     client = FakeClient([fenced(GOOD)])
-    monkeypatch.setattr(modules, "_model_client", lambda: client)
+    monkeypatch.setattr(modules, "_model_client", lambda model=None: client)
     server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
     port = server.server_address[1]
     threading.Thread(target=server.serve_forever, daemon=True).start()
@@ -244,7 +268,7 @@ def test_http_generate_bundle_preview_install_and_health(isolated, monkeypatch) 
             health = json.load(response)
         block = health["modules"]
         assert block["generated"] == 1 and block["bundled"] == 1 and block["installed"] == 1
-        assert block["determinism_passes"] >= 1 and block["model"] == "muse-wonder-1.0"
+        assert block["determinism_passes"] >= 1 and block["model"] == "muse-spark-1.3-contributor"
         with pytest.raises(HTTPError) as missing:
             urlopen(f"{base}/effects/modules/fxm-ffffffffffff/preview")
         assert missing.value.code == 404
