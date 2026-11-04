@@ -28,7 +28,7 @@ export const meta = {
 
 export const props = {
   spread: { type: "number", min: 0, max: 600, default: 220, title: "Orbit Spread" },
-  speed: { type: "number", min: 0, max: 2, default: 0.6, title: "Orbit Speed" },
+  speed: { type: "number", min: 0, max: 2, default: 1.2, title: "Orbit Speed" },
   merge: { type: "number", min: 0, max: 1, default: 0.55, title: "Merge" },
   size: { type: "number", min: 40, max: 300, default: 150, title: "Box Size" },
   grain: { type: "number", min: 0, max: 1, default: 0.35, title: "Grain" },
@@ -80,7 +80,7 @@ void main() {
     sdRoundBox(px - u_c2, vec2(u_size), u_size * 0.35),
     u_merge * 0.55 + 0.02);
   float edge = smoothstep(0.012 + wob * 0.2, -0.012 + wob * 0.2, d);
-  float glow = exp(-max(d, 0.0) * 18.0) * step(0.0, d);
+  float glow = exp(-max(d, 0.0) * 20.0) * step(0.0, d);
   // Ink cores with subtle grain, clean accent halo, and exactly zero
   // (no unmultiplied leak) everywhere else.
   float halo = glow * 0.85 * (1.0 - edge);
@@ -92,7 +92,8 @@ void main() {
 const delayFor = stagger(0.9, { from: "center" });
 
 function centers(t: number, spread: number, speed: number): [{ x: number; y: number }, { x: number; y: number }] {
-  const a = t * speed;
+  // Phased so the first merge lands just after t=2.
+  const a = t * speed + 0.96;
   const d0 = Number(delayFor(0, 2)) || 0;
   const d1 = Number(delayFor(1, 2)) || 0;
   return [
@@ -106,7 +107,7 @@ export default function LiquidBoxes(p: Props): React.ReactElement {
   const n = (name: string, fallback: number) => num(history, name, t, fallback);
   const c = (name: string, fallback: string) => String(history(name, t) ?? fallback);
   const spreadPx = n("spread", 220) / Math.min(width, height);
-  const [c1, c2] = centers(t, spreadPx, n("speed", 0.6));
+  const [c1, c2] = centers(t, spreadPx, n("speed", 1.2));
   const size = n("size", 150) / Math.min(width, height) / 2;
   const merge = clamp(n("merge", 0.55), 0, 1);
   const grain = clamp(n("grain", 0.35), 0, 1);

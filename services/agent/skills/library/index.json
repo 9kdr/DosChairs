@@ -20,11 +20,10 @@
         "metaballs",
         "sdf",
         "ogl",
-        "paper",
         "motion",
         "generator"
       ],
-      "summary": "Two boxes orbit, touch, and merge through a smooth-min SDF rendered by OGL, with a Paper grain-gradient on top; per-box phase from Motion stagger.",
+      "summary": "Two boxes orbit, meet, and merge through a smooth-min SDF in one OGL canvas, with a clean accent halo and subtle grain inside the cores; per-box phase from Motion stagger.",
       "props": [
         {
           "id": "spread",

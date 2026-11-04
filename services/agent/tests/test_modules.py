@@ -126,7 +126,13 @@ def test_generate_checks_and_stores(isolated) -> None:
     record = modules.generate_module("fade a label in", client=client)
     assert record.id.startswith("fxm-")
     assert record.meta and record.meta["id"] == "fade-label"
-    assert [p["id"] for p in record.props] == ["size", "tint", "label", "transparentBg", "backgroundColor"]
+    assert [p["id"] for p in record.props] == [
+        "size",
+        "tint",
+        "label",
+        "transparentBg",
+        "backgroundColor",
+    ]
     assert record.checks["deterministic"] is True
     assert record.repaired is False and client.calls == 1
     snap = modules.status_snapshot()
