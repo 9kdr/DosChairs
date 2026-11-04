@@ -300,14 +300,24 @@ def install_title_template(
 
 
 def rig_frames_to_baked(frames: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
-    """Map rig sim frames ({time,x,y,rotation,scaleX,scaleY}) to baked keys."""
-    baked: dict[str, list[dict[str, Any]]] = {"x": [], "y": [], "rotation": [], "scale": []}
+    """Map rig sim frames ({time,x,y,rotation,scaleX,scaleY}) to baked keys.
+
+    scaleX and scaleY stay separate so the squash survives the bounce.
+    """
+    baked: dict[str, list[dict[str, Any]]] = {
+        "x": [],
+        "y": [],
+        "rotation": [],
+        "scale": [],
+        "scaley": [],
+    }
     for frame in frames:
         t = float(frame["time"])
         baked["x"].append({"time": t, "value": float(frame["x"])})
         baked["y"].append({"time": t, "value": float(frame["y"])})
         baked["rotation"].append({"time": t, "value": float(frame.get("rotation", 0))})
         baked["scale"].append({"time": t, "value": float(frame.get("scaleX", 1))})
+        baked["scaley"].append({"time": t, "value": float(frame.get("scaleY", 1))})
     return baked
 
 
@@ -1302,7 +1312,19 @@ class _Graph:
         else:
             scale_keys = self.curve(layer, "scale") or self.curve(layer, "scaleX")
             size_default = float(params.get("scale", params.get("scaleX", 1)))
-        if scale_keys is not None:
+        # Squash: a scaley curve (or a scaleY multiplier param on non-shape
+        # layers, whose scaleY is not a mask pixel size) splits the uniform
+        # Size into the Transform's XSize/YSize pair.
+        scaley_keys = self.curve(layer, "scaley")
+        use_pair = scaley_keys is not None or ("scaleY" in params and not is_shape)
+        if use_pair:
+            size_y_default = float(params.get("scaleY", params.get("scale", 1)))
+            inputs.append("\t\t\t\tUseSizeAndAspect = Input { Value = 0, },")
+            if entry is not None:
+                entry["values"]["UseSizeAndAspect"] = 0
+            self._axis_size(blocks, inputs, entry, name, "XSize", scale_keys, size_default)
+            self._axis_size(blocks, inputs, entry, name, "YSize", scaley_keys, size_y_default)
+        elif scale_keys is not None:
             blocks.append(_spline_block(f"{name}Size", _spline_keys(scale_keys, self.fps)))
             inputs.append(
                 f"\t\t\t\tSize = Input {{\n"
@@ -1331,6 +1353,34 @@ class _Graph:
             f"\t\t}},"
         )
         return name
+
+    def _axis_size(
+        self,
+        blocks: list[str],
+        inputs: list[str],
+        entry: dict[str, Any] | None,
+        name: str,
+        input_name: str,
+        keys: list[dict[str, Any]] | None,
+        static: float,
+    ) -> None:
+        """One XSize/YSize input: a spline when animated, else an explicit value."""
+        if keys is not None:
+            blocks.append(_spline_block(f"{name}{input_name}", _spline_keys(keys, self.fps)))
+            inputs.append(
+                f"\t\t\t\t{input_name} = Input {{\n"
+                f'\t\t\t\t\tSourceOp = "{name}{input_name}",\n'
+                f'\t\t\t\t\tSource = "Value",\n'
+                f"\t\t\t\t}},"
+            )
+            if entry is not None:
+                entry["splines"][input_name] = self._rec_keys(keys)
+        else:
+            inputs.append(
+                f"\t\t\t\t{input_name} = Input {{ Value = {_num(static)}, }},"
+            )
+            if entry is not None:
+                entry["values"][input_name] = static
 
     def _merge_block(self, layer: dict[str, Any], merge: str, head: str, background: str) -> str:
         """A Merge compositing head over background."""

@@ -146,6 +146,47 @@ def test_baked_rig_output_overrides_curves() -> None:
     assert [frame for frame, _ in _key_frames(text, "Xf_ballXYY")] == [0, 15]
 
 
+def test_rig_bake_keeps_scaley() -> None:
+    """Sweep #8: the squash survives the bounce."""
+    baked = rig_frames_to_baked([
+        {"time": 0.0, "x": 0, "y": 0, "scaleX": 1.0, "scaleY": 1.0},
+        {"time": 0.5, "x": 0, "y": 0, "scaleX": 1.1, "scaleY": 0.9},
+    ])
+    assert [k["value"] for k in baked["scale"]] == [1.0, 1.1]
+    assert [k["value"] for k in baked["scaley"]] == [1.0, 0.9]
+
+
+def test_baked_scaley_splits_transform_size() -> None:
+    spec = _spec()
+    frames = [
+        {"time": 0.0, "x": 10, "y": 20, "rotation": 0, "scaleX": 1, "scaleY": 1},
+        {"time": 0.5, "x": 30, "y": 40, "rotation": 5, "scaleX": 1.2, "scaleY": 0.8},
+    ]
+    baked = {"ball": rig_frames_to_baked(frames)}
+    text = spec_to_comp(spec, baked=baked)["text"]
+    assert "UseSizeAndAspect = Input { Value = 0, }" in text
+    assert [frame for frame, _ in _key_frames(text, "Xf_ballXSize")] == [0, 15]
+    assert [frame for frame, _ in _key_frames(text, "Xf_ballYSize")] == [0, 15]
+    assert "Xf_ballSize = BezierSpline" not in text
+
+
+def test_scale_stays_uniform_without_scaley() -> None:
+    """No scaley signal, no pair: pixel scaleY params stay on the mask."""
+    text = spec_to_comp(_spec())["text"]
+    assert "XSize" not in text
+    assert "UseSizeAndAspect" not in text
+
+
+def test_static_scaley_param_splits_size() -> None:
+    spec = _spec()
+    title = next(layer for layer in spec["layers"] if layer["id"] == "title")
+    title["params"]["scaleY"] = 1.2
+    text = spec_to_comp(spec)["text"]
+    assert "UseSizeAndAspect = Input { Value = 0, }" in text
+    assert "XSize = Input { Value = 1, }" in text
+    assert "YSize = Input { Value = 1.2, }" in text
+
+
 def test_macro_publishes_controls_and_installs_template(tmp_path: Path) -> None:
     rendered = spec_to_macro(_spec())
     assert "MacroOperator" in rendered["text"]

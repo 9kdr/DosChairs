@@ -39,6 +39,7 @@ The builder names nodes `{Prefix}_{layerid}` (`Bg_ball`, `Xf_title`).
   converts to frames and 0..1 Fusion values.
 - `easing: linear` (default) or `hold`; handles are `[dtSec, dv]`.
 - Animate position with `x`/`y` curves (never a raw point track).
-- A rig hands `baked` keys (`x`, `y`, `rotation`, `scale`); dense baked
-  keys ride as Bezier splines, no resampling needed.
+- A rig hands `baked` keys (`x`, `y`, `rotation`, `scale`, `scaley`);
+  dense baked keys ride as Bezier splines, no resampling needed. `scaley`
+  keeps the squash: without it the bounce lands puffed, not squashed.
 - Dither `levels` keys must stay >= 2.

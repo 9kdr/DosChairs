@@ -213,6 +213,23 @@ def test_build_sets_values_connections_and_positions() -> None:
     assert op["keyframes"]["Xf_ballXYX"] == 2
 
 
+def test_build_writes_squash_pair() -> None:
+    """Sweep #8: scaley rides the Transform's YSize, X stays put."""
+    spec = _spec()
+    title = next(layer for layer in spec["layers"] if layer["id"] == "title")
+    title["curves"] = {"scaley": {"keyframes": [
+        {"time": 0, "value": 1},
+        {"time": 1, "value": 0.8},
+    ]}}
+    item = FakeItem()
+    op = build_comp(item, spec_to_plan(spec))
+    assert op["keyframes"]["Xf_titleYSize"] == 2
+    assert "Xf_titleSize" not in op["keyframes"]
+    xf = item.comps[op["comp_name"]].FindTool("Xf_title")
+    assert xf.values["UseSizeAndAspect"] == 0
+    assert xf.values["XSize"] == 1
+
+
 def test_build_absorbs_modifier_seed_key() -> None:
     """A curve starting after 0 still lands exactly: the seed is overwritten."""
     spec = _spec()
