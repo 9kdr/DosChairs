@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { EffectSpec } from "@chair/effects";
 import { applyChangesetItem, emptyTimeline, invertItem, type Timeline } from "@chair/timeline-ir";
 import { advanceMirror, tryHistoryEntry } from "../project/store";
-import { bakeRig, defaultControls, effectItem, exportInfo, rigOf, rigTargetId, stamp } from "./effect-model";
+import { bakedPayload, bakeRig, defaultControls, effectItem, exportInfo, rigOf, rigTargetId, stamp } from "./effect-model";
 import { sampleEffect } from "./effects-api";
 
 describe("sample effect", () => {
@@ -106,6 +106,45 @@ describe("apply pipeline", () => {
     const after = advanceMirror(base, [checked.entry]);
     expect(after.tracks[0]!.clips[0]!.effects?.[0]?.presetName).toBe("Bouncing title");
     expect(base.tracks[0]!.clips[0]!.effects).toBeUndefined();
+  });
+});
+
+describe("bakedPayload", () => {
+  it("sends the target layer's live curves as layer id to prop key lists", () => {
+    const spec = sampleEffect();
+    const bake = bakeRig(spec, rigOf(spec));
+    const payload = bakedPayload(bake.spec, rigTargetId(bake.spec));
+    expect(Object.keys(payload ?? {})).toEqual(["ball"]);
+    const props = payload!.ball!;
+    expect(Object.keys(props).sort()).toEqual(["rotation", "scaleX", "scaleY", "x", "y"]);
+    expect(props.x![0]).toMatchObject({ time: expect.any(Number), value: expect.any(Number) });
+    const sent = Object.values(props).reduce((sum, keys) => sum + keys.length, 0);
+    expect(sent).toBe(bake.keys);
+  });
+
+  it("is undefined when the target has no keys, so the call sends the spec alone", () => {
+    const spec = sampleEffect();
+    expect(bakedPayload(spec, null)).toBeUndefined();
+    expect(bakedPayload(spec, "no-such-layer")).toBeUndefined();
+    const flat: EffectSpec = {
+      ...spec,
+      layers: spec.layers.map((layer) => ({ ...layer, curves: undefined })),
+    };
+    expect(bakedPayload(flat, rigTargetId(flat))).toBeUndefined();
+  });
+});
+
+describe("effectItem resolve", () => {
+  it("carries the comp names as the undo back", () => {
+    const item = effectItem({
+      spec: sampleEffect(),
+      controls: {},
+      targetId: "clip-1",
+      bakedKeys: 9,
+      resolve: { compName: "Comp 2", prevCompName: "Comp 1" },
+      now: 4,
+    });
+    expect(item.patch).toMatchObject({ resolve: { compName: "Comp 2", prevCompName: "Comp 1" } });
   });
 });
 

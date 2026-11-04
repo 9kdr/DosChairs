@@ -1,4 +1,5 @@
 import type { ChangesetItem } from "@chair/timeline-ir";
+import type { PieceLanding } from "../effects/effect-model";
 import type { ClipChoice } from "../effects/EffectMaker";
 import { PiecesShelf } from "../effects/PiecesShelf";
 
@@ -9,6 +10,8 @@ export type CreationBoardProps = {
   onUndoEffect: (itemId: string) => void;
   onOpenHistory: () => void;
   refusal: string | null;
+  landings?: Record<string, PieceLanding>;
+  onRecordLanding?: (specId: string, landing: PieceLanding) => void;
 };
 
 /**
@@ -25,6 +28,8 @@ export function CreationBoard(props: CreationBoardProps) {
         onUndoPiece={props.onUndoEffect}
         onOpenHistory={props.onOpenHistory}
         refusal={props.refusal}
+        landings={props.landings}
+        onRecordLanding={props.onRecordLanding}
       />
     </div>
   );

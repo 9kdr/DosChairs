@@ -11,21 +11,30 @@ import {
   activityForLiveError,
   activityForLiveJob,
   activityForLivePending,
+  applyFinishedSound,
+  clearPollFailure,
+  hasSoundItems,
   headlineForSubmitError,
   initialTurnsFor,
   inputForTurn,
   isThreadDemo,
+  landedFor,
+  landedRowsFor,
   liveJobEntries,
   liveRowsForJobs,
   liveSubmitError,
   noteKey,
+  notePollFailure,
   noteTurnText,
   openingBrief,
   openingKey,
   openTurnScope,
+  POLL_FAIL_LIMIT,
   recordLiveJob,
+  redoLandedWrite,
   replyForSubmitError,
   resetLiveJobs,
+  retryLandedWrite,
   retryLiveTask,
   runTurn,
   selectionForNote,
@@ -33,6 +42,7 @@ import {
   submitLiveTurn,
   taskForLiveJob,
   textForJob,
+  undoLandedWrite,
   waitingRowsFor,
   withOpenTurnError,
 } from "./taskThread";
@@ -717,5 +727,133 @@ describe("stopLiveTask", () => {
     const { jobId: _jobId, jobStatus: _jobStatus, ...unsubmitted } = live;
     expect(await stopLiveTask(client, unsubmitted)).toBeNull();
     expect(cancelAgentJob).not.toHaveBeenCalled();
+  });
+});
+
+describe("poll failures", () => {
+  it("counts consecutive misses per job and clears on a good poll", () => {
+    expect(POLL_FAIL_LIMIT).toBe(3);
+    expect(notePollFailure("req-a", "down")).toBe(1);
+    expect(notePollFailure("req-a", "down")).toBe(2);
+    expect(notePollFailure("req-b", "down")).toBe(1);
+    clearPollFailure("req-a");
+    expect(notePollFailure("req-a", "down")).toBe(1);
+  });
+});
+
+describe("hasSoundItems", () => {
+  const done = (ops: Record<string, unknown>[]) =>
+    job("completed", { changeset: { status: "proposed", ops } });
+
+  it("sees ducking, audio tracks, and sound clips", () => {
+    expect(hasSoundItems(done([{ op: "set_gain", patch: { gainDb: -12 } }]))).toBe(true);
+    expect(
+      hasSoundItems(done([{ op: "add_track", patch: { track: { id: "audio-sfx-1", kind: "audio" } } }])),
+    ).toBe(true);
+    expect(
+      hasSoundItems(
+        done([{ op: "add_clip", targetId: "audio-sfx-1", patch: { clipId: "sfx-riser-1", kind: "riser" } }]),
+      ),
+    ).toBe(true);
+  });
+
+  it("ignores picture edits and effect ops", () => {
+    expect(hasSoundItems(done([{ op: "trim", patch: {} }]))).toBe(false);
+    expect(
+      hasSoundItems(done([{ op: "add_track", patch: { track: { id: "v2", kind: "video" } } }])),
+    ).toBe(false);
+    expect(
+      hasSoundItems(done([{ op: "add_clip", targetId: "v1", patch: { clipId: "clip-b" } }])),
+    ).toBe(false);
+    expect(hasSoundItems(done([{ op: "add_effect", patch: {} }]))).toBe(false);
+    expect(hasSoundItems(job("completed"))).toBe(false);
+  });
+});
+
+describe("finished sound writes", () => {
+  const soundJob = () =>
+    job("completed", {
+      request_id: "req_sound1",
+      changeset: { status: "proposed", ops: [{ op: "set_gain", patch: { gainDb: -12 } }] },
+    });
+  const appliedBody = {
+    timeline_name: "Demo Cut (sound copy)",
+    original_timeline: "Demo Cut",
+    tracks_added: 1,
+    clips_added: 2,
+    skipped: [{ intent: "sting", reason: "no sting in the library" }],
+    fallback: "set the Fairlight ducking by hand",
+  };
+  const reply =
+    (status: number, body: unknown): FetchFn =>
+    async () => ({ ok: status < 400, status, json: async () => body });
+
+  it("writes by job id and lands the card line with skipped reasons", async () => {
+    let seen: unknown = null;
+    const fetchFn: FetchFn = async (_url, init) => {
+      seen = JSON.parse(String(init?.body));
+      return { ok: true, status: 200, json: async () => appliedBody };
+    };
+    await applyFinishedSound({ requestId: "req_sound1", task, job: soundJob() }, { fetchFn });
+    expect(seen).toEqual({ jobId: "req_sound1" });
+    const landed = landedFor(task.id)!;
+    expect(landed.state).toBe("landed");
+    expect(landed.line).toBe("Added to Demo Cut (sound copy) · 1 skipped");
+    expect(landed.detail).toContain("Skipped sting: no sting in the library");
+    expect(landed.detail).toContain("Fallback: set the Fairlight ducking by hand");
+    expect(landedRowsFor([task])).toMatchObject([{ id: task.id, status: landed.line }]);
+  });
+
+  it("records a failed write the card can retry", async () => {
+    const fetchFn = reply(503, { error: "Resolve is not running" });
+    await applyFinishedSound({ requestId: "req_sound1", task, job: soundJob() }, { fetchFn });
+    expect(landedFor(task.id)).toMatchObject({ state: "failed", line: "Failed: Resolve is not running" });
+    expect(landedRowsFor([task])).toHaveLength(1);
+    retryLandedWrite(task.id, { fetchFn: reply(200, appliedBody) });
+    await vi.waitFor(() => expect(landedFor(task.id)?.state).toBe("landed"));
+  });
+
+  it("leaves non-sound jobs alone", async () => {
+    const fetchFn = vi.fn(reply(200, appliedBody));
+    const plain = job("completed", { changeset: { status: "proposed", ops: [{ op: "trim" }] } });
+    await applyFinishedSound({ requestId: "req_plain", task, job: plain }, { fetchFn });
+    expect(fetchFn).not.toHaveBeenCalled();
+    expect(landedFor(task.id)).toBeUndefined();
+    expect(landedRowsFor([task])).toEqual([]);
+  });
+
+  it("undoes back to the original and redoes as a new copy", async () => {
+    const calls: string[] = [];
+    const fetchFn: FetchFn = async (url, init) => {
+      calls.push(`${url} ${String(init?.body)}`);
+      if (url.endsWith("/sounds/revert")) {
+        return { ok: true, status: 200, json: async () => ({ timeline: "Demo Cut", project: "" }) };
+      }
+      return { ok: true, status: 200, json: async () => appliedBody };
+    };
+    await applyFinishedSound({ requestId: "req_sound1", task, job: soundJob() }, { fetchFn });
+    expect(await undoLandedWrite(task.id, { fetchFn })).toBe(true);
+    expect(landedFor(task.id)).toMatchObject({
+      state: "undone",
+      line: "Back on Demo Cut — copy kept",
+    });
+    expect(calls[1]).toContain("/sounds/revert");
+    expect(calls[1]).toContain('"originalTimeline":"Demo Cut"');
+    expect(await redoLandedWrite(task.id, { fetchFn })).toBe(true);
+    expect(landedFor(task.id)).toMatchObject({ state: "landed" });
+    expect(calls[2]).toContain("/sounds/apply");
+  });
+
+  it("keeps Undo available when the revert fails", async () => {
+    await applyFinishedSound(
+      { requestId: "req_sound1", task, job: soundJob() },
+      { fetchFn: reply(200, appliedBody) },
+    );
+    const ok = await undoLandedWrite(task.id, { fetchFn: reply(404, {}) });
+    expect(ok).toBe(false);
+    expect(landedFor(task.id)).toMatchObject({
+      state: "landed",
+      line: "Undo failed: Undo isn't available on this agent yet.",
+    });
   });
 });

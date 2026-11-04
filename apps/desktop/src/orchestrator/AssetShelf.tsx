@@ -910,6 +910,24 @@ export function AssetShelf({ className, projectId, frozen = false, transitionLoc
     >
       <div className="flex min-w-0 shrink-0 items-center gap-2">
         <h2 className="min-w-0 truncate text-sm font-medium text-neutral-100">Assets</h2>
+        {listing.stale ? (
+          <p
+            className="flex min-w-0 flex-1 items-center gap-1.5 truncate text-xs text-amber-200/80"
+            title={listing.stale}
+          >
+            <TriangleAlert className="size-3.5 shrink-0" aria-hidden="true" />
+            <span className="truncate">Stale — couldn&apos;t refresh</span>
+            <Button
+              type="button"
+              size="xs"
+              variant="ghost"
+              className="shrink-0"
+              onClick={() => listing.refresh()}
+            >
+              Refresh
+            </Button>
+          </p>
+        ) : null}
         <Button
           type="button"
           size="sm"

@@ -27,22 +27,42 @@ import { ServiceError } from "@/lib/services/client";
 import { cn } from "@/lib/utils";
 import {
   STARTER_PROMPTS,
+  bakedPayload,
   bakeRig,
   defaultControls,
   effectItem,
   exportInfo,
   rigOf,
+  rigTargetId,
   type ControlValue,
   type ControlValues,
+  type PieceLanding,
 } from "./effect-model";
 import { BriefField } from "./BriefField";
-import { generateEffect, sampleEffect, verifyEffect } from "./effects-api";
+import {
+  applyPiece,
+  generateEffect,
+  isClipGoneError,
+  isPieceFallback,
+  pieceUndoErrorMessage,
+  revertPiece,
+  sampleEffect,
+  verifyEffect,
+} from "./effects-api";
 import { fetchPieces } from "./pieces-api";
 import { PieceTray, ReferenceChips, referenceOf, type Reference } from "./ReferenceChips";
 import { PreviewStage, type PreviewHandle } from "./PreviewStage";
 import { CARD, ControlsPanel, PanelTitle, RigPanel } from "./TweakPanels";
 
-export type ClipChoice = { id: string; name: string; track: string };
+export type ClipChoice = {
+  id: string;
+  name: string;
+  track: string;
+  /** Position in Resolve: 1-based video track, 0-based clip. Absent on Home. */
+  trackIndex?: number;
+  clipIndex?: number;
+  trackType?: "video" | "audio";
+};
 
 type Round = {
   id: number;
@@ -77,11 +97,15 @@ async function readReference(file: File): Promise<string> {
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-/** Agent down or no usable model key: the sample keeps the screen usable. */
+/** Agent down, throttled, erroring, or no usable model key: the sample keeps the screen usable. */
 function agentMissing(error: unknown): boolean {
   return (
     error instanceof ServiceError &&
-    (error.status === undefined || error.status === 502 || error.status === 401 || error.status === 403)
+    (error.status === undefined ||
+      error.status === 401 ||
+      error.status === 403 ||
+      error.status === 429 ||
+      (error.status >= 500 && error.status <= 599))
   );
 }
 
@@ -95,9 +119,12 @@ function RoundIcon({ round }: { round: Round }) {
 
 /**
  * Piece Maker (the effect-kind piece editor): describe a look, watch Muse Spark
- * draft and check it, tweak it live, then apply it as an undoable
- * add_effect. The preview, controls and rig run in the browser; only
- * generate and verify call the agent.
+ * draft and check it, tweak it live, then apply it to Resolve as a new
+ * comp version, undoable back to the previous one. The history entry is
+ * recorded only after Resolve answers. An applied piece remembers its
+ * clip: re-prompts and tweaks re-apply to the same clip on their own.
+ * The preview, controls and rig run in the browser; generate, verify
+ * and apply call the agent.
  */
 export function EffectMaker({
   clips,
@@ -105,12 +132,16 @@ export function EffectMaker({
   onUndo,
   onOpenHistory,
   refusal,
+  landings,
+  onRecordLanding,
 }: {
   clips: ClipChoice[];
   onApply: (item: ChangesetItem) => string | null;
   onUndo: (itemId: string) => void;
   onOpenHistory: () => void;
   refusal: string | null;
+  landings?: Record<string, PieceLanding>;
+  onRecordLanding?: (specId: string, landing: PieceLanding) => void;
 }) {
   const [prompt, setPrompt] = useState("");
   const [reference, setReference] = useState<{ name: string; url: string } | null>(null);
@@ -124,12 +155,28 @@ export function EffectMaker({
   const [busy, setBusy] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   const [clipId, setClipId] = useState<string | null>(null);
-  const [applied, setApplied] = useState<{ itemId: string; clip: string } | null>(null);
+  const [applied, setApplied] = useState<{
+    itemId: string;
+    clip: string;
+    comp: string | null;
+    prevComp: string | null;
+    updated: boolean;
+  } | null>(null);
+  const [applyBusy, setApplyBusy] = useState(false);
+  const [applyError, setApplyError] = useState<string | null>(null);
+  const [applyFallback, setApplyFallback] = useState<string | null>(null);
+  const [staleClip, setStaleClip] = useState(false);
+  const [landing, setLanding] = useState<PieceLanding | null>(null);
+  const [autoSeq, setAutoSeq] = useState(0);
   const previewRef = useRef<PreviewHandle>(null);
   const abortRef = useRef<AbortController | null>(null);
   const roundId = useRef(0);
   const fileInput = useRef<HTMLInputElement>(null);
   const roundList = useRef<HTMLOListElement>(null);
+  const landingRef = useRef<PieceLanding | null>(null);
+  landingRef.current = landing;
+  const applyingRef = useRef(false);
+  const autoDirtyRef = useRef(false);
 
   useEffect(() => () => abortRef.current?.abort(), []);
 
@@ -150,12 +197,25 @@ export function EffectMaker({
   const live = bake?.spec ?? null;
   const info = live ? exportInfo(live) : null;
   const clip = clips.find((entry) => entry.id === (clipId ?? clips[0]?.id)) ?? null;
+  const targetId = live ? rigTargetId(live) : null;
 
   const load = (next: EffectSpec) => {
     setSpec(next);
     setRig(rigOf(next));
     setControls(defaultControls(next));
     setApplied(null);
+    setApplyError(null);
+    setApplyFallback(null);
+    setStaleClip(false);
+    // A piece applied in an earlier session starts on its remembered clip.
+    const remembered = landings?.[next.id] ?? null;
+    if (remembered && !landingRef.current) {
+      setLanding(remembered);
+      const match = clips.find(
+        (entry) => entry.trackIndex === remembered.trackIndex && entry.clipIndex === remembered.clipIndex,
+      );
+      if (match) setClipId(match.id);
+    }
   };
 
   const addRound = (round: Omit<Round, "id">): number => {
@@ -289,13 +349,129 @@ export function EffectMaker({
     }
   };
 
-  const apply = () => {
-    if (!live || !clip || !bake) return;
-    const itemId = onApply(
-      effectItem({ spec: live, controls, targetId: clip.id, bakedKeys: bake.keys }),
-    );
-    if (itemId) setApplied({ itemId, clip: clip.name });
+  /**
+   * Apply the live piece to one Resolve clip as a new comp version. The
+   * history entry is recorded only after Resolve answers, and only the
+   * first apply records one: re-applies are new comp versions of the
+   * same piece, tracked in the landing.
+   */
+  const doApply = async (at: { trackIndex: number; clipIndex: number; trackType: "video" | "audio" }) => {
+    if (!live || !bake || applyingRef.current) {
+      autoDirtyRef.current = true;
+      return;
+    }
+    applyingRef.current = true;
+    setApplyBusy(true);
+    setApplyError(null);
+    setApplyFallback(null);
+    setStaleClip(false);
+    try {
+      const result = await applyPiece(
+        {
+          spec: live,
+          ...(bake.keys > 0 ? { baked: bakedPayload(live, targetId) ?? undefined } : {}),
+          trackIndex: at.trackIndex,
+          clipIndex: at.clipIndex,
+          trackType: at.trackType,
+        },
+      );
+      if (isPieceFallback(result)) {
+        setApplyFallback(result.fallback.reason);
+        return;
+      }
+      const next: PieceLanding = {
+        project: result.project,
+        timeline: result.timeline,
+        trackIndex: at.trackIndex,
+        clipIndex: at.clipIndex,
+        trackType: at.trackType,
+        compName: result.compName,
+        prevCompName: result.prevCompName,
+      };
+      const first = !landingRef.current;
+      setLanding(next);
+      onRecordLanding?.(live.id, next);
+      if (first && clip) {
+        const itemId = onApply(
+          effectItem({
+            spec: live,
+            controls,
+            targetId: clip.id,
+            bakedKeys: bake.keys,
+            resolve: { compName: result.compName, prevCompName: result.prevCompName },
+          }),
+        );
+        if (itemId) {
+          setApplied({ itemId, clip: clip.name, comp: result.compName, prevComp: result.prevCompName, updated: false });
+        }
+      } else {
+        setApplied((current) =>
+          current ? { ...current, comp: result.compName, prevComp: result.prevCompName, updated: true } : current,
+        );
+      }
+    } catch (error) {
+      if (isClipGoneError(error)) setStaleClip(true);
+      setApplyError(error instanceof Error ? error.message : "The apply failed.");
+    } finally {
+      applyingRef.current = false;
+      setApplyBusy(false);
+      if (autoDirtyRef.current) {
+        autoDirtyRef.current = false;
+        setAutoSeq((seq) => seq + 1);
+      }
+    }
   };
+
+  /** The button: the picked clip, defaulting to the first clip on track 1. */
+  const apply = () => {
+    if (!live || !bake) return;
+    void doApply({
+      trackIndex: clip?.trackIndex ?? 1,
+      clipIndex: clip?.clipIndex ?? 0,
+      trackType: clip?.trackType ?? "video",
+    });
+  };
+
+  /** Undo back to the previous comp version, then rewind the mirror entry. */
+  const undoApplied = async () => {
+    if (!applied || !landing) return;
+    if (applied.prevComp) {
+      try {
+        await revertPiece({
+          project: landing.project || undefined,
+          timeline: landing.timeline || undefined,
+          trackIndex: landing.trackIndex,
+          clipIndex: landing.clipIndex,
+          trackType: landing.trackType,
+          toComp: applied.prevComp,
+        });
+        const back: PieceLanding = { ...landing, compName: applied.prevComp, prevCompName: null };
+        setLanding(back);
+        if (live) onRecordLanding?.(live.id, back);
+      } catch (error) {
+        setApplyError(pieceUndoErrorMessage(error));
+        return;
+      }
+    }
+    onUndo(applied.itemId);
+    setApplied(null);
+  };
+
+  // Re-prompts and tweaks re-apply to the remembered clip on their own.
+  useEffect(() => {
+    if (autoSeq === 0) return;
+    const remembered = landingRef.current;
+    if (!remembered || !live || !bake) return;
+    void doApply({ trackIndex: remembered.trackIndex, clipIndex: remembered.clipIndex, trackType: remembered.trackType });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoSeq]);
+
+  useEffect(() => {
+    if (!landing || !live) return;
+    const timer = window.setTimeout(() => setAutoSeq((seq) => seq + 1), 1000);
+    return () => window.clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [controls, rig]);
 
   return (
     <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 overflow-hidden xl:grid-cols-[minmax(15rem,18rem)_minmax(0,1fr)_minmax(15rem,18rem)]">
@@ -445,9 +621,9 @@ export function EffectMaker({
           ) : (
             <span className="text-xs text-neutral-500">No clip to land on yet</span>
           )}
-          <Button type="button" size="sm" disabled={!live || !clip || busy} onClick={apply}>
-            <PackageIcon />
-            Apply to Resolve
+          <Button type="button" size="sm" disabled={!live || !clip || busy || applyBusy} onClick={apply}>
+            {applyBusy ? <Spinner /> : <PackageIcon />}
+            {applyBusy ? "Applying…" : "Apply to Resolve"}
           </Button>
         </div>
         {live ? (
@@ -491,12 +667,16 @@ export function EffectMaker({
               The export target and the reason for it show here once a piece exists.
             </p>
           )}
-          <div aria-live="polite">
+          <div aria-live="polite" className="flex flex-col gap-2">
             {applied ? (
               <p className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-xl bg-emerald-400/[0.07] px-3 py-2 text-xs text-emerald-200/90 ring-1 ring-emerald-400/20 ring-inset">
                 <CheckCircle2Icon className="size-3.5 shrink-0" aria-hidden="true" />
-                <span className="min-w-0 flex-1">Added to {applied.clip} as a new piece — in History, undoable.</span>
-                <Button type="button" size="xs" variant="ghost" onClick={() => { onUndo(applied.itemId); setApplied(null); }}>
+                <span className="min-w-0 flex-1">
+                  {applied.updated ? "Updated in Resolve" : `Added to ${applied.clip}`}
+                  {applied.comp ? ` as ${applied.comp}` : " as a new comp version"}
+                  {applied.updated ? "." : " — in History, undoable."}
+                </span>
+                <Button type="button" size="xs" variant="ghost" onClick={() => void undoApplied()}>
                   <Undo2Icon />
                   Undo
                 </Button>
@@ -505,7 +685,30 @@ export function EffectMaker({
                   History
                 </Button>
               </p>
-            ) : refusal ? (
+            ) : null}
+            {applyFallback ? (
+              <p className="rounded-xl bg-amber-300/[0.07] px-3 py-2 text-xs text-amber-200/90 ring-1 ring-amber-300/20 ring-inset">
+                <span className="font-medium">Fallback: </span>
+                {applyFallback}
+              </p>
+            ) : null}
+            {applyError ? (
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-xl bg-red-400/[0.07] px-3 py-2 text-xs text-red-200/90 ring-1 ring-red-400/20 ring-inset">
+                <AlertCircleIcon className="size-3.5 shrink-0" aria-hidden="true" />
+                <span className="min-w-0 flex-1">
+                  {staleClip
+                    ? "That clip is gone from Resolve — the cut changed under this piece."
+                    : applyError}
+                </span>
+                {staleClip && clip ? (
+                  <Button type="button" size="xs" variant="ghost" onClick={apply}>
+                    <PackageIcon />
+                    Apply to current clip
+                  </Button>
+                ) : null}
+              </div>
+            ) : null}
+            {!applied && !applyError && refusal ? (
               <p className="rounded-xl bg-red-400/[0.07] px-3 py-2 text-xs text-red-200/90 ring-1 ring-red-400/20 ring-inset">
                 Not applied: {refusal}
               </p>

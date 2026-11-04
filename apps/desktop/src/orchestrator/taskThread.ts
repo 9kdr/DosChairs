@@ -9,11 +9,19 @@
  * changeset or touches the timeline; finished turns only describe proposals.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ServiceError, type ServicesClient } from "../lib/services/client";
+import { ServiceError, type FetchFn, type ServicesClient } from "../lib/services/client";
 import { agentBaseUrl } from "../lib/services/config";
 import { isAgentTerminal } from "../lib/services/types";
 import type { AgentJob } from "../lib/services/types";
 import { useServicesClient } from "../lib/services/useServices";
+import {
+  applySound,
+  revertSound,
+  soundApplyErrorMessage,
+  soundUndoErrorMessage,
+  type SoundApplied,
+  type SoundApplyInput,
+} from "../effects/sounds-api";
 import type { RunningTask, TaskLane } from "./RunningTasks";
 import type { TaskActivity } from "./TaskActivity";
 import { readTaskThread, writeTaskThread } from "./threadStore";
@@ -281,6 +289,204 @@ export function resetLiveJobs(): void {
   liveJobs.clear();
   settledTasks.clear();
   submitErrors.clear();
+  pollFailures.clear();
+  appliedJobs.clear();
+  landedByTask.clear();
+}
+
+/**
+ * Consecutive poll failures per job: a blip keeps the last row, a real
+ * outage fails it. After POLL_FAIL_LIMIT misses the job is forgotten
+ * (so the next poll resubmits under its idempotent key) and the row
+ * reads Failed with the plain error.
+ */
+export const POLL_FAIL_LIMIT = 3;
+const pollFailures = new Map<string, { count: number; message: string }>();
+
+/** Note one failed poll; returns the consecutive count for this job. */
+export function notePollFailure(requestId: string, message: string): number {
+  const previous = pollFailures.get(requestId)?.count ?? 0;
+  const count = previous + 1;
+  pollFailures.set(requestId, { count, message });
+  return count;
+}
+
+/** A good poll clears the count. */
+export function clearPollFailure(requestId: string): void {
+  pollFailures.delete(requestId);
+}
+
+/** Jobs whose finished sound already went to Resolve: each applies once. */
+const appliedJobs = new Set<string>();
+
+/** What one finished task wrote to Resolve, for its card's Undo and Redo. */
+export type LandedWrite = {
+  requestId: string;
+  line: string;
+  detail: string | null;
+  state: "landed" | "undone" | "failed";
+  undo: { project: string; timeline: string; originalTimeline: string } | null;
+  redo: SoundApplyInput | null;
+  /** The finished turn, kept so a failed write can retry it. */
+  entry: LiveJobEntry | null;
+};
+
+const landedByTask = new Map<string, LandedWrite>();
+
+/** The Resolve write behind a task's card, if it has one. */
+export function landedFor(taskId: string): LandedWrite | undefined {
+  return landedByTask.get(taskId);
+}
+
+const SOUND_CLIP_TARGET = /^audio-/;
+
+/**
+ * True when a finished job carries sound: ducking, an audio track, or a
+ * clip the sound builder shaped (it always sets a kind; picture clips
+ * have none). Effect ops are out: the edit loop emits none, and pieces
+ * apply from the Piece Maker.
+ */
+export function hasSoundItems(job: AgentJob): boolean {
+  const ops = job.changeset?.ops ?? [];
+  return ops.some((op) => {
+    if (typeof op !== "object" || op === null) return false;
+    const record = op as Record<string, unknown>;
+    if (record.op === "set_gain") return true;
+    const patch = record.patch;
+    if (typeof patch !== "object" || patch === null) return false;
+    const shape = patch as Record<string, unknown>;
+    if (record.op === "add_track") {
+      const track = shape.track;
+      return (
+        typeof track === "object" && track !== null && (track as Record<string, unknown>).kind === "audio"
+      );
+    }
+    if (record.op === "add_clip") {
+      if (typeof shape.kind === "string" && shape.kind) return true;
+      return typeof record.targetId === "string" && SOUND_CLIP_TARGET.test(record.targetId);
+    }
+    return false;
+  });
+}
+
+function landedLine(applied: SoundApplied): { line: string; detail: string | null } {
+  const line =
+    applied.skipped.length > 0
+      ? `Added to ${applied.timelineName} · ${applied.skipped.length} skipped`
+      : `Added to ${applied.timelineName}`;
+  const bits = [
+    ...applied.skipped.map((skip) => `Skipped ${skip.intent}: ${skip.reason}`),
+    ...(applied.fallback ? [`Fallback: ${applied.fallback}`] : []),
+  ];
+  return { line, detail: bits.length > 0 ? bits.join("\n") : null };
+}
+
+function landedFromApplied(requestId: string, applied: SoundApplied): LandedWrite {
+  const { line, detail } = landedLine(applied);
+  return {
+    requestId,
+    line,
+    detail,
+    state: "landed",
+    undo:
+      applied.originalTimeline !== null
+        ? {
+            project: "",
+            timeline: applied.timelineName,
+            originalTimeline: applied.originalTimeline,
+          }
+        : null,
+    redo: { jobId: requestId },
+    entry: null,
+  };
+}
+
+type ApplyOptions = { agentUrl?: string; fetchFn?: FetchFn };
+
+/**
+ * Write one finished sound turn to Resolve: a new "(sound copy)"
+ * timeline, never touching the original. The agent reads the job by
+ * id; project and timeline stay unset so it uses what is current.
+ */
+export async function applyFinishedSound(entry: LiveJobEntry, options: ApplyOptions = {}): Promise<void> {
+  const job = entry.job;
+  if (!job || job.status !== "completed" || !hasSoundItems(job)) return;
+  try {
+    const applied = await applySound({ jobId: job.request_id }, options);
+    landedByTask.set(entry.task.id, landedFromApplied(job.request_id, applied));
+  } catch (error) {
+    landedByTask.set(entry.task.id, {
+      requestId: job.request_id,
+      line: `Failed: ${soundApplyErrorMessage(error)}`,
+      detail: error instanceof Error ? error.message : null,
+      state: "failed",
+      undo: null,
+      redo: null,
+      entry,
+    });
+  }
+}
+
+/** Fire the write once per job; board ticks and threads share this. */
+export function maybeApplyFinishedSound(entry: LiveJobEntry, options: ApplyOptions = {}): void {
+  const job = entry.job;
+  if (!job || job.status !== "completed" || !hasSoundItems(job)) return;
+  if (appliedJobs.has(job.request_id)) return;
+  appliedJobs.add(job.request_id);
+  void applyFinishedSound(entry, options);
+}
+
+/** Retry a failed write: forget it and fire the finished turn again. */
+export function retryLandedWrite(taskId: string, options: ApplyOptions = {}): void {
+  const landed = landedByTask.get(taskId);
+  if (!landed || landed.state !== "failed" || !landed.entry) return;
+  appliedJobs.delete(landed.requestId);
+  landedByTask.delete(taskId);
+  maybeApplyFinishedSound(landed.entry, options);
+}
+
+/**
+ * Undo a landed write: the original timeline is current again, the
+ * copy stays. True when Resolve answered; the card keeps its Undo
+ * button on failure so the person can try again.
+ */
+export async function undoLandedWrite(taskId: string, options: ApplyOptions = {}): Promise<boolean> {
+  const landed = landedByTask.get(taskId);
+  if (!landed || landed.state !== "landed" || !landed.undo) return false;
+  try {
+    await revertSound(
+      {
+        ...(landed.undo.project ? { project: landed.undo.project } : {}),
+        timeline: landed.undo.timeline,
+        originalTimeline: landed.undo.originalTimeline,
+      },
+      options,
+    );
+  } catch (error) {
+    landedByTask.set(taskId, { ...landed, line: `Undo failed: ${soundUndoErrorMessage(error)}` });
+    return false;
+  }
+  landedByTask.set(taskId, {
+    ...landed,
+    state: "undone",
+    line: `Back on ${landed.undo.originalTimeline} — copy kept`,
+    detail: null,
+  });
+  return true;
+}
+
+/** Redo an undone write: the stored apply body goes again as a new copy. */
+export async function redoLandedWrite(taskId: string, options: ApplyOptions = {}): Promise<boolean> {
+  const landed = landedByTask.get(taskId);
+  if (!landed || landed.state !== "undone" || !landed.redo) return false;
+  try {
+    const applied = await applySound(landed.redo, options);
+    landedByTask.set(taskId, landedFromApplied(landed.requestId, applied));
+  } catch (error) {
+    landedByTask.set(taskId, { ...landed, line: `Redo failed: ${soundApplyErrorMessage(error)}` });
+    return false;
+  }
+  return true;
 }
 
 /** One row per task from a live job. Null when the job already finished. */
@@ -327,6 +533,15 @@ export function liveRowsForJobs(entries: LiveJobEntry[]): {
 export function stopLiveTask(client: ServicesClient, task: RunningTask): Promise<AgentJob | null> {
   if (task.jobId === undefined) return Promise.resolve(null);
   return client.cancelAgentJob(task.jobId);
+}
+
+/** Cards for finished tasks that wrote to Resolve: what landed, with Undo and Redo. */
+export function landedRowsFor(tasks: readonly RunningTask[]): RunningTask[] {
+  return tasks.flatMap((task) => {
+    const landed = landedByTask.get(task.id);
+    if (!landed) return [];
+    return [{ ...task, status: landed.line, jobId: landed.requestId, jobStatus: "completed" as const }];
+  });
 }
 
 const LIVE_POLL_MS = 2000;
@@ -384,7 +599,7 @@ export async function submitLiveTurn(
   }
 }
 
-export function useLiveTasks(createdTasks: readonly RunningTask[]): RunningTask[] {
+export function useLiveTasks(createdTasks: readonly RunningTask[], refreshKey?: unknown): RunningTask[] {
   const client = useServicesClient();
   const [rows, setRows] = useState<RunningTask[]>([]);
   const rowsRef = useRef(rows);
@@ -415,9 +630,20 @@ export function useLiveTasks(createdTasks: readonly RunningTask[]): RunningTask[
               task,
               job: await client.agentJob(requestId, { signal: controller.signal }),
             });
+            clearPollFailure(requestId);
           } catch (error) {
             if (error instanceof ServiceError && error.status === 404) {
               entries.push({ requestId, task, job: null });
+              continue;
+            }
+            const message = error instanceof Error ? error.message : "unreachable";
+            if (notePollFailure(requestId, message) >= POLL_FAIL_LIMIT) {
+              // A real outage, not a blip: fail the row now. Forgetting
+              // the job resubmits it under its idempotent key next poll,
+              // which resumes the same turn when the agent is back.
+              forgetLiveJob(requestId);
+              clearPollFailure(requestId);
+              submitErrors.set(task.id, message);
               continue;
             }
             const previous = rowsRef.current.find((row) => row.jobId === requestId);
@@ -430,7 +656,8 @@ export function useLiveTasks(createdTasks: readonly RunningTask[]): RunningTask[
           settleLiveTask(taskId);
           submitErrors.delete(taskId);
         }
-        if (live) setRows([...waitingRowsFor(tasks), ...stale, ...merged.rows]);
+        for (const entry of entries) maybeApplyFinishedSound(entry);
+        if (live) setRows([...waitingRowsFor(tasks), ...stale, ...merged.rows, ...landedRowsFor(tasks)]);
       } finally {
         ticking = false;
       }
@@ -443,7 +670,8 @@ export function useLiveTasks(createdTasks: readonly RunningTask[]): RunningTask[
       controller.abort();
       window.clearInterval(timer);
     };
-  }, [client, createdTasks]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [client, createdTasks, refreshKey]);
 
   return rows;
 }
@@ -658,11 +886,13 @@ export function useTaskThread(
           });
         },
       }).then(
-        (job) =>
+        (job) => {
+          maybeApplyFinishedSound({ requestId: job.request_id, task, job });
           live(() => {
             paint(say(textForJob(job)));
             if (primary) setActivity(activityForLiveJob(job));
-          }),
+          });
+        },
         (error: unknown) =>
           live(() => {
             // A failed opening turn fills in from the store, never with the
@@ -722,13 +952,15 @@ export function useTaskThread(
         });
       },
     }).then(
-      (job) =>
+      (job) => {
+        maybeApplyFinishedSound({ requestId: job.request_id, task, job });
         live(() => {
           setTurns((current) =>
             current.map((turn) => (turn.id === liveId ? { ...turn, text: textForJob(job) } : turn)),
           );
           setActivity(activityForLiveJob(job));
-        }),
+        });
+      },
       (error: unknown) =>
         live(() => {
           setTurns((current) =>

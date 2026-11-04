@@ -254,6 +254,8 @@ export type AssetsStore = {
   assets: ShelfAsset[];
   pieces: ShelfPiece[];
   error: string | null;
+  /** The last quiet poll failure; the listing on screen may be stale. */
+  stale: string | null;
   /** Full reload through the loading state; the manual refresh. */
   retry: () => void;
   /** Quiet re-read that keeps the last good listing on screen. */
@@ -282,6 +284,7 @@ export function useProjectAssets(
   const [listing, setListing] = useState<ProjectAssets>(EMPTY);
   const [phase, setPhase] = useState<AssetsPhase>("loading");
   const [error, setError] = useState<string | null>(null);
+  const [stale, setStale] = useState<string | null>(null);
   const [request, setRequest] = useState({ nonce: 0, quiet: false });
 
   useEffect(() => {
@@ -291,6 +294,7 @@ export function useProjectAssets(
     if (!quiet) {
       setPhase("loading");
       setError(null);
+      setStale(null);
       setListing(EMPTY);
     }
     void (async () => {
@@ -299,11 +303,16 @@ export function useProjectAssets(
         if (!live) return;
         setListing(assets);
         setError(null);
+        setStale(null);
         setPhase("ready");
       } catch (fetchError) {
         if (!live) return;
         if (fetchError instanceof Error && fetchError.name === "AbortError") return;
-        if (quiet) return;
+        // A failed background re-read keeps the last good listing, marked stale.
+        if (quiet) {
+          setStale(fetchError instanceof Error ? fetchError.message : "Could not refresh the assets.");
+          return;
+        }
         setError(fetchError instanceof Error ? fetchError.message : "Could not load assets.");
         setPhase("error");
       }
@@ -347,6 +356,7 @@ export function useProjectAssets(
     assets: listing.assets,
     pieces: listing.pieces,
     error,
+    stale,
     retry,
     refresh,
   };

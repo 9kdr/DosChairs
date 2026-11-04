@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parsePlanMarkdown, planOf } from "./plan-api";
+import { fetchPlan, parsePlanMarkdown, planOf } from "./plan-api";
 
 describe("parsePlanMarkdown", () => {
   it("reads the script, beats, and board items", () => {
@@ -44,5 +44,28 @@ describe("planOf", () => {
     );
     expect(plan?.front.beats).toEqual([{ id: "b1", role: "", text: "" }]);
     expect(plan?.back.stale).toBe(true);
+  });
+});
+
+describe("fetchPlan errors", () => {
+  it("keeps the agent's plain message and code", async () => {
+    const fetchFn = async () => ({
+      ok: false,
+      status: 400,
+      json: async () => ({ error: { code: "invalid_plan", message: "digest needs an 'itemId' string" } }),
+    });
+    await expect(fetchPlan("proj-1", { fetchFn })).rejects.toMatchObject({
+      message: "digest needs an 'itemId' string",
+      status: 400,
+      code: "invalid_plan",
+    });
+  });
+
+  it("falls back to the status when the body says nothing", async () => {
+    const fetchFn = async () => ({ ok: false, status: 500, json: async () => null });
+    await expect(fetchPlan("proj-1", { fetchFn })).rejects.toMatchObject({
+      message: "agent failed (500)",
+      status: 500,
+    });
   });
 });

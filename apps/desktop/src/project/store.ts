@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { Changeset, ChangesetItem, EditOp, Timeline } from "@chair/timeline-ir";
 import { applyChangesetItem, buildUndoChangeset, invertItem } from "@chair/timeline-ir";
 import type { HistoryEntry } from "@chair/timeline-ir";
+import type { PieceLanding } from "../effects/effect-model";
 import { readReviewSnapshot, withStoredDecisions, writeReviewSnapshot } from "./persist";
 import { fetchProjectReview, type ReviewJob } from "./review";
 
@@ -208,6 +209,9 @@ export type ProjectStore = {
   /** Rewind the newest entry, applying its inverse at once. */
   undoLast: () => void;
   retry: () => void;
+  /** Where applied pieces landed in Resolve, by spec id, so re-applies find the same clip. */
+  landings: Record<string, PieceLanding>;
+  recordLanding: (specId: string, landing: PieceLanding) => void;
 };
 
 /**
@@ -229,6 +233,7 @@ export function useProject(
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [refusal, setRefusal] = useState<Refusal | null>(null);
   const [nonce, setNonce] = useState(0);
+  const [landings, setLandings] = useState<Record<string, PieceLanding>>({});
   /** Changeset ids already passed through auto-apply; a new proposal starts over. */
   const autoApplied = useRef<{ project: string; ids: Set<string> }>({
     project: projectId,
@@ -478,11 +483,17 @@ export function useProject(
     setRefusal(blocked);
   });
 
+  const recordLanding = useCallback((specId: string, landing: PieceLanding) => {
+    setLandings((current) => ({ ...current, [specId]: landing }));
+  }, []);
+
   return {
     phase,
     timeline,
     changeset,
     history,
+    landings,
+    recordLanding,
     pendingCount: changeset
       ? changeset.items.filter((item) => item.status === "pending").length
       : 0,
