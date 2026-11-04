@@ -14,6 +14,7 @@
   },
   "dependencies": {
     "@base-ui/react": "1.8.0",
+    "@chair/effects": "workspace:*",
     "@chair/shared": "workspace:*",
     "@chair/timeline-ir": "workspace:*",
     "@chair/ui": "workspace:*",

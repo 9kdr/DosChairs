@@ -57,6 +57,12 @@ export function ProjectShell({ projectId, projectName, editorId, onHome }: Proje
   const [taskChat, setTaskChat] = useState<RunningTask | null>(null);
   const [taskNote, setTaskNote] = useState<{ id: number; text: string } | null>(null);
 
+  /** Clips an effect can land on: every video-track clip in the cut. */
+  const effectClips =
+    project.timeline?.tracks
+      .filter((track) => track.kind === "video")
+      .flatMap((track) => track.clips.map((clip) => ({ id: clip.id, name: clip.name, track: track.name }))) ?? [];
+
   /** Answer an undo prompt by rewinding the task's full tail at once. */
   const requestTaskUndo = (task: RunningTask): string => {
     const entries = historyForTask(project.history, task.id);
@@ -143,7 +149,13 @@ export function ProjectShell({ projectId, projectName, editorId, onHome }: Proje
               onUndoLast={() => project.undoLast()}
             />
           ) : (
-            <CreationBoard />
+            <CreationBoard
+              clips={effectClips}
+              onApplyEffect={project.applyItem}
+              onUndoEffect={(itemId) => project.undoToHere(itemId)}
+              onOpenHistory={() => setSection("orchestrator")}
+              refusal={project.refusal?.reason ?? null}
+            />
           )}
         </div>
         {!taskChat ? (

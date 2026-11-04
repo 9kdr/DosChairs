@@ -6,6 +6,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsList, TabsTab } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
+import { EffectMaker, type ClipChoice } from "../effects/EffectMaker";
+import type { ChangesetItem } from "@chair/timeline-ir";
 
 const CARD = "rounded-[28px] bg-[#1a1a1a] text-neutral-100 shadow-raised ring-1 ring-white/8";
 
@@ -63,8 +65,56 @@ const TOTAL = clock(TOTAL_SECONDS);
 
 type Proposal = { name: string; shape: Shape };
 
+export type CreationBoardProps = {
+  /** Clips the Effect Maker can land an effect on. */
+  clips: ClipChoice[];
+  onApplyEffect: (item: ChangesetItem) => string | null;
+  onUndoEffect: (itemId: string) => void;
+  onOpenHistory: () => void;
+  refusal: string | null;
+};
+
+type Mode = "effect" | "piece";
+
+/** Creation: the Effect Maker, plus the stand-in piece creator beside it. */
+export function CreationBoard(props: CreationBoardProps) {
+  const [mode, setMode] = useState<Mode>("effect");
+  return (
+    <div className="flex h-full min-h-0 flex-col gap-3 overflow-hidden p-4 pb-[9.5rem]">
+      <div className="flex shrink-0 flex-wrap items-center gap-2">
+        <span className="flex size-7 items-center justify-center rounded-lg bg-white/[0.06] ring-1 ring-white/10">
+          <BlocksIcon className="size-4 text-neutral-300" aria-hidden="true" />
+        </span>
+        <h2 className="text-sm font-semibold tracking-wide text-neutral-100">Creation</h2>
+        <Tabs value={mode} onValueChange={(value) => setMode(value as Mode)}>
+          <TabsList size="sm">
+            <TabsTab value="effect">Effect Maker</TabsTab>
+            <TabsTab value="piece">Piece</TabsTab>
+          </TabsList>
+        </Tabs>
+        <p className="ml-auto text-xs text-neutral-500">
+          {mode === "effect"
+            ? "Applies land on a copy and show in History."
+            : "Nothing here is written to the cut."}
+        </p>
+      </div>
+      {mode === "effect" ? (
+        <EffectMaker
+          clips={props.clips}
+          onApply={props.onApplyEffect}
+          onUndo={props.onUndoEffect}
+          onOpenHistory={props.onOpenHistory}
+          refusal={props.refusal}
+        />
+      ) : (
+        <PieceCreator />
+      )}
+    </div>
+  );
+}
+
 /** Stand-in of the piece creator. Layout only: it makes nothing yet. */
-export function CreationBoard() {
+function PieceCreator() {
   const reduceMotion = useReducedMotion();
   const [name, setName] = useState("");
   const [shape, setShape] = useState<Shape>("16:9");
@@ -79,18 +129,7 @@ export function CreationBoard() {
   };
 
   return (
-    <div className="flex h-full min-h-0 flex-col gap-3 overflow-hidden p-4 pb-[9.5rem]">
-      <div className="flex shrink-0 flex-wrap items-center gap-2">
-        <span className="flex size-7 items-center justify-center rounded-lg bg-white/[0.06] ring-1 ring-white/10">
-          <BlocksIcon className="size-4 text-neutral-300" aria-hidden="true" />
-        </span>
-        <h2 className="text-sm font-semibold tracking-wide text-neutral-100">Creation</h2>
-        <Badge variant="outline" size="sm">
-          Stand-in
-        </Badge>
-        <p className="ml-auto text-xs text-neutral-500">Nothing here is written to the cut.</p>
-      </div>
-
+    <>
       <div className="grid min-h-0 flex-1 grid-cols-1 grid-rows-[minmax(0,1.4fr)_minmax(0,0.9fr)_minmax(0,1fr)] gap-3 overflow-hidden lg:grid-cols-12 lg:grid-rows-[minmax(0,1.25fr)_minmax(0,1fr)]">
         <section
           aria-label="Piece canvas"
@@ -255,6 +294,6 @@ export function CreationBoard() {
           </form>
         </section>
       </div>
-    </div>
+    </>
   );
 }
