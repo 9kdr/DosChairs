@@ -84,15 +84,46 @@ describe("revertSound", () => {
       return {
         ok: true,
         status: 200,
-        json: async () => ({ timeline: "Demo Cut", project: "Captest" }),
+        json: async () => ({ current_timeline: "Demo Cut", deleted: false }),
       };
     };
     const reverted = await revertSound(
       { timeline: "Demo Cut (sound copy)", originalTimeline: "Demo Cut" },
       { fetchFn },
     );
-    expect(seen).toMatchObject({ timeline: "Demo Cut (sound copy)", originalTimeline: "Demo Cut" });
-    expect(reverted).toEqual({ timeline: "Demo Cut", project: "Captest" });
+    expect(seen).toMatchObject({
+      timeline_name: "Demo Cut (sound copy)",
+      original_timeline: "Demo Cut",
+    });
+    expect(reverted).toEqual({ timeline: "Demo Cut", deleted: false });
+  });
+
+  it("pins the undo path and the agent's field names", async () => {
+    let seen: { url: string; body: unknown } | null = null;
+    const fetchFn: FetchFn = async (url, init) => {
+      seen = { url, body: JSON.parse(String(init?.body)) };
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ current_timeline: "Demo Cut", deleted: false }),
+      };
+    };
+    await revertSound(
+      {
+        project: "Captest",
+        timeline: "Demo Cut (sound copy)",
+        originalTimeline: "Demo Cut",
+      },
+      { fetchFn, agentUrl: "http://agent" },
+    );
+    expect(seen).toEqual({
+      url: "http://agent/sounds/undo",
+      body: {
+        project: "Captest",
+        timeline_name: "Demo Cut (sound copy)",
+        original_timeline: "Demo Cut",
+      },
+    });
   });
 });
 

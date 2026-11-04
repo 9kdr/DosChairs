@@ -73,5 +73,11 @@ MANIFEST = Manifest(
             "select the music clip in Fairlight, open the Automation lane, "
             "and add the -12 dB ducking ramps from the changeset patch by hand"
         ),
+        # Cut direction: scripting cannot place transitions, so the cut
+        # writer skips them with this substitute.
+        "transitions": (
+            "Studio scripting cannot place transitions: "
+            "add the transition in Studio by hand (Effects > Video Transitions)"
+        ),
     },
 )
