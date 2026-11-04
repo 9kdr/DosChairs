@@ -460,208 +460,211 @@ export function EffectMaker({
   };
 
   return (
-    <div className="mx-auto flex min-h-0 w-full max-w-4xl flex-1 flex-col gap-3 overflow-y-auto overscroll-contain">
-      {onBack ? (
-        <div className="flex shrink-0 items-center gap-2">
-          <Button type="button" size="sm" variant="ghost" onClick={onBack} aria-label="Back">
-            <ChevronLeftIcon />
-            Back
-          </Button>
-          <h2 className="min-w-0 truncate text-title text-neutral-100">{name}</h2>
-        </div>
-      ) : null}
+    <div className="mx-auto flex min-h-0 w-full max-w-4xl flex-1 flex-col gap-3">
+      <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto overscroll-contain">
+        {onBack ? (
+          <div className="flex shrink-0 items-center gap-2">
+            <Button type="button" size="sm" variant="ghost" onClick={onBack} aria-label="Back">
+              <ChevronLeftIcon />
+              Back
+            </Button>
+            <h2 className="min-w-0 truncate text-title text-neutral-100">{name}</h2>
+          </div>
+        ) : null}
 
-      <div className="flex shrink-0 items-center gap-3">
-        <span className="text-meta text-neutral-400">Type</span>
-        <div ref={typeGroupRef} className="contents">
-        <SegmentedControl
-          role="radiogroup"
-          aria-label="Piece type"
-          onKeyDown={(event) => {
-            if (event.key === "ArrowRight" || event.key === "ArrowDown") {
-              event.preventDefault();
-              moveType(1);
-            } else if (event.key === "ArrowLeft" || event.key === "ArrowUp") {
-              event.preventDefault();
-              moveType(-1);
-            }
-          }}
-        >
-          {PIECE_TYPES.map((entry) => {
-            const checked = pieceType === entry.id;
-            return (
-              <SegmentedControlItem
-                key={entry.id}
-                data-type={entry.id}
-                role="radio"
-                aria-checked={checked}
-                data-checked={checked || undefined}
-                tabIndex={checked ? 0 : -1}
-                onClick={() => setPieceType(entry.id)}
+        <div className="flex shrink-0 items-center gap-3">
+          <span className="text-meta text-neutral-400">Type</span>
+          <div ref={typeGroupRef} className="contents">
+          <SegmentedControl
+            role="radiogroup"
+            aria-label="Piece type"
+            onKeyDown={(event) => {
+              if (event.key === "ArrowRight" || event.key === "ArrowDown") {
+                event.preventDefault();
+                moveType(1);
+              } else if (event.key === "ArrowLeft" || event.key === "ArrowUp") {
+                event.preventDefault();
+                moveType(-1);
+              }
+            }}
+          >
+            {PIECE_TYPES.map((entry) => {
+              const checked = pieceType === entry.id;
+              return (
+                <SegmentedControlItem
+                  key={entry.id}
+                  data-type={entry.id}
+                  role="radio"
+                  aria-checked={checked}
+                  data-checked={checked || undefined}
+                  tabIndex={checked ? 0 : -1}
+                  onClick={() => setPieceType(entry.id)}
+                >
+                  {entry.label}
+                </SegmentedControlItem>
+              );
+            })}
+          </SegmentedControl>
+          </div>
+        </div>
+
+        <section aria-label="Preview" className={cn(CARD, "flex shrink-0 flex-col gap-3 p-4")}>
+          <div className="flex shrink-0 flex-wrap items-center gap-2 px-1">
+            {clips.length > 0 && clip ? (
+              <Select
+                items={clips.map((entry) => ({ label: `${entry.name} · ${entry.track}`, value: entry.id }))}
+                value={clip.id}
+                onValueChange={(value) => setClipId(value as string)}
               >
-                {entry.label}
-              </SegmentedControlItem>
-            );
-          })}
-        </SegmentedControl>
-        </div>
-      </div>
-
-      <section aria-label="Preview" className={cn(CARD, "flex shrink-0 flex-col gap-3 p-4")}>
-        {live ? (
-          <PreviewStage ref={previewRef} spec={live} controls={controls} className="w-full flex-none" />
-        ) : (
-          <div className="flex aspect-video min-h-56 w-full flex-none flex-col items-center justify-center gap-2 overflow-hidden rounded-2xl border border-dashed border-white/12 px-4 text-center">
-            <span className="flex size-12 items-center justify-center rounded-2xl bg-white/[0.05] ring-1 ring-white/10">
-              {busy || editLoading ? (
-                <Spinner className="size-5 text-amber-300" />
-              ) : (
-                <SparklesIcon className="size-5 text-neutral-300" aria-hidden="true" />
-              )}
-            </span>
-            <p className="text-sm font-medium text-neutral-200">
-              {editLoading ? `Loading ${name}…` : busy ? `Muse Spark is drafting… ${elapsed}s` : "Describe the piece below to draft it"}
-            </p>
-            {!busy && !editLoading ? (
-              <Button type="button" size="sm" variant="ghost" onClick={() => useSample()}>
-                Sample
-              </Button>
-            ) : null}
+                <SelectTrigger size="sm" className="w-48 min-w-0" aria-label="Clip to apply onto">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectPopup>
+                  {clips.map((entry) => (
+                    <SelectItem key={entry.id} value={entry.id}>
+                      {entry.name} · {entry.track}
+                    </SelectItem>
+                  ))}
+                </SelectPopup>
+              </Select>
+            ) : (
+              <span className="text-xs text-neutral-500">No clip to land on yet</span>
+            )}
+            <Button type="button" size="sm" className="ml-auto" disabled={!live || !clip || busy || applyBusy} onClick={apply}>
+              {applyBusy ? <Spinner /> : <PackageIcon />}
+              {applyBusy ? "Applying…" : "Apply to Resolve"}
+            </Button>
           </div>
-        )}
 
-        <div className="flex shrink-0 flex-wrap items-center gap-2 px-1">
-          {clips.length > 0 && clip ? (
-            <Select
-              items={clips.map((entry) => ({ label: `${entry.name} · ${entry.track}`, value: entry.id }))}
-              value={clip.id}
-              onValueChange={(value) => setClipId(value as string)}
-            >
-              <SelectTrigger size="sm" className="w-48 min-w-0" aria-label="Clip to apply onto">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectPopup>
-                {clips.map((entry) => (
-                  <SelectItem key={entry.id} value={entry.id}>
-                    {entry.name} · {entry.track}
-                  </SelectItem>
-                ))}
-              </SelectPopup>
-            </Select>
+          {live ? (
+            <PreviewStage ref={previewRef} spec={live} controls={controls} className="w-full flex-none" />
           ) : (
-            <span className="text-xs text-neutral-500">No clip to land on yet</span>
-          )}
-          <Button type="button" size="sm" className="ml-auto" disabled={!live || !clip || busy || applyBusy} onClick={apply}>
-            {applyBusy ? <Spinner /> : <PackageIcon />}
-            {applyBusy ? "Applying…" : "Apply to Resolve"}
-          </Button>
-        </div>
-
-        <div className="flex shrink-0 flex-col gap-2.5 px-1">
-          {info ? (
-            <div className="flex items-start gap-2.5 text-xs leading-5">
-              <Badge variant={info.fallback ? "warning" : "success"} size="sm" className="mt-0.5">
-                {info.label}
-              </Badge>
-              {info.fallback ? (
-                <p className="min-w-0 flex-1 text-neutral-400">
-                  <span className="text-neutral-300">Fallback: </span>
-                  {info.reason}
-                </p>
-              ) : (
-                <InfoHint>Why this target: {info.reason}</InfoHint>
-              )}
-            </div>
-          ) : null}
-          <div aria-live="polite" className="flex flex-col gap-2">
-            {applied ? (
-              <p className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-xl bg-emerald-400/[0.07] px-3 py-2 text-xs text-emerald-200/90 ring-1 ring-emerald-400/20 ring-inset">
-                <CheckCircle2Icon className="size-3.5 shrink-0" aria-hidden="true" />
-                <span className="min-w-0 flex-1">
-                  {applied.updated ? "Updated in Resolve" : `Added to ${applied.clip}`}
-                  {applied.comp ? ` as ${applied.comp}` : " as a new comp version"}.
-                </span>
-                <Button type="button" size="xs" variant="ghost" onClick={() => void undoApplied()}>
-                  <Undo2Icon />
-                  Undo
-                </Button>
-                <Button type="button" size="xs" variant="ghost" onClick={onOpenHistory}>
-                  <HistoryIcon />
-                  History
-                </Button>
+            <div className="flex min-h-56 w-full flex-none flex-col items-center justify-center gap-2 overflow-hidden rounded-2xl border border-dashed border-white/12 px-4 py-8 text-center">
+              <span className="flex size-12 items-center justify-center rounded-2xl bg-white/[0.05] ring-1 ring-white/10">
+                {busy || editLoading ? (
+                  <Spinner className="size-5 text-amber-300" />
+                ) : (
+                  <SparklesIcon className="size-5 text-neutral-300" aria-hidden="true" />
+                )}
+              </span>
+              <p className="text-sm font-medium text-neutral-200">
+                {editLoading ? `Loading ${name}…` : busy ? `Muse Spark is drafting… ${elapsed}s` : "Describe the piece below to draft it"}
               </p>
-            ) : null}
-            {applyFallback ? (
-              <p className="rounded-xl bg-amber-300/[0.07] px-3 py-2 text-xs text-amber-200/90 ring-1 ring-amber-300/20 ring-inset">
-                <span className="font-medium">Fallback: </span>
-                {applyFallback}
-              </p>
-            ) : null}
-            {applyError ? (
-              <div className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-xl bg-red-400/[0.07] px-3 py-2 text-xs text-red-200/90 ring-1 ring-red-400/20 ring-inset">
-                <AlertCircleIcon className="size-3.5 shrink-0" aria-hidden="true" />
-                <span className="min-w-0 flex-1">
-                  {staleClip
-                    ? "That clip is gone from Resolve — the cut changed under this piece."
-                    : applyError}
-                </span>
-                {staleClip && clip ? (
-                  <Button type="button" size="xs" variant="ghost" onClick={apply}>
-                    <PackageIcon />
-                    Apply to current clip
-                  </Button>
-                ) : null}
-              </div>
-            ) : null}
-            {!applied && !applyError && refusal ? (
-              <p className="rounded-xl bg-red-400/[0.07] px-3 py-2 text-xs text-red-200/90 ring-1 ring-red-400/20 ring-inset">
-                Not applied: {refusal}
-              </p>
-            ) : null}
-          </div>
-        </div>
-      </section>
-
-      <VariablesPanel spec={spec} onPatch={patchControl} />
-      {rig ? (
-        <RigPanel
-          rig={rig}
-          bake={bake ?? { spec: spec as EffectSpec, keys: 0, frames: 0 }}
-          onChange={(patch) => setRig((current) => (current ? { ...current, ...patch } : current))}
-          onReset={() => spec && setRig(rigOf(spec))}
-        />
-      ) : null}
-
-      {failed || status || note ? (
-        <div aria-live="polite" className="flex shrink-0 items-start gap-2 px-1 text-xs leading-5">
-          {failed ? (
-            <>
-              <AlertCircleIcon className="size-3.5 shrink-0 translate-y-0.5 text-red-400" aria-hidden="true" />
-              <p className="min-w-0 flex-1 text-red-200/90">{failed}</p>
-            </>
-          ) : status ? (
-            <>
-              <Spinner className="size-3.5 shrink-0 translate-y-0.5 text-amber-300" />
-              <p className="min-w-0 flex-1 text-neutral-300">
-                {status}
-                {busy ? `… ${elapsed}s` : "…"}
-              </p>
-              {busy ? (
-                <Button type="button" size="xs" variant="ghost" onClick={() => abortRef.current?.abort()}>
-                  Stop
+              {!busy && !editLoading ? (
+                <Button type="button" size="sm" variant="ghost" onClick={() => useSample()}>
+                  Sample
                 </Button>
               ) : null}
-            </>
-          ) : (
-            <>
-              <SparklesIcon className="size-3.5 shrink-0 translate-y-0.5 text-neutral-500" aria-hidden="true" />
-              <p className="min-w-0 flex-1 text-neutral-500">{note}</p>
-            </>
+            </div>
           )}
-        </div>
-      ) : null}
 
-      <div className="sticky bottom-0 shrink-0">
+          <div className="flex shrink-0 flex-col gap-2.5 px-1">
+            {info ? (
+              <div className="flex items-start gap-2.5 text-xs leading-5">
+                <Badge variant={info.fallback ? "warning" : "success"} size="sm" className="mt-0.5">
+                  {info.label}
+                </Badge>
+                {info.fallback ? (
+                  <p className="min-w-0 flex-1 text-neutral-400">
+                    <span className="text-neutral-300">Fallback: </span>
+                    {info.reason}
+                  </p>
+                ) : (
+                  <InfoHint>Why this target: {info.reason}</InfoHint>
+                )}
+              </div>
+            ) : null}
+            <div aria-live="polite" className="flex flex-col gap-2">
+              {applied ? (
+                <p className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-xl bg-emerald-400/[0.07] px-3 py-2 text-xs text-emerald-200/90 ring-1 ring-emerald-400/20 ring-inset">
+                  <CheckCircle2Icon className="size-3.5 shrink-0" aria-hidden="true" />
+                  <span className="min-w-0 flex-1">
+                    {applied.updated ? "Updated in Resolve" : `Added to ${applied.clip}`}
+                    {applied.comp ? ` as ${applied.comp}` : " as a new comp version"}.
+                  </span>
+                  <Button type="button" size="xs" variant="ghost" onClick={() => void undoApplied()}>
+                    <Undo2Icon />
+                    Undo
+                  </Button>
+                  <Button type="button" size="xs" variant="ghost" onClick={onOpenHistory}>
+                    <HistoryIcon />
+                    History
+                  </Button>
+                </p>
+              ) : null}
+              {applyFallback ? (
+                <p className="rounded-xl bg-amber-300/[0.07] px-3 py-2 text-xs text-amber-200/90 ring-1 ring-amber-300/20 ring-inset">
+                  <span className="font-medium">Fallback: </span>
+                  {applyFallback}
+                </p>
+              ) : null}
+              {applyError ? (
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-xl bg-red-400/[0.07] px-3 py-2 text-xs text-red-200/90 ring-1 ring-red-400/20 ring-inset">
+                  <AlertCircleIcon className="size-3.5 shrink-0" aria-hidden="true" />
+                  <span className="min-w-0 flex-1">
+                    {staleClip
+                      ? "That clip is gone from Resolve — the cut changed under this piece."
+                      : applyError}
+                  </span>
+                  {staleClip && clip ? (
+                    <Button type="button" size="xs" variant="ghost" onClick={apply}>
+                      <PackageIcon />
+                      Apply to current clip
+                    </Button>
+                  ) : null}
+                </div>
+              ) : null}
+              {!applied && !applyError && refusal ? (
+                <p className="rounded-xl bg-red-400/[0.07] px-3 py-2 text-xs text-red-200/90 ring-1 ring-red-400/20 ring-inset">
+                  Not applied: {refusal}
+                </p>
+              ) : null}
+            </div>
+          </div>
+        </section>
+
+        <VariablesPanel spec={spec} onPatch={patchControl} />
+        {rig ? (
+          <RigPanel
+            rig={rig}
+            bake={bake ?? { spec: spec as EffectSpec, keys: 0, frames: 0 }}
+            onChange={(patch) => setRig((current) => (current ? { ...current, ...patch } : current))}
+            onReset={() => spec && setRig(rigOf(spec))}
+          />
+        ) : null}
+
+        {failed || status || note ? (
+          <div aria-live="polite" className="flex shrink-0 items-start gap-2 px-1 text-xs leading-5">
+            {failed ? (
+              <>
+                <AlertCircleIcon className="size-3.5 shrink-0 translate-y-0.5 text-red-400" aria-hidden="true" />
+                <p className="min-w-0 flex-1 text-red-200/90">{failed}</p>
+              </>
+            ) : status ? (
+              <>
+                <Spinner className="size-3.5 shrink-0 translate-y-0.5 text-amber-300" />
+                <p className="min-w-0 flex-1 text-neutral-300">
+                  {status}
+                  {busy ? `… ${elapsed}s` : "…"}
+                </p>
+                {busy ? (
+                  <Button type="button" size="xs" variant="ghost" onClick={() => abortRef.current?.abort()}>
+                    Stop
+                  </Button>
+                ) : null}
+              </>
+            ) : (
+              <>
+                <SparklesIcon className="size-3.5 shrink-0 translate-y-0.5 text-neutral-500" aria-hidden="true" />
+                <p className="min-w-0 flex-1 text-neutral-500">{note}</p>
+              </>
+            )}
+          </div>
+        ) : null}
+
+      </div>
+
+      <div className="shrink-0">
         <ChatPrompt
           open
           wide
