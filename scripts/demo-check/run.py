@@ -20,17 +20,20 @@ version list must match the before-state afterwards.
 
 import argparse
 import json
+import math
 import os
+import struct
 import subprocess
 import sys
 import time
+import zlib
 import urllib.error
 import urllib.request
 from datetime import UTC, datetime
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 PROMPTS_PATH = os.path.join(HERE, "prompts.json")
-BAKE_ENTRY = os.path.join(HERE, "bake-rig.ts")
+SIM_ENTRY = os.path.join(HERE, "sim-rig.ts")
 BAKE_LOADER = os.path.join(HERE, "ts-register.mjs")
 
 PROJECT = "Chair Captest"
@@ -39,6 +42,11 @@ DIALOGUE = "dialogue.mp4"
 MUSIC = "music.wav"
 LOCK_PATH = "/tmp/chair-resolve.lock"
 REPORT_DIR = "/tmp/demo-check"
+
+# The cursor piece is a short move, not the whole 40-second clip: the model
+# writes it, the agent bakes it, and Resolve plays it through a Loader.
+RIG_DURATION_SEC = 4.0
+RIG_LAYER_ID = "cursor"
 
 # Mirrors scripting_module_paths in adapters/resolve/src/chair_resolve/read.py.
 SCRIPTING_PATHS = [
@@ -50,7 +58,7 @@ SCRIPTING_PATHS = [
 TOKENS_NOTE = (
     "not exposed by the agent: Completion carries model+text only "
     "(services/agent/src/chair_agent/client.py). Suggest recording usage "
-    "there and surfacing it via the effects/rig status snapshots and /health."
+    "there and surfacing it via the effects/modules status snapshots and /health."
 )
 
 
@@ -184,14 +192,14 @@ def health_snapshot(world) -> dict:
     """The /health counters one flow's model use is read from."""
     health = world.get("/health")
     effects = health.get("effects", {})
-    rig = health.get("rig", {})
+    modules = health.get("modules", {})
     return {
         "effects_generated": effects.get("generated", 0),
         "effects_repairs": effects.get("repairs", 0),
         "effects_latency_ms": effects.get("last_latency_ms"),
-        "rig_generated": rig.get("generated", 0),
-        "rig_repairs": rig.get("repairs", 0),
-        "rig_latency_ms": rig.get("last_latency_ms"),
+        "modules_generated": modules.get("generated", 0),
+        "modules_repairs": modules.get("repaired", 0),
+        "modules_latency_ms": modules.get("last_generate_ms"),
     }
 
 
@@ -247,32 +255,28 @@ class Live:
     def get(self, path: str, timeout: int = 60) -> dict:
         return get_json(self.agent, path, timeout)
 
-    def bake(self, rig: dict, spec: dict, fps: float) -> dict:
-        """Bake the rig through the repo's own sim (node, no build step)."""
-        errors = os.path.join(REPORT_DIR, "bake.err")
+    def sim(self, values: dict) -> dict:
+        """Run the kit follower sim over the demo path (node, no build step)."""
+        errors = os.path.join(REPORT_DIR, "sim.err")
         os.makedirs(REPORT_DIR, exist_ok=True)
-        spec_path = os.path.join(REPORT_DIR, "bake-spec.json")
-        rig_path = os.path.join(REPORT_DIR, "bake-rig.json")
-        with open(spec_path, "w", encoding="utf-8") as handle:
-            json.dump(spec, handle)
-        with open(rig_path, "w", encoding="utf-8") as handle:
-            json.dump(rig, handle)
+        values_path = os.path.join(REPORT_DIR, "sim-values.json")
+        with open(values_path, "w", encoding="utf-8") as handle:
+            json.dump(values, handle)
         try:
             done = subprocess.run(
-                ["node", "--import", BAKE_LOADER, BAKE_ENTRY,
-                 spec_path, rig_path, str(fps)],
+                ["node", "--import", BAKE_LOADER, SIM_ENTRY, values_path],
                 capture_output=True, text=True, timeout=120,
             )
         except (OSError, subprocess.TimeoutExpired) as error:
-            raise Fail(f"bake: node could not run the rig sim ({error})") from error
+            raise Fail(f"sim: node could not run the kit sim ({error})") from error
         if done.returncode != 0:
             with open(errors, "w", encoding="utf-8") as handle:
                 handle.write(done.stderr)
-            raise Fail(f"bake: the rig sim failed (see {errors})")
+            raise Fail(f"sim: the kit sim failed (see {errors})")
         try:
             return json.loads(done.stdout)
         except ValueError as error:
-            raise Fail(f"bake: the rig sim printed no JSON ({error})") from error
+            raise Fail(f"sim: the kit sim printed no JSON ({error})") from error
 
     def setup(self) -> dict:
         """Open Chair Captest, build the throwaway timeline, read its shape."""
@@ -481,13 +485,48 @@ class Dry:
             return {"id": "fx-dry-1",
                     "spec": {"id": "fx-dry-1", "layers": []},
                     "notes": "dry run"}
-        if path == "/effects/rig/generate":
-            return {"rig": {
-                "inputPath": [{"time": 0.0, "x": 100, "y": 100},
-                              {"time": 1.0, "x": 900, "y": 500},
-                              {"time": 2.0, "x": 960, "y": 540}],
-                "stiffness": 90, "damping": 12, "mass": 1},
-                "notes": "dry run"}
+        if path == "/effects/modules/generate":
+            return {
+                "id": "fxm-dry-1",
+                "meta": {"id": "dry-rig", "name": "Dry Rig", "kind": "rig",
+                         "durationSec": RIG_DURATION_SEC, "fps": 24,
+                         "width": 1920, "height": 1080},
+                "props": ["targetX", "targetY", "stiffness", "damping",
+                          "mass", "swing", "squash", "overshoot"],
+                "checks": {"deterministic": True, "animates": True,
+                           "slowestFrameMs": 3.2, "inertProps": 0},
+                "warnings": [], "stem": None, "files": [],
+                "keyframes": None,
+                "notes": "Written by dry-model from the brief.",
+                "repaired": False,
+                "preview": "/effects/modules/fxm-dry-1/preview",
+                "plan": {"parts": [{"route": "new"}],
+                         "counts": {"native": 0, "reuse": 0, "new": 1}},
+            }
+        if (path.startswith("/effects/modules/")
+                and path.endswith("/bundle")):
+            made = self.post("/effects/modules/generate", {})
+            made["props"] = [
+                {"id": "targetX", "label": "Target X", "type": "number",
+                 "default": 960, "min": 0, "max": 1920},
+                {"id": "targetY", "label": "Target Y", "type": "number",
+                 "default": 540, "min": 0, "max": 1080},
+                {"id": "stiffness", "label": "Stiffness", "type": "number",
+                 "default": 150, "min": 20, "max": 400},
+                {"id": "damping", "label": "Damping", "type": "number",
+                 "default": 11, "min": 3, "max": 40},
+                {"id": "mass", "label": "Mass", "type": "number",
+                 "default": 1, "min": 0.2, "max": 5},
+                {"id": "swing", "label": "Swing", "type": "number",
+                 "default": 1, "min": 0, "max": 2},
+                {"id": "squash", "label": "Squash", "type": "number",
+                 "default": 1, "min": 0, "max": 2},
+                {"id": "overshoot", "label": "Overshoot", "type": "bool",
+                 "default": True},
+            ]
+            made["stem"] = "chair-dry-rig"
+            made["files"] = ["chair-dry-rig.ograf.json", "chair-dry-rig.js"]
+            return made
         if path == "/effects/rig/apply":
             self.applied += 1
             prev = self.comps[-1] if self.comps else None
@@ -532,8 +571,8 @@ class Dry:
         if path == "/health":
             return {"effects": {"generated": 0, "repairs": 0,
                                 "last_latency_ms": None},
-                    "rig": {"generated": 0, "repairs": 0,
-                            "last_latency_ms": None}}
+                    "modules": {"generated": 0, "repaired": 0,
+                                "last_generate_ms": None}}
         if path == "/jobs/dry-job-1":
             return {"request_id": "dry-job-1", "status": "completed",
                     "planner": "rules", "message": None, "skipped": [],
@@ -544,15 +583,17 @@ class Dry:
                         {"op": "set_gain", "id": "duck-1"}]}}
         raise Fail(f"dry run has no canned {path}")
 
-    def bake(self, rig: dict, spec: dict, fps: float) -> dict:
-        def keys(n: int) -> list:
-            return [{"time": round(i * 0.1, 1), "value": float(i)}
-                    for i in range(n)]
-        return {"targetId": "cursor",
-                "baked": {"cursor": {"x": keys(4), "y": keys(4),
-                                     "rotation": keys(3), "scaleX": keys(3),
-                                     "scaleY": keys(3)}},
-                "keys": 17, "frames": 120, "flat": []}
+    def sim(self, values: dict) -> dict:
+        samples = values.get("samples", 48)
+        poses = []
+        for index in range(samples):
+            mix = index / max(samples - 1, 1)
+            over = 14.0 if 0.3 < mix < 0.36 else 0.0
+            poses.append({
+                "t": round(mix * RIG_DURATION_SEC, 3),
+                "x": 120.0 + 840.0 * (1.0 - (1.0 - mix) ** 2) + over,
+                "y": 540.0, "tilt": 0.0})
+        return {"poses": poses}
 
     def setup(self) -> dict:
         return {"width": 1920, "height": 1080, "fps": 24.0,
@@ -669,55 +710,241 @@ def flow_effect(world, prompts: dict, info: dict, created: dict) -> dict:
     return flow
 
 
+def prop_ids(props) -> list:
+    """Prop ids from a module summary: bare ids, or full bundled specs."""
+    out = []
+    for entry in props or []:
+        if isinstance(entry, str):
+            out.append(entry)
+        elif isinstance(entry, dict) and isinstance(entry.get("id"), str):
+            out.append(entry["id"])
+    return out
+
+
+def match_control(ids: list, *parts: str):
+    """First prop id containing every part (case-insensitive)."""
+    for entry in ids:
+        low = entry.lower()
+        if all(part in low for part in parts):
+            return entry
+    return None
+
+
+def target_axis(ids: list, axis: str):
+    """The target position control for one axis (targetX, targetY)."""
+    for entry in ids:
+        low = entry.lower()
+        if "target" in low and low.endswith(axis):
+            return entry
+    return None
+
+
+def rig_target_path(tx: float, ty: float) -> list:
+    """The demo's swing-in path: in from the left, settle, bounce on click."""
+    return [
+        {"time": 0.0, "x": 120.0, "y": ty},
+        {"time": 1.2, "x": tx, "y": ty},
+        {"time": 2.0, "x": tx, "y": ty},
+        {"time": 2.5, "x": tx, "y": ty + 40.0},
+        {"time": 2.7, "x": tx, "y": ty},
+        {"time": 2.9, "x": tx, "y": ty + 18.0},
+        {"time": 3.2, "x": tx, "y": ty},
+        {"time": RIG_DURATION_SEC, "x": tx, "y": ty},
+    ]
+
+
+def feel_numbers(poses: list, tx: float, ty: float) -> dict:
+    """How much the follower moves after arrival, and its peak speed."""
+    settled = [pose for pose in poses if pose.get("t", 0) >= 1.2]
+    dev = 0.0
+    for pose in settled:
+        dev = max(dev, math.hypot(pose["x"] - tx, pose["y"] - ty))
+    peak = 0.0
+    for first, second in zip(poses, poses[1:]):
+        span = second["t"] - first["t"]
+        if span > 0:
+            peak = max(peak, math.hypot(second["x"] - first["x"],
+                                        second["y"] - first["y"]) / span)
+    return {"settle_dev_px": round(dev, 1),
+            "peak_speed_px_s": round(peak)}
+
+
+def write_strip_png(poses: list, path: str, cells: int = 12) -> str:
+    """Frame strip of the follower (stdlib PNG): fading trail, orange dot."""
+    cell_w, cell_h, gap = 160, 90, 6
+    width = cells * cell_w + (cells - 1) * gap
+    rows = [bytearray([20, 20, 20]) * width for _ in range(cell_h)]
+
+    def dot(cx: int, cy: int, radius: int, color: tuple) -> None:
+        for dy in range(-radius, radius + 1):
+            y = cy + dy
+            if y < 0 or y >= cell_h:
+                continue
+            dx = int((radius * radius - dy * dy) ** 0.5)
+            for x in range(cx - dx, cx + dx + 1):
+                if 0 <= x < width:
+                    rows[y][x * 3:x * 3 + 3] = bytes(color)
+
+    for cell in range(cells):
+        pick = round(cell * (len(poses) - 1) / max(cells - 1, 1))
+        base = cell * (cell_w + gap)
+        stride = max(pick // 16, 1)
+        for back in range(0, pick + 1, stride):
+            pose = poses[back]
+            fade = back / max(pick, 1)
+            gray = round(40 + 90 * fade)
+            dot(base + round(pose["x"] * cell_w / 1920),
+                round(pose["y"] * cell_h / 1080), 2, (gray, gray, gray))
+        pose = poses[pick]
+        dot(base + round(pose["x"] * cell_w / 1920),
+            round(pose["y"] * cell_h / 1080), 5, (255, 106, 0))
+
+    def chunk(tag: bytes, data: bytes) -> bytes:
+        return (struct.pack(">I", len(data)) + tag + data
+                + struct.pack(">I", zlib.crc32(tag + data) & 0xFFFFFFFF))
+
+    raw = b"".join(b"\x00" + bytes(row) for row in rows)
+    png = (b"\x89PNG\r\n\x1a\n"
+           + chunk(b"IHDR", struct.pack(">IIBBBBB", width, cell_h,
+                                       8, 2, 0, 0, 0))
+           + chunk(b"IDAT", zlib.compress(raw))
+           + chunk(b"IEND", b""))
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "wb") as handle:
+        handle.write(png)
+    return path
+
+
 def flow_rig(world, prompts: dict, info: dict, created: dict) -> dict:
-    """Draft the cursor rig, bake it, apply it, undo to the previous comp."""
+    """Generate the cursor piece live, check it, bundle it, apply it, undo."""
     flow = new_flow("rig", prompts["rig"])
+    flow["notes"].append(
+        "the swing-in target path is the demo input; the spring values "
+        "are the model's.")
     before_health = None
     try:
         before_health = health_snapshot(world)
         canvas = {"width": info["width"], "height": info["height"]}
-        generate_body = {"brief": flow["prompt"], "canvas": canvas,
-                         "fps": info["fps"], "durationSec": info["duration_sec"]}
-        drafted = timed(flow["seconds"], "generate", world.post,
-                        "/effects/rig/generate", generate_body)
-        rig = drafted.get("rig", {})
-        flow["evidence"]["rig_notes"] = drafted.get("notes", "")
-        input_path = rig.get("inputPath")
-        flow["evidence"]["input_path_keys"] = len(input_path or [])
-        if not isinstance(input_path, list) or not input_path:
-            raise Fail("rig draft came back with no input path")
-        carrier = timed(
-            flow["seconds"], "generate", world.post, "/effects/generate",
-            {"prompt": flow["prompt"], "canvas": canvas,
-             "fps": info["fps"], "durationSec": info["duration_sec"],
-             "rig": rig})
-        carrier_id = carrier.get("id", "")
-        spec = carrier.get("spec")
-        flow["evidence"]["carrier_id"] = carrier_id
-        if not carrier_id or not isinstance(spec, dict):
-            raise Fail("carrier effect came back without an id and spec")
-        baked = timed(flow["seconds"], "bake", world.bake, rig, spec,
-                      info["fps"])
-        flow["evidence"]["target_layer"] = baked.get("targetId")
-        flow["evidence"]["baked_total"] = baked.get("keys", 0)
-        flow["evidence"]["sim_frames"] = baked.get("frames", 0)
-        flow["evidence"]["flat_channels"] = baked.get("flat", [])
-        if not baked.get("targetId") or not baked.get("baked"):
-            raise Fail("bake found no text/shape layer to drive in the carrier")
-        props = next(iter(baked["baked"].values()))
-        counts = {name: len(keys) for name, keys in props.items()}
-        flow["evidence"]["baked_keys"] = counts
-        missing = [name for name in ("x", "y", "rotation")
-                   if counts.get(name, 0) == 0]
-        if counts.get("scaleX", 0) == 0 and counts.get("scaleY", 0) == 0:
-            missing.append("scale")
+        made = timed(
+            flow["seconds"], "generate", world.post,
+            "/effects/modules/generate",
+            {"brief": flow["prompt"], "kind": "rig", "canvas": canvas,
+             "fps": info["fps"], "durationSec": RIG_DURATION_SEC})
+        module_id = made.get("id", "")
+        flow["evidence"]["module_id"] = module_id
+        notes = made.get("notes", "")
+        flow["evidence"]["notes"] = notes
+        flow["evidence"]["repaired"] = made.get("repaired", False)
+        if not module_id:
+            raise Fail("the piece planner left nothing to make: " + notes)
+        if "Written by" not in notes or "deterministic fallback" in notes:
+            raise Fail("the piece was not written live by the model")
+        meta = made.get("meta") or {}
+        flow["evidence"]["meta_kind"] = meta.get("kind")
+        if meta.get("kind") != "rig":
+            raise Fail(f"the piece is kind {meta.get('kind')!r}, not a rig")
+        checks = made.get("checks") or {}
+        flow["evidence"]["checks"] = checks
+        if checks.get("deterministic") is False:
+            raise Fail("the piece failed the determinism check")
+        ids = prop_ids(made.get("props"))
+        flow["evidence"]["prop_ids"] = ids
+        controls = {
+            "x": target_axis(ids, "x"),
+            "y": target_axis(ids, "y"),
+            "stiffness": match_control(ids, "stiff"),
+            "mass": match_control(ids, "mass"),
+            "swing": match_control(ids, "swing"),
+        }
+        missing = sorted(name for name, hit in controls.items()
+                         if hit is None)
         if missing:
-            raise Fail(f"bake left no keys on {', '.join(missing)}")
+            raise Fail("the piece exposes no keyframable "
+                       + ", ".join(missing))
+        flow["evidence"]["controls"] = controls
+        bundled = timed(flow["seconds"], "bake", world.post,
+                        f"/effects/modules/{module_id}/bundle", {})
+        specs = {entry["id"]: entry for entry in bundled.get("props", [])
+                 if isinstance(entry, dict)
+                 and isinstance(entry.get("id"), str)}
+        for name in controls.values():
+            if specs.get(name, {}).get("type") != "number":
+                raise Fail(f"control {name!r} is not a keyframable number")
+        values = {}
+        for name in controls.values():
+            default = specs[name].get("default")
+            if isinstance(default, bool) \
+                    or not isinstance(default, (int, float)):
+                raise Fail(f"control {name!r} has no numeric default")
+            values[name] = float(default)
+        flow["evidence"]["values"] = values
+        flow["evidence"]["stem"] = bundled.get("stem")
+
+        def opt_num(prop_id, fallback: float) -> float:
+            if prop_id is None:
+                return fallback
+            default = specs.get(prop_id, {}).get("default")
+            if isinstance(default, bool) \
+                    or not isinstance(default, (int, float)):
+                return fallback
+            return float(default)
+
+        damping_id = match_control(ids, "damp")
+        squash_id = match_control(ids, "squash")
+        overshoot_id = match_control(ids, "overshoot")
+        damping = opt_num(damping_id, 11.0)
+        squash = opt_num(squash_id, 1.0)
+        overshoot = specs.get(overshoot_id, {}).get("default", True)
+        if overshoot is not True and overshoot is not False:
+            overshoot = True
+        tx, ty = values[controls["x"]], values[controls["y"]]
+        path = rig_target_path(tx, ty)
+        simmed = timed(flow["seconds"], "bake", world.sim, {
+            "xName": controls["x"], "yName": controls["y"], "path": path,
+            "stiffness": values[controls["stiffness"]], "damping": damping,
+            "mass": values[controls["mass"]],
+            "swing": values[controls["swing"]], "squash": squash,
+            "overshoot": overshoot, "durationSec": RIG_DURATION_SEC,
+            "samples": 48})
+        poses = simmed.get("poses", [])
+        if not poses:
+            raise Fail("the kit sim returned no poses")
+        stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S")
+        strip = write_strip_png(
+            poses, os.path.join(REPORT_DIR, "rig", f"strip-{stamp}.png"))
+        flow["evidence"]["strip"] = strip
+        flow["evidence"]["feel"] = feel_numbers(poses, tx, ty)
+
+        def keys(axis: str) -> list:
+            return [{"time": key["time"], "value": key[axis]}
+                    for key in path]
+
+        params = {"module": module_id}
+        for role in ("stiffness", "mass", "swing"):
+            params[controls[role]] = values[controls[role]]
+        if damping_id is not None:
+            params[damping_id] = damping
+        if squash_id is not None:
+            params[squash_id] = squash
+        if overshoot_id is not None:
+            params[overshoot_id] = overshoot
+        spec = {
+            "schemaVersion": "0.1.0", "id": module_id,
+            "name": f"Rig {module_id}",
+            "width": info["width"], "height": info["height"],
+            "fps": info["fps"], "durationSec": RIG_DURATION_SEC,
+            "layers": [{
+                "id": RIG_LAYER_ID, "type": "shader", "params": params,
+                "curves": {
+                    controls["x"]: {"keyframes": keys("x")},
+                    controls["y"]: {"keyframes": keys("y")},
+                },
+            }],
+        }
         state_before = world.comp_state()
-        applied = timed(
-            flow["seconds"], "apply", world.post, "/effects/rig/apply",
-            {"effectId": carrier_id, "baked": baked["baked"],
-             **world.locator()})
+        applied = timed(flow["seconds"], "apply", world.post,
+                        "/effects/rig/apply",
+                        {"spec": spec, **world.locator()}, 1200)
         if "fallback" in applied:
             reason = applied["fallback"].get("reason", "no reason given")
             raise Fail(f"Resolve could not take this piece: {reason}")
@@ -725,6 +952,7 @@ def flow_rig(world, prompts: dict, info: dict, created: dict) -> dict:
         prev = applied.get("prev_comp_name")
         flow["evidence"]["comp_name"] = comp
         flow["evidence"]["prev_comp_name"] = prev
+        flow["evidence"]["bake_note"] = applied.get("notes", "")
         flow["evidence"]["apply_keyframes"] = applied.get("keyframes", 0)
         state_after = world.comp_state()
         if not comp or comp in state_before["names"]:
@@ -734,6 +962,12 @@ def flow_rig(world, prompts: dict, info: dict, created: dict) -> dict:
         flow["evidence"]["new_comp_tools"] = new_tools
         if new_tools == 0:
             raise Fail(f"new comp {comp!r} is empty or unreadable")
+        prev_tools_before = state_before["tools"].get(prev or "", None)
+        prev_tools_after = state_after["tools"].get(prev or "", None)
+        flow["evidence"]["prev_comp_tools_before"] = prev_tools_before
+        flow["evidence"]["prev_comp_tools_after"] = prev_tools_after
+        if prev is not None and prev_tools_before != prev_tools_after:
+            raise Fail(f"apply touched the previous comp {prev!r}")
         flow["evidence"]["spline_readback"] = world.keyframe_readback(comp)
         op = {"comp_name": comp, "prev_comp_name": prev,
               "undo": {"prev_comp_name": prev}}
@@ -746,8 +980,8 @@ def flow_rig(world, prompts: dict, info: dict, created: dict) -> dict:
         else:
             undone = f"undone to {prev}" if prev else "only version removed"
         flow["reason"] = (
-            f"rig baked to {baked['keys']} keys on {baked['targetId']}, "
-            f"new comp {comp}, {undone}")
+            f"rig {module_id} checked + bundled, new comp {comp} "
+            f"with {new_tools} tools, {undone}")
     except Fail as error:
         flow["reason"] = str(error)
     finally:
@@ -758,7 +992,7 @@ def flow_rig(world, prompts: dict, info: dict, created: dict) -> dict:
                 after_health = None
             if after_health is not None:
                 calls, repairs = health_delta(before_health, after_health,
-                                              "effects", "rig")
+                                              "modules")
                 flow["repairs"] = repairs
                 flow["model_calls"] = calls
     return flow
