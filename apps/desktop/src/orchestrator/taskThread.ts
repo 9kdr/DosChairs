@@ -293,10 +293,74 @@ export function liveJobEntries(): [string, RunningTask][] {
   return [...liveJobs.entries()];
 }
 
+/** Final rows for settled tasks, oldest first, for the board's Recent group. */
+const settledRows = new Map<string, RunningTask>();
+
+/** Remember a settled task's final row so the Recent group can show it. */
+export function rememberSettledTask(task: RunningTask): void {
+  settledRows.set(task.id, task);
+}
+
+/** Settled tasks, oldest first. */
+export function settledTaskRows(): RunningTask[] {
+  return [...settledRows.values()];
+}
+
+/** Seen finished tasks, per project: the Recent dot clears once looked at. */
+const SEEN_KEY_PREFIX = "chair.seenTasks.";
+const SEEN_CAP = 200;
+const seenCache = new Map<string, Set<string>>();
+
+function seenKey(projectId: string | undefined): string {
+  return `${SEEN_KEY_PREFIX}${projectId ?? "local"}`;
+}
+
+function seenSet(projectId: string | undefined): Set<string> {
+  const key = seenKey(projectId);
+  const cached = seenCache.get(key);
+  if (cached) return cached;
+  const ids = new Set<string>();
+  try {
+    const raw = typeof localStorage === "undefined" ? null : localStorage.getItem(key);
+    if (raw) {
+      for (const id of JSON.parse(raw) as unknown[]) {
+        if (typeof id === "string") ids.add(id);
+      }
+    }
+  } catch {
+    // A broken seen list reads as unseen; the next mark rewrites it.
+  }
+  seenCache.set(key, ids);
+  return ids;
+}
+
+/** True once the person expanded or opened the finished task. */
+export function isTaskSeen(projectId: string | undefined, taskId: string): boolean {
+  return seenSet(projectId).has(taskId);
+}
+
+/** Mark a finished task looked at; the Recent dot clears. */
+export function markTaskSeen(projectId: string | undefined, taskId: string): void {
+  const ids = seenSet(projectId);
+  if (ids.has(taskId)) return;
+  ids.add(taskId);
+  const trimmed = [...ids].slice(-SEEN_CAP);
+  seenCache.set(seenKey(projectId), new Set(trimmed));
+  try {
+    if (typeof localStorage !== "undefined") {
+      localStorage.setItem(seenKey(projectId), JSON.stringify(trimmed));
+    }
+  } catch {
+    // Private windows keep the mark for the session only.
+  }
+}
+
 /** Test support: clear remembered jobs, failures, and settled tasks. */
 export function resetLiveJobs(): void {
   liveJobs.clear();
   settledTasks.clear();
+  settledRows.clear();
+  seenCache.clear();
   submitErrors.clear();
   pollFailures.clear();
   appliedJobs.clear();
@@ -480,7 +544,10 @@ type ApplyOptions = { agentUrl?: string; fetchFn?: FetchFn };
  * timeline, never touching the original. The agent reads the job by
  * id; project and timeline stay unset so it uses what is current.
  */
-export async function applyFinishedSound(entry: LiveJobEntry, options: ApplyOptions = {}): Promise<void> {
+export async function applyFinishedSound(
+  entry: LiveJobEntry,
+  options: ApplyOptions = {},
+): Promise<void> {
   const job = entry.job;
   if (!job || job.status !== "completed" || !hasSoundItems(job)) return;
   try {
@@ -580,7 +647,10 @@ export function retryLandedWrite(taskId: string, options: ApplyOptions = {}): vo
  * copy stays. True when Resolve answered; the card keeps its Undo
  * button on failure so the person can try again.
  */
-export async function undoLandedWrite(taskId: string, options: ApplyOptions = {}): Promise<boolean> {
+export async function undoLandedWrite(
+  taskId: string,
+  options: ApplyOptions = {},
+): Promise<boolean> {
   const landed = landedByTask.get(taskId);
   if (!landed || landed.state !== "landed" || !landed.undo) return false;
   const undo = landed.kind === "cut" ? revertCut : revertSound;
@@ -608,7 +678,10 @@ export async function undoLandedWrite(taskId: string, options: ApplyOptions = {}
 }
 
 /** Redo an undone write: the stored apply body goes again as a new copy. */
-export async function redoLandedWrite(taskId: string, options: ApplyOptions = {}): Promise<boolean> {
+export async function redoLandedWrite(
+  taskId: string,
+  options: ApplyOptions = {},
+): Promise<boolean> {
   const landed = landedByTask.get(taskId);
   if (!landed || landed.state !== "undone" || !landed.redo) return false;
   const apply = landed.kind === "cut" ? applyCut : applySound;
@@ -621,6 +694,20 @@ export async function redoLandedWrite(taskId: string, options: ApplyOptions = {}
     return false;
   }
   return true;
+}
+
+/** The Recent row's status line for a terminal job: short, no machinery. */
+export function settledStatusFor(job: AgentJob): string {
+  switch (job.status) {
+    case "failed":
+      return `Failed: ${firstLine(job.error ?? "failed")}`;
+    case "canceled":
+      return "Canceled";
+    case "moderated":
+      return "Stopped";
+    default:
+      return "Done";
+  }
 }
 
 /** One row per task from a live job. Null when the job already finished. */
@@ -669,15 +756,6 @@ export function stopLiveTask(client: ServicesClient, task: RunningTask): Promise
   return client.cancelAgentJob(task.jobId);
 }
 
-/** Cards for finished tasks that wrote to Resolve: what landed, with Undo and Redo. */
-export function landedRowsFor(tasks: readonly RunningTask[]): RunningTask[] {
-  return tasks.flatMap((task) => {
-    const landed = landedByTask.get(task.id);
-    if (!landed) return [];
-    return [{ ...task, status: landed.line, jobId: landed.requestId, jobStatus: "completed" as const }];
-  });
-}
-
 const LIVE_POLL_MS = 2000;
 
 /**
@@ -712,10 +790,7 @@ export function waitingRowsFor(tasks: readonly RunningTask[]): RunningTask[] {
  * submit-error map (never swallowed) so the row stays visible as failed;
  * the next poll resubmits under the same idempotent key.
  */
-export async function submitLiveTurn(
-  client: ServicesClient,
-  task: RunningTask,
-): Promise<void> {
+export async function submitLiveTurn(client: ServicesClient, task: RunningTask): Promise<void> {
   if (isLiveTaskSettled(task.id)) return;
   const scope = openTurnScope(task.id, task.lane, true);
   // Same key and input as the thread's primary opening turn, so opening
@@ -733,7 +808,10 @@ export async function submitLiveTurn(
   }
 }
 
-export function useLiveTasks(createdTasks: readonly RunningTask[], refreshKey?: unknown): RunningTask[] {
+export function useLiveTasks(
+  createdTasks: readonly RunningTask[],
+  refreshKey?: unknown,
+): RunningTask[] {
   const client = useServicesClient();
   const [rows, setRows] = useState<RunningTask[]>([]);
   const rowsRef = useRef(rows);
@@ -785,6 +863,19 @@ export function useLiveTasks(createdTasks: readonly RunningTask[], refreshKey?: 
           }
         }
         const merged = liveRowsForJobs(entries);
+        // Finished tasks stay for the Recent group: their final row keeps
+        // the terminal outcome, so nothing that ran vanishes from the board.
+        for (const entry of entries) {
+          const job = entry.job;
+          if (job && isAgentTerminal(job.status)) {
+            rememberSettledTask({
+              ...entry.task,
+              status: settledStatusFor(job),
+              jobId: entry.requestId,
+              jobStatus: job.status,
+            });
+          }
+        }
         for (const requestId of merged.forget) forgetLiveJob(requestId);
         for (const taskId of merged.settle) {
           settleLiveTask(taskId);
@@ -794,7 +885,7 @@ export function useLiveTasks(createdTasks: readonly RunningTask[], refreshKey?: 
           void maybeApplyFinishedSound(entry);
           void maybeApplyFinishedCut(entry);
         }
-        if (live) setRows([...waitingRowsFor(tasks), ...stale, ...merged.rows, ...landedRowsFor(tasks)]);
+        if (live) setRows([...waitingRowsFor(tasks), ...stale, ...merged.rows]);
       } finally {
         ticking = false;
       }
@@ -835,6 +926,9 @@ export function textForJob(job: AgentJob): string {
     return `The agent stopped this turn: ${job.error ?? "moderated"}. Nothing changed.${model}`;
   }
   if (job.status === "canceled") return `This turn was canceled. Nothing changed.${model}`;
+  // Unknown statuses read as live work, never as a result: a reply must
+  // not say Nothing changed while the turn is still running.
+  if (job.status !== "completed") return `The agent is working on it.${model}`;
   const previews = job.artifacts.length;
   const ops = job.changeset?.ops.length ?? 0;
   const previewBit =
@@ -890,7 +984,9 @@ export function activityForLiveJob(job: AgentJob): TaskActivity {
       ],
     };
   }
-  if (job.status === "in_progress") {
+  // Unknown statuses read as live work, never as a result: the rail
+  // must not show a finished turn while the job is still running.
+  if (!isAgentTerminal(job.status)) {
     return {
       headline: "The agent is working",
       progress: 2 / 3,
@@ -936,7 +1032,7 @@ export function activityForLivePending(): TaskActivity {
     headline: "Starting the turn…",
     progress: 0,
     steps: [
-      { id: "sent", label: "Sending the turn…", state: "active" },
+      { id: "sent", label: "Working…", state: "active" },
       { id: "working", label: "Agent working", state: "queued" },
       { id: "result", label: "Result", state: "queued" },
     ],
@@ -1049,9 +1145,20 @@ export function useTaskThread(
       if (taskRef.current.id === id) apply();
     };
     const multi = agents.length > 1;
+    const driver = agents.find((agent) => agent.runnable);
+    if (!driver) {
+      // No lane can run: settle the thread instead of leaving the header
+      // on its pending step forever. Nothing ran; nothing changed.
+      setTerminal("canceled");
+      setActivity(activityForLiveError("No connected lane yet"));
+      return;
+    }
     agents.forEach((agent, index) => {
       if (!agent.runnable) return;
       const primary = index === 0;
+      // Keys and turn ids stay on the first wanted lane; the header
+      // follows the first lane that can actually run.
+      const drivesHeader = agent === driver;
       const scope = openTurnScope(id, agent.lane, primary);
       const say = (text: string) => (multi ? `${agent.label}: ${text}` : text);
       const paint = (text: string) =>
@@ -1067,7 +1174,7 @@ export function useTaskThread(
           if (isAgentTerminal(job.status)) return;
           live(() => {
             paint(say(textForJob(job)));
-            if (primary) setActivity(activityForLiveJob(job));
+            if (drivesHeader) setActivity(activityForLiveJob(job));
           });
         },
       }).then(
@@ -1081,7 +1188,7 @@ export function useTaskThread(
           ]).then(() => {
             live(() => {
               paint(say(textForJob(job)));
-              if (primary) {
+              if (drivesHeader) {
                 setTerminal(job.status);
                 setActivity(activityForLiveJob(job));
               }
@@ -1100,7 +1207,7 @@ export function useTaskThread(
                   : turn,
               ),
             );
-            if (primary) {
+            if (drivesHeader) {
               setTerminal("failed");
               setActivity(activityForLiveError(headlineForSubmitError(error)));
             }

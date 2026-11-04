@@ -21,12 +21,13 @@ import {
   headlineForSubmitError,
   initialTurnsFor,
   inputForTurn,
+  isTaskSeen,
   isThreadDemo,
   landedFor,
-  landedRowsFor,
   liveJobEntries,
   liveRowsForJobs,
   liveSubmitError,
+  markTaskSeen,
   maybeApplyFinishedCut,
   maybeApplyFinishedSound,
   noteKey,
@@ -38,12 +39,15 @@ import {
   POLL_FAIL_LIMIT,
   recordLiveJob,
   redoLandedWrite,
+  rememberSettledTask,
   replyForSubmitError,
   resetLiveJobs,
   retryLandedWrite,
   retryLiveTask,
   runTurn,
   selectionForNote,
+  settledStatusFor,
+  settledTaskRows,
   stopLiveTask,
   submitLiveTurn,
   taskForLiveJob,
@@ -190,6 +194,13 @@ describe("thread copy", () => {
     }
     expect(queued).toContain("queued on the agent");
     expect(working).toContain("working on it");
+  });
+
+  it("reads unknown statuses as live work, never as a result", () => {
+    const strange = job("queued", { status: "running" });
+    expect(textForJob(strange)).toBe(textForJob(job("in_progress")));
+    expect(textForJob(strange)).not.toContain("Nothing changed");
+    expect(activityForLiveJob(strange).headline).toBe("The agent is working");
   });
 
   it("says a finished sound turn landed, with Undo on the card", () => {
@@ -578,6 +589,35 @@ describe("live task list", () => {
   });
 });
 
+describe("settled tasks", () => {
+  it("reads the terminal outcome as a short status line", () => {
+    expect(settledStatusFor(job("completed"))).toBe("Done");
+    expect(settledStatusFor(job("failed", { error: "no faces found\nframe 12" }))).toBe(
+      "Failed: no faces found",
+    );
+    expect(settledStatusFor(job("canceled"))).toBe("Canceled");
+    expect(settledStatusFor(job("moderated"))).toBe("Stopped");
+  });
+
+  it("keeps settled rows oldest first until reset", () => {
+    expect(settledTaskRows()).toEqual([]);
+    rememberSettledTask({ ...task, id: "task-a", status: "Done" });
+    rememberSettledTask({ ...task, id: "task-b", status: "Done" });
+    expect(settledTaskRows().map((row) => row.id)).toEqual(["task-a", "task-b"]);
+    resetLiveJobs();
+    expect(settledTaskRows()).toEqual([]);
+  });
+});
+
+describe("seen tasks", () => {
+  it("clears the unseen dot once the task is looked at, per project", () => {
+    expect(isTaskSeen("p1", "task-a")).toBe(false);
+    markTaskSeen("p1", "task-a");
+    expect(isTaskSeen("p1", "task-a")).toBe(true);
+    expect(isTaskSeen("p2", "task-a")).toBe(false);
+  });
+});
+
 describe("waiting and failed rows", () => {
   const prompted: RunningTask = {
     id: "task-prompt-7",
@@ -600,14 +640,10 @@ describe("waiting and failed rows", () => {
     };
     const client = createServicesClient({ fetchFn: failing });
     await submitLiveTurn(client, prompted);
-    expect(liveSubmitError(prompted.id)).toBe(
-      "agent is unreachable at http://127.0.0.1:8787/jobs",
-    );
+    expect(liveSubmitError(prompted.id)).toBe("agent is unreachable at http://127.0.0.1:8787/jobs");
     const rows = waitingRowsFor([prompted]);
     expect(rows).toHaveLength(1);
-    expect(rows[0]?.status).toBe(
-      "Failed: agent is unreachable at http://127.0.0.1:8787/jobs",
-    );
+    expect(rows[0]?.status).toBe("Failed: agent is unreachable at http://127.0.0.1:8787/jobs");
   });
 
   it("clears the failure once a later submit succeeds", async () => {
@@ -696,9 +732,7 @@ describe("turn model and files", () => {
   it("names the turn model on live and terminal copy", () => {
     const queued = textForJob(job("queued", { input: { model: "Chair fast" } }));
     expect(queued).toContain("Model: Chair fast.");
-    const done = textForJob(
-      job("completed", { input: { model: "muse-spark-1 (Meta)" } }),
-    );
+    const done = textForJob(job("completed", { input: { model: "muse-spark-1 (Meta)" } }));
     expect(done).toContain("Model: muse-spark-1 (Meta).");
     expect(textForJob(job("completed"))).not.toContain("Model:");
   });
@@ -791,11 +825,19 @@ describe("hasSoundItems", () => {
   it("sees ducking, audio tracks, and sound clips", () => {
     expect(hasSoundItems(done([{ op: "set_gain", patch: { gainDb: -12 } }]))).toBe(true);
     expect(
-      hasSoundItems(done([{ op: "add_track", patch: { track: { id: "audio-sfx-1", kind: "audio" } } }])),
+      hasSoundItems(
+        done([{ op: "add_track", patch: { track: { id: "audio-sfx-1", kind: "audio" } } }]),
+      ),
     ).toBe(true);
     expect(
       hasSoundItems(
-        done([{ op: "add_clip", targetId: "audio-sfx-1", patch: { clipId: "sfx-riser-1", kind: "riser" } }]),
+        done([
+          {
+            op: "add_clip",
+            targetId: "audio-sfx-1",
+            patch: { clipId: "sfx-riser-1", kind: "riser" },
+          },
+        ]),
       ),
     ).toBe(true);
   });
@@ -844,14 +886,15 @@ describe("finished sound writes", () => {
     expect(landed.line).toBe("Added to Demo Cut (sound copy) · 1 skipped");
     expect(landed.detail).toContain("Skipped sting: no sting in the library");
     expect(landed.detail).toContain("Fallback: set the Fairlight ducking by hand");
-    expect(landedRowsFor([task])).toMatchObject([{ id: task.id, status: landed.line }]);
   });
 
   it("records a failed write the card can retry", async () => {
     const fetchFn = reply(503, { error: "Resolve is not running" });
     await applyFinishedSound({ requestId: "req_sound1", task, job: soundJob() }, { fetchFn });
-    expect(landedFor(task.id)).toMatchObject({ state: "failed", line: "Failed: Resolve is not running" });
-    expect(landedRowsFor([task])).toHaveLength(1);
+    expect(landedFor(task.id)).toMatchObject({
+      state: "failed",
+      line: "Failed: Resolve is not running",
+    });
     retryLandedWrite(task.id, { fetchFn: reply(200, appliedBody) });
     await vi.waitFor(() => expect(landedFor(task.id)?.state).toBe("landed"));
   });
@@ -862,7 +905,6 @@ describe("finished sound writes", () => {
     await applyFinishedSound({ requestId: "req_plain", task, job: plain }, { fetchFn });
     expect(fetchFn).not.toHaveBeenCalled();
     expect(landedFor(task.id)).toBeUndefined();
-    expect(landedRowsFor([task])).toEqual([]);
   });
 
   it("undoes back to the original and redoes as a new copy", async () => {
@@ -996,7 +1038,7 @@ describe("thread header status", () => {
 
   it("reads the live step off the rail", () => {
     expect(activeStepLabel(activityForLiveJob(job("in_progress")))).toBe("Agent working");
-    expect(activeStepLabel(activityForLivePending())).toBe("Sending the turn…");
+    expect(activeStepLabel(activityForLivePending())).toBe("Working…");
     expect(activeStepLabel(activityForLiveError("Agent unreachable"))).toBeNull();
     expect(activeStepLabel(null)).toBeNull();
   });
@@ -1015,7 +1057,7 @@ describe("thread header status", () => {
   });
 
   it("shows the live step while running, else the spinner or the fallback", () => {
-    expect(headerStatusFor({ ...base, step: "Sending the turn…" })).toBe("Sending the turn…");
+    expect(headerStatusFor({ ...base, step: "Working…" })).toBe("Working…");
     expect(headerStatusFor({ ...base })).toBeNull();
     expect(headerStatusFor({ ...base, live: false })).toBe("Waiting for the agent");
     expect(headerStatusFor({ ...base, terminal: "in_progress", step: "Agent working" })).toBe(
@@ -1100,14 +1142,16 @@ describe("finished cut writes", () => {
     expect(landed.skipped).toEqual([
       { intent: "spd-1", reason: "retime the clip in Studio by hand" },
     ]);
-    expect(landedRowsFor([task])).toMatchObject([{ id: task.id, status: landed.line }]);
+    rememberSettledTask({ ...task, status: settledStatusFor(cutJob()) });
+    expect(settledTaskRows()).toMatchObject([{ id: task.id, status: "Done" }]);
   });
 
   it("records a failed write the card can retry", async () => {
     const fetchFn = reply(503, { error: "Resolve is not running" });
     await applyFinishedCut({ requestId: "req_cut1", task, job: cutJob() }, { fetchFn });
     expect(landedFor(task.id)).toMatchObject({ state: "failed", line: "Failed: Resolve is not running" });
-    expect(landedRowsFor([task])).toHaveLength(1);
+    rememberSettledTask({ ...task, status: settledStatusFor(cutJob()) });
+    expect(settledTaskRows()).toHaveLength(1);
     retryLandedWrite(task.id, { fetchFn: reply(200, appliedBody) });
     await vi.waitFor(() => expect(landedFor(task.id)?.state).toBe("landed"));
   });
