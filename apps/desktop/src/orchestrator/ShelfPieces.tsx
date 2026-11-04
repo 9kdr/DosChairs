@@ -23,18 +23,10 @@ function failureText(failure: { kind: PiecesFailureKind; reason: string }): stri
  * compact rows. Rows drag into the command bar as piece refs, exactly like
  * the full shelf; Create opens the Effect Maker as a full page.
  */
-export function ShelfPieces({
-  onCreate,
-  className,
-}: {
-  onCreate: () => void;
-  className?: string;
-}) {
+export function ShelfPieces({ onCreate, className }: { onCreate: () => void; className?: string }) {
   /** The last good list; a failed reload never clears it. */
   const [pieces, setPieces] = useState<PieceInfo[] | null>(null);
-  const [failure, setFailure] = useState<{ kind: PiecesFailureKind; reason: string } | null>(
-    null,
-  );
+  const [failure, setFailure] = useState<{ kind: PiecesFailureKind; reason: string } | null>(null);
 
   const load = () => {
     setFailure(null);
