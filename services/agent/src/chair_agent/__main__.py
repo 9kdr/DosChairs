@@ -243,7 +243,12 @@ class Handler(BaseHTTPRequestHandler):
             except _ResolveFailed as error:
                 self._send(502, _error("resolve_failed", str(error)))
             except Exception as error:
-                self._send(400, _error("invalid_rig", str(error)))
+                from chair_agent.piece_bake import BakeError
+
+                if isinstance(error, BakeError):
+                    self._send(error.status, _error("bake_failed", str(error)))
+                else:
+                    self._send(400, _error("invalid_rig", str(error)))
             return
         if effects_path == "/effects/rig/revert":
             try:
@@ -525,7 +530,7 @@ def _pipeline() -> dict[str, Any]:
 
 
 def _health() -> dict[str, Any]:
-    from chair_agent import cuts, effects, modules, piece_plan, sounds
+    from chair_agent import cuts, effects, modules, piece_bake, piece_plan, sounds
     from chair_agent.client import auth_status_snapshot
     from chair_agent.pieces import macros
 
@@ -546,6 +551,7 @@ def _health() -> dict[str, Any]:
         "effects": effects.status_snapshot(),
         "macros": macros.status_snapshot(),
         "modules": modules.status_snapshot() | {"model": modules.module_model()},
+        "piece_bake": piece_bake.status_snapshot(),
         "piece_plans": piece_plan.status_snapshot(),
         "pipeline": _pipeline(),
         "crew": _crew_status(),
@@ -819,6 +825,12 @@ def _rig_apply_body(body: dict[str, Any]) -> dict[str, Any]:
     item, project_name, timeline_name = _resolve_timeline_item(
         body.get("project"), body.get("timeline"), track_type, track_index, clip_index,
     )
+    from chair_agent import piece_bake
+    from chair_agent.piece_bake import BakeError  # noqa: F401  (caught by the route)
+
+    notes: list[str] = []
+    if piece_bake.ograf_unavailable():
+        sequences, notes = piece_bake.bake_for_apply(spec, sequences)
     from chair_resolve import add_effect
 
     try:
@@ -843,7 +855,7 @@ def _rig_apply_body(body: dict[str, Any]) -> dict[str, Any]:
             for keys in props.values():
                 if isinstance(keys, list):
                     keyframes += len(keys)
-    return {
+    answer: dict[str, Any] = {
         "effect_id": op.get("effect_id"),
         "comp_name": op.get("comp_name"),
         "prev_comp_name": op.get("prev_comp_name"),
@@ -853,6 +865,9 @@ def _rig_apply_body(body: dict[str, Any]) -> dict[str, Any]:
         "timeline": timeline_name,
         "undo": op.get("undo"),
     }
+    if notes:
+        answer["notes"] = "; ".join(notes)
+    return answer
 
 
 def _rig_revert_body(body: dict[str, Any]) -> dict[str, Any]:
