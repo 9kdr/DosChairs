@@ -338,6 +338,8 @@ export type LandedWrite = {
   /** Which route landed it: the card's Undo and Redo go back to the same one. */
   kind: "sound" | "cut";
   line: string;
+  /** One entry per skipped op, for the card's reasons hint. */
+  skipped: { intent: string; reason: string }[];
   detail: string | null;
   state: "landed" | "undone" | "failed";
   undo: { project: string; timeline: string; originalTimeline: string } | null;
@@ -455,6 +457,7 @@ function landedFromApplied(
     requestId,
     kind,
     line,
+    skipped: applied.skipped.map((skip) => ({ intent: skip.intent, reason: skip.reason })),
     detail,
     state: "landed",
     undo:
@@ -488,6 +491,7 @@ export async function applyFinishedSound(entry: LiveJobEntry, options: ApplyOpti
       requestId: job.request_id,
       kind: "sound",
       line: `Failed: ${soundApplyErrorMessage(error)}`,
+      skipped: [],
       detail: error instanceof Error ? error.message : null,
       state: "failed",
       undo: null,
@@ -531,6 +535,7 @@ export async function applyFinishedCut(entry: LiveJobEntry, options: ApplyOption
       requestId: job.request_id,
       kind: "cut",
       line: `Failed: ${cutApplyErrorMessage(error)}`,
+      skipped: [],
       detail: error instanceof Error ? error.message : null,
       state: "failed",
       undo: null,

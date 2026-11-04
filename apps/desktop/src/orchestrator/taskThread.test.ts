@@ -1097,6 +1097,9 @@ describe("finished cut writes", () => {
     expect(landed.kind).toBe("cut");
     expect(landed.line).toBe("Added to Demo Cut (cut copy) · 1 skipped");
     expect(landed.detail).toContain("Skipped spd-1: retime the clip in Studio by hand");
+    expect(landed.skipped).toEqual([
+      { intent: "spd-1", reason: "retime the clip in Studio by hand" },
+    ]);
     expect(landedRowsFor([task])).toMatchObject([{ id: task.id, status: landed.line }]);
   });
 
