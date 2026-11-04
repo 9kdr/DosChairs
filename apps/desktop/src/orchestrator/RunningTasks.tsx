@@ -13,7 +13,14 @@ import { clockTime, historyForTask, opLabel, type HistoryEntry } from "../projec
 import { activityForTask } from "./TaskActivity";
 import { createServicesClient } from "@/lib/services/client";
 import type { AgentJobStatus } from "@/lib/services/types";
-import { isTaskSeen, landedFor, liveSubmitError, markTaskSeen, stopLiveTask } from "./taskThread";
+import {
+  headerStatusFor,
+  isTaskSeen,
+  landedFor,
+  liveSubmitError,
+  markTaskSeen,
+  stopLiveTask,
+} from "./taskThread";
 
 export type TaskLane = "edit" | "effects" | "colour";
 
@@ -97,8 +104,7 @@ const QUIET_STATUS = new Set([
   "running",
   "starting the turn…",
   "starting the turn...",
-  "sending the turn…",
-  "sending the turn...",
+  "working…",
 ]);
 
 /** The tile's current step: the live line, unless it is machinery. */
@@ -358,13 +364,24 @@ function TaskTile({
   const landed = landedFor(task.id);
   const step = stepTextFor(task);
   const detail = displayStatusFor(task).detail;
+  // The tile reads the same status as the thread header, so the card and
+  // the header agree: Landed/Undone, Failed/Stopped, Planned, or the live
+  // step (null reads as the quiet spinner).
+  const status = headerStatusFor({
+    terminal: task.jobStatus ?? null,
+    landed: landed?.state ?? null,
+    step,
+    live: true,
+    fallback: task.status,
+  });
   const entries = historyForTask(history, task.id);
   const undoable = entries.length > 0;
   // Retry only where it can do something: a turn that never sent, or a
   // write that failed. A finished agent turn never resubmits.
   const retryable = liveSubmitError(task.id) !== undefined || landed?.state === "failed";
   const showDither = !finished && !failed;
-  const unseen = finished && !failed && !expanded && !isTaskSeen(task.projectId, task.id);
+  const seen = finished && isTaskSeen(task.projectId, task.id);
+  const unseen = finished && !failed && !expanded && !seen;
   const activity = activityForTask(task);
   // Finished tiles show the flow steps as done; the outcome already sits in
   // the meta line (and the landed line below), so the live step drops out
@@ -445,31 +462,40 @@ function TaskTile({
             <div
               className={cn("flex min-w-0 flex-1 items-center gap-2", showDither && "max-w-[64%]")}
             >
-              {failed ? (
+              {failed && !seen ? (
                 <span
                   role="img"
                   aria-label="Failed"
                   className="size-2 shrink-0 rounded-full bg-red-400/70"
-                />
-              ) : unseen ? (
-                <span
-                  role="img"
-                  aria-label="Not yet looked at"
-                  className="size-2 shrink-0 rounded-full bg-emerald-400"
                 />
               ) : !finished ? (
                 <Loader2
                   className="size-3.5 shrink-0 animate-spin text-neutral-400"
                   aria-label="Working"
                 />
-              ) : null}
+              ) : !unseen ? null : status === "Planned" || status === "Stopped" ? (
+                <span
+                  role="img"
+                  aria-label="Not yet looked at"
+                  className="size-2 shrink-0 rounded-full bg-neutral-500"
+                />
+              ) : (
+                <span
+                  role="img"
+                  aria-label="Not yet looked at"
+                  className="size-2 shrink-0 rounded-full bg-emerald-400"
+                />
+              )}
               <div className="min-w-0 flex-1">
                 <p className="truncate text-title font-medium text-neutral-100" title={task.name}>
                   {task.name}
                 </p>
-                <p className="truncate text-meta text-muted-foreground" title={detail ?? undefined}>
+                <p
+                  className="truncate text-meta text-muted-foreground"
+                  title={landed?.line ?? detail ?? undefined}
+                >
                   {LANE_LABEL[task.lane]}
-                  {step ? ` · ${step}` : ""}
+                  {status ? ` · ${status}` : ""}
                 </p>
               </div>
             </div>

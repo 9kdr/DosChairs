@@ -926,6 +926,9 @@ export function textForJob(job: AgentJob): string {
     return `The agent stopped this turn: ${job.error ?? "moderated"}. Nothing changed.${model}`;
   }
   if (job.status === "canceled") return `This turn was canceled. Nothing changed.${model}`;
+  // Unknown statuses read as live work, never as a result: a reply must
+  // not say Nothing changed while the turn is still running.
+  if (job.status !== "completed") return `The agent is working on it.${model}`;
   const previews = job.artifacts.length;
   const ops = job.changeset?.ops.length ?? 0;
   const previewBit =
@@ -981,7 +984,9 @@ export function activityForLiveJob(job: AgentJob): TaskActivity {
       ],
     };
   }
-  if (job.status === "in_progress") {
+  // Unknown statuses read as live work, never as a result: the rail
+  // must not show a finished turn while the job is still running.
+  if (!isAgentTerminal(job.status)) {
     return {
       headline: "The agent is working",
       progress: 2 / 3,
@@ -1027,7 +1032,7 @@ export function activityForLivePending(): TaskActivity {
     headline: "Starting the turn…",
     progress: 0,
     steps: [
-      { id: "sent", label: "Sending the turn…", state: "active" },
+      { id: "sent", label: "Working…", state: "active" },
       { id: "working", label: "Agent working", state: "queued" },
       { id: "result", label: "Result", state: "queued" },
     ],
@@ -1140,9 +1145,20 @@ export function useTaskThread(
       if (taskRef.current.id === id) apply();
     };
     const multi = agents.length > 1;
+    const driver = agents.find((agent) => agent.runnable);
+    if (!driver) {
+      // No lane can run: settle the thread instead of leaving the header
+      // on its pending step forever. Nothing ran; nothing changed.
+      setTerminal("canceled");
+      setActivity(activityForLiveError("No connected lane yet"));
+      return;
+    }
     agents.forEach((agent, index) => {
       if (!agent.runnable) return;
       const primary = index === 0;
+      // Keys and turn ids stay on the first wanted lane; the header
+      // follows the first lane that can actually run.
+      const drivesHeader = agent === driver;
       const scope = openTurnScope(id, agent.lane, primary);
       const say = (text: string) => (multi ? `${agent.label}: ${text}` : text);
       const paint = (text: string) =>
@@ -1158,7 +1174,7 @@ export function useTaskThread(
           if (isAgentTerminal(job.status)) return;
           live(() => {
             paint(say(textForJob(job)));
-            if (primary) setActivity(activityForLiveJob(job));
+            if (drivesHeader) setActivity(activityForLiveJob(job));
           });
         },
       }).then(
@@ -1172,7 +1188,7 @@ export function useTaskThread(
           ]).then(() => {
             live(() => {
               paint(say(textForJob(job)));
-              if (primary) {
+              if (drivesHeader) {
                 setTerminal(job.status);
                 setActivity(activityForLiveJob(job));
               }
@@ -1191,7 +1207,7 @@ export function useTaskThread(
                   : turn,
               ),
             );
-            if (primary) {
+            if (drivesHeader) {
               setTerminal("failed");
               setActivity(activityForLiveError(headlineForSubmitError(error)));
             }

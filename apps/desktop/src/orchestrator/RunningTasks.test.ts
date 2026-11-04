@@ -122,6 +122,7 @@ describe("stepTextFor", () => {
     expect(stepTextFor({ ...live, status: "The agent is working" })).toBeNull();
     expect(stepTextFor({ ...live, status: "Waiting for the agent" })).toBeNull();
     expect(stepTextFor({ ...live, status: "Queued on the agent" })).toBeNull();
+    expect(stepTextFor({ ...live, status: "Working…" })).toBeNull();
   });
 
   it("keeps real steps, outcomes, and landed lines", () => {

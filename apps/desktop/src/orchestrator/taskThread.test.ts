@@ -196,6 +196,13 @@ describe("thread copy", () => {
     expect(working).toContain("working on it");
   });
 
+  it("reads unknown statuses as live work, never as a result", () => {
+    const strange = job("queued", { status: "running" });
+    expect(textForJob(strange)).toBe(textForJob(job("in_progress")));
+    expect(textForJob(strange)).not.toContain("Nothing changed");
+    expect(activityForLiveJob(strange).headline).toBe("The agent is working");
+  });
+
   it("says a finished sound turn landed, with Undo on the card", () => {
     const text = textForJob(
       job("completed", {
@@ -1031,7 +1038,7 @@ describe("thread header status", () => {
 
   it("reads the live step off the rail", () => {
     expect(activeStepLabel(activityForLiveJob(job("in_progress")))).toBe("Agent working");
-    expect(activeStepLabel(activityForLivePending())).toBe("Sending the turn…");
+    expect(activeStepLabel(activityForLivePending())).toBe("Working…");
     expect(activeStepLabel(activityForLiveError("Agent unreachable"))).toBeNull();
     expect(activeStepLabel(null)).toBeNull();
   });
@@ -1050,7 +1057,7 @@ describe("thread header status", () => {
   });
 
   it("shows the live step while running, else the spinner or the fallback", () => {
-    expect(headerStatusFor({ ...base, step: "Sending the turn…" })).toBe("Sending the turn…");
+    expect(headerStatusFor({ ...base, step: "Working…" })).toBe("Working…");
     expect(headerStatusFor({ ...base })).toBeNull();
     expect(headerStatusFor({ ...base, live: false })).toBe("Waiting for the agent");
     expect(headerStatusFor({ ...base, terminal: "in_progress", step: "Agent working" })).toBe(
