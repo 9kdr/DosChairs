@@ -37,7 +37,7 @@ export function PanelDrawer({
         onClick={onClose}
         className="absolute inset-0 cursor-default bg-black/60"
       />
-      <div className="absolute inset-y-0 right-0 flex w-80 max-w-[85%] flex-col overflow-hidden rounded-l-[28px] bg-[#1a1a1a] p-4 pt-12 text-neutral-100 shadow-raised ring-1 ring-white/8">
+      <div className="absolute inset-y-0 right-0 flex w-80 max-w-[85%] flex-col overflow-hidden rounded-l-card bg-card p-4 pt-12 text-neutral-100">
         <div className="flex shrink-0 justify-end pb-1">
           <Button
             type="button"

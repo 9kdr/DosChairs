@@ -1,7 +1,16 @@
 import { BlocksIcon, ChevronLeftIcon, PlusIcon } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { DitherArt } from "@/components/dither-art";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  Empty,
+  EmptyArt,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyTitle,
+} from "@/components/ui/empty";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsList, TabsTab } from "@/components/ui/tabs";
 import { writeChairRefs } from "@/lib/chair-ref";
@@ -114,7 +123,7 @@ export function PiecesShelf({
             <ChevronLeftIcon />
             Pieces
           </Button>
-          <h2 className="min-w-0 truncate text-sm font-semibold tracking-wide text-neutral-100">
+          <h2 className="min-w-0 truncate text-sm font-medium text-neutral-100">
             {editing.name}
           </h2>
           <Badge variant="outline" size="sm" className="shrink-0">
@@ -135,10 +144,10 @@ export function PiecesShelf({
   return (
     <div className={cn("flex min-h-0 min-w-0 flex-1 flex-col gap-3", className)}>
       <div className="flex shrink-0 flex-wrap items-center gap-2">
-        <span className="flex size-7 items-center justify-center rounded-lg bg-white/[0.06] ring-1 ring-white/10">
+        <span className="flex size-7 items-center justify-center rounded-lg bg-white/[0.06]">
           <BlocksIcon className="size-4 text-neutral-300" aria-hidden="true" />
         </span>
-        <h2 className="text-sm font-semibold tracking-wide text-neutral-100">Pieces</h2>
+        <h2 className="text-sm font-medium text-neutral-100">Pieces</h2>
         <Tabs value={kindFilter} onValueChange={(value) => setKindFilter(value as KindFilter)}>
           <TabsList size="sm">
             {KIND_FILTERS.map((item) => (
@@ -174,14 +183,14 @@ export function PiecesShelf({
 
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
         {failure && pieces !== null && pieces.length > 0 ? (
-          <p className="px-1 pb-2 text-xs leading-5 text-neutral-500">
+          <p className="px-1 pb-2 text-xs leading-5 text-muted-foreground">
             Couldn&apos;t refresh pieces — {failureText(failure)}. Showing the last good
             list.
           </p>
         ) : null}
         {pieces === null ? (
           failure ? (
-            <div className="flex flex-col items-start gap-2 rounded-2xl bg-white/[0.03] px-5 py-6 ring-1 ring-white/[0.06]">
+            <div className="flex flex-col items-start gap-2 rounded-2xl bg-white/[0.03] px-5 py-6">
               <h3 className="text-sm font-medium text-neutral-200">Couldn&apos;t load pieces</h3>
               <p className="text-sm leading-6 text-neutral-400">{failureText(failure!)}</p>
               <Button type="button" size="sm" variant="outline" onClick={load}>
@@ -193,7 +202,7 @@ export function PiecesShelf({
           )
         ) : pieces.length === 0 ? (
           failure ? (
-            <div className="flex flex-col items-start gap-2 rounded-2xl bg-white/[0.03] px-5 py-6 ring-1 ring-white/[0.06]">
+            <div className="flex flex-col items-start gap-2 rounded-2xl bg-white/[0.03] px-5 py-6">
               <h3 className="text-sm font-medium text-neutral-200">Couldn&apos;t load pieces</h3>
               <p className="text-sm leading-6 text-neutral-400">{failureText(failure!)}</p>
               <Button type="button" size="sm" variant="outline" onClick={load}>
@@ -201,18 +210,23 @@ export function PiecesShelf({
               </Button>
             </div>
           ) : (
-            <div className="flex flex-col items-start gap-2 rounded-2xl bg-white/[0.03] px-5 py-6 ring-1 ring-white/[0.06]">
-              <h3 className="text-sm font-medium text-neutral-200">No pieces yet</h3>
-              <p className="text-sm leading-6 text-neutral-400">
-                Pieces the agent offers land here — macros, effects, motion, sound.
-              </p>
-              <Button type="button" size="sm" variant="outline" onClick={load}>
-                Check again
-              </Button>
-            </div>
+            <Empty className="py-8">
+              <EmptyHeader>
+                <EmptyArt>
+                  <DitherArt seed={5} />
+                </EmptyArt>
+                <EmptyTitle>No pieces yet</EmptyTitle>
+                <EmptyDescription>Pieces the agent offers land here.</EmptyDescription>
+              </EmptyHeader>
+              <EmptyContent>
+                <Button type="button" size="sm" variant="outline" onClick={load}>
+                  Check again
+                </Button>
+              </EmptyContent>
+            </Empty>
           )
         ) : visible.length === 0 ? (
-          <p className="px-1 py-2 text-sm text-neutral-500">Nothing matches.</p>
+          <p className="px-1 py-2 text-sm text-muted-foreground">Nothing matches.</p>
         ) : (
           <ul className="flex flex-col gap-1.5" aria-label="Pieces">
             {visible.map((piece) => (
@@ -250,8 +264,8 @@ function PieceRow({
   return (
     <li
       className={cn(
-        "rounded-2xl bg-white/[0.03] ring-1 ring-white/[0.06]",
-        expanded && "ring-white/[0.12]",
+        "rounded-2xl bg-white/[0.03]",
+        expanded && "bg-white/[0.06]",
       )}
     >
       <div
@@ -305,7 +319,7 @@ function PieceRow({
           <p className="text-xs leading-5 text-neutral-400">
             {piece.summary || "No description yet."}
           </p>
-          <p className="mt-1 text-xs text-neutral-500">
+          <p className="mt-1 text-xs text-muted-foreground">
             {piece.controls.length === 0
               ? "No published controls."
               : `${piece.controls.length} control${piece.controls.length === 1 ? "" : "s"}: ${piece.controls

@@ -74,7 +74,7 @@ export function TaskActivityPanel({
       className="hidden w-72 shrink-0 flex-col gap-3 overflow-y-auto overscroll-contain lg:flex"
     >
       <SmoothScrollTarget target={scrollRef} lerp={0.075} />
-      <div className="flex flex-col gap-3 rounded-[28px] bg-[#1a1a1a] p-4 text-neutral-100 shadow-raised ring-1 ring-white/8">
+      <div className="flex flex-col gap-3 rounded-card bg-card p-4 text-neutral-100">
         <div className="relative h-28 shrink-0 overflow-hidden rounded-2xl">
           <DitherShader
             field={TASK_FIELD}
@@ -89,7 +89,7 @@ export function TaskActivityPanel({
             aria-hidden
             className="pointer-events-none absolute inset-0"
             style={{
-              background: "linear-gradient(to top, #1a1a1a 0%, #1a1a1a 45%, transparent 100%)", // taste-skill-ignore: neutral scrim keeps the headline legible over the task art.
+              background: "linear-gradient(to top, var(--card) 0%, var(--card) 45%, transparent 100%)", // taste-skill-ignore: neutral scrim keeps the headline legible over the task art.
             }}
           />
           <p className="absolute inset-x-3 bottom-2 text-xs leading-5 text-neutral-300">
@@ -130,7 +130,7 @@ export function TaskActivityPanel({
               <span
                 className={cn(
                   "min-w-0 text-[13px] leading-5",
-                  step.state === "queued" ? "text-neutral-500" : "text-neutral-200",
+                  step.state === "queued" ? "text-muted-foreground" : "text-neutral-200",
                 )}
               >
                 {step.label}
@@ -140,17 +140,17 @@ export function TaskActivityPanel({
         </ol>
       </div>
 
-      <div className="flex flex-col gap-1 rounded-[28px] bg-[#1a1a1a] p-4 text-neutral-100 shadow-raised ring-1 ring-white/8">
+      <div className="flex flex-col gap-1 rounded-card bg-card p-4 text-neutral-100">
         <div className="flex items-center gap-2 px-1 pb-1">
           <HistoryIcon className="size-4 text-neutral-400" aria-hidden="true" />
-          <h2 className="text-sm font-semibold tracking-wide text-neutral-100">Applied edits</h2>
-          <span className="text-xs tabular-nums text-neutral-500">
+          <h2 className="text-sm font-medium text-neutral-100">Edits</h2>
+          <span className="text-xs tabular-nums text-muted-foreground">
             {history.length === 1 ? "1 entry" : `${history.length} entries`}
           </span>
         </div>
         {history.length === 0 ? (
-          <p className="px-1 py-1 text-xs text-neutral-500">
-            No applied edits yet — applied edits land here with their undo point.
+          <p className="px-1 py-1 text-xs text-muted-foreground">
+            Nothing applied yet.
           </p>
         ) : (
           <ol className="flex min-h-0 flex-col">
@@ -159,25 +159,16 @@ export function TaskActivityPanel({
                 key={entry.itemId}
                 className="flex items-start gap-2 border-t border-white/[0.06] px-1 py-2.5 first:border-t-0 first:pt-1 last:pb-1"
               >
-                <span className="w-6 shrink-0 pt-0.5 text-xs tabular-nums text-neutral-500">
+                <span className="w-6 shrink-0 pt-0.5 text-xs tabular-nums text-muted-foreground">
                   #{index + 1}
                 </span>
                 <div className="min-w-0 flex-1">
                   <p className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[13px] font-medium text-neutral-100">
-                    <span className="truncate">
-                      {opLabel(entry.op)}
-                      {entry.targetId ? (
-                        <span className="ml-1.5 font-normal text-neutral-500">
-                          {entry.targetId}
-                        </span>
-                      ) : null}
-                    </span>
+                    <span className="truncate">{opLabel(entry.op)}</span>
                     <HistoryActorBadge actor={entry.actor} />
                   </p>
-                  <p className="mt-0.5 truncate text-xs text-neutral-600">
-                    <span className="font-mono">{entry.itemId}</span>
-                    {entry.beatId ? <span> · step {entry.beatId}</span> : null}
-                    <span> · {clockTime(entry.acceptedAt)}</span>
+                  <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                    {clockTime(entry.acceptedAt)}
                   </p>
                   <HistoryFallbackLine entry={entry} />
                 </div>

@@ -1,9 +1,11 @@
 import { useEffect, useRef } from "react";
 import type { DragEvent, KeyboardEvent, MouseEvent, PointerEvent } from "react";
-import { Loader2, Square, Undo2, Waypoints } from "lucide-react";
+import { Loader2, Square, Undo2 } from "lucide-react";
 import { DitherShader } from "@/lib/dither";
 import type { DitherColor } from "@/lib/dither";
 import { Button } from "@/components/ui/button";
+import { DitherArt } from "@/components/dither-art";
+import { Empty, EmptyArt } from "@/components/ui/empty";
 import { cn } from "@/lib/utils";
 import { historyForTask, type HistoryEntry } from "../project/store";
 import { activityForTask } from "./TaskActivity";
@@ -295,7 +297,7 @@ function TaskRow({
       onMouseUp={handlePointerUp}
       onClick={handleClick}
       onKeyDown={handleKeyDown}
-      className="dark group relative cursor-pointer rounded-2xl bg-[#1a1a1a] data-[dragging]:opacity-64"
+      className="dark group relative cursor-pointer rounded-card bg-card data-[dragging]:opacity-64"
     >
       <DitherShader
         field={TASK_FIELD}
@@ -306,32 +308,32 @@ function TaskRow({
         suspended={frozen}
         stillTime={1.6}
         cell={3}
-        className="absolute inset-0 overflow-hidden rounded-2xl"
+        className="absolute inset-0 overflow-hidden rounded-card"
         style={{
           maskImage:
-            "linear-gradient(to bottom, transparent, #000 14px, #000 calc(100% - 14px), transparent), linear-gradient(to right, #000 calc(100% - 48px), transparent)",
+            "linear-gradient(to bottom, transparent, #000 14px, #000 calc(100% - 14px), transparent), linear-gradient(to right, transparent 40%, #000 65%)", // taste-skill-ignore: mask confines the dither sea to the row's right edge, not a fill.
           WebkitMaskImage:
-            "linear-gradient(to bottom, transparent, #000 14px, #000 calc(100% - 14px), transparent), linear-gradient(to right, #000 calc(100% - 48px), transparent)",
+            "linear-gradient(to bottom, transparent, #000 14px, #000 calc(100% - 14px), transparent), linear-gradient(to right, transparent 40%, #000 65%)", // taste-skill-ignore: mask confines the dither sea to the row's right edge, not a fill.
           maskComposite: "intersect",
           WebkitMaskComposite: "source-in",
         }}
       />
       <div
         aria-hidden
-        className="pointer-events-none absolute inset-y-0 left-0 w-1/2"
+        className="pointer-events-none absolute inset-0"
         style={{
           background:
-            "linear-gradient(to right, #1a1a1a 0%, #1a1a1a 60%, transparent 100%)",
+            "linear-gradient(to right, var(--card) 0%, var(--card) 45%, transparent 70%)", // taste-skill-ignore: neutral scrim keeps the task titles legible over the dither sea.
         }}
       />
-      <div className="relative flex flex-col gap-2.5 px-4 py-3.5">
+      <div className="relative flex flex-col gap-2.5 p-5">
         <div className="flex items-center justify-between gap-3">
           <div className="min-w-0 flex-1">
-            <p className="truncate text-[15px] font-medium text-neutral-100">
+            <p className="truncate text-title font-medium text-neutral-100">
               {task.name}
             </p>
-            <p className="truncate text-xs text-neutral-400">
-              {liveStep?.label ?? task.status}
+            <p className="truncate text-meta text-muted-foreground">
+              {LANE_LABEL[task.lane]} · {liveStep?.label ?? task.status}
             </p>
           </div>
           <div className="flex shrink-0 items-center gap-1.5">
@@ -346,7 +348,7 @@ function TaskRow({
                   onStop?.();
                 }}
                 onKeyDown={(event) => event.stopPropagation()}
-                className="bg-[#1a1a1a] text-neutral-400 opacity-0 ring-1 ring-white/10 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100 hover:text-neutral-100 focus-visible:opacity-100"
+                className="bg-card text-muted-foreground opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100 hover:text-neutral-100 focus-visible:opacity-100 @max-[760px]:opacity-100"
               >
                 <Square />
                 Stop task
@@ -363,7 +365,7 @@ function TaskRow({
                   onUndo();
                 }}
                 onKeyDown={(event) => event.stopPropagation()}
-                className="bg-[#1a1a1a] text-neutral-400 ring-1 ring-white/10 hover:text-neutral-100"
+                className="bg-card text-muted-foreground opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100 hover:text-neutral-100 focus-visible:opacity-100 @max-[760px]:opacity-100"
               >
                 <Undo2 />
                 Undo
@@ -372,28 +374,18 @@ function TaskRow({
             <Loader2 className="size-3.5 shrink-0 animate-spin text-neutral-400" />
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-white/[0.06] px-2 py-0.5 text-xs font-medium text-neutral-200 ring-1 ring-white/10">
-            <span
-              aria-hidden="true"
-              className="size-1.5 rounded-full"
-              style={{ backgroundColor: LANE_DOT[task.lane] }}
-            />
-            {LANE_LABEL[task.lane]}
-          </span>
+        <div
+          className="h-1 min-w-0 flex-1 overflow-hidden rounded-full bg-white/10"
+          role="progressbar"
+          aria-valuenow={Math.round(activity.progress * 100)}
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-label={`${task.name} progress`}
+        >
           <div
-            className="h-1 min-w-0 flex-1 overflow-hidden rounded-full bg-white/10"
-            role="progressbar"
-            aria-valuenow={Math.round(activity.progress * 100)}
-            aria-valuemin={0}
-            aria-valuemax={100}
-            aria-label={`${task.name} progress`}
-          >
-            <div
-              className="h-full rounded-full bg-neutral-200 transition-[width] duration-500"
-              style={{ width: `${Math.round(activity.progress * 100)}%` }}
-            />
-          </div>
+            className="h-full rounded-full bg-neutral-200 transition-[width] duration-500"
+            style={{ width: `${Math.round(activity.progress * 100)}%` }}
+          />
         </div>
       </div>
     </div>
@@ -413,48 +405,35 @@ export function RunningTasks({
   onUndo,
   onStop,
 }: RunningTasksProps) {
+  if (tasks.length === 0) {
+    return (
+      <div className={cn("rounded-card bg-card p-5 text-neutral-100", className)}>
+        <Empty className="gap-4 py-6">
+          <EmptyArt>
+            <DitherArt seed={2} />
+          </EmptyArt>
+          <p className="text-sm text-muted-foreground">Nothing running</p>
+        </Empty>
+      </div>
+    );
+  }
   return (
-    <div
-      className={cn(
-        "flex flex-col gap-3 rounded-[28px] bg-[#1a1a1a] p-4 text-neutral-100 shadow-raised ring-1 ring-white/8",
-        className,
-      )}
-    >
-      <div className="flex items-center justify-between px-1">
-        <div className="flex items-center gap-2">
-          <Waypoints className="size-4 text-neutral-400" />
-          <h2 className="text-sm font-semibold tracking-wide text-neutral-100">
-            Running Tasks
-          </h2>
-        </div>
-        <span className="flex items-center gap-1.5 text-xs text-neutral-400">
-          <span className="size-1.5 rounded-full bg-emerald-400 animate-pulse" />
-          {tasks.length} active
-        </span>
-      </div>
-
-      <div className="flex flex-col gap-1.5">
-        {tasks.map((task, index) => (
-          <TaskRow
-            key={task.id}
-            task={task}
-            seed={index + 1}
-            frozen={frozen}
-            history={history}
-            onOpen={() => onOpen?.(task)}
-            onUndo={onUndo ? () => onUndo(task) : undefined}
-            onStop={() => {
-              onStop?.(task);
-              void stopLiveTask(createServicesClient(), task).catch(() => {});
-            }}
-          />
-        ))}
-        {tasks.length === 0 ? (
-          <p className="py-4 text-center text-xs text-neutral-400">
-            No running tasks
-          </p>
-        ) : null}
-      </div>
+    <div className={cn("flex flex-col gap-4", className)}>
+      {tasks.map((task, index) => (
+        <TaskRow
+          key={task.id}
+          task={task}
+          seed={index + 1}
+          frozen={frozen}
+          history={history}
+          onOpen={() => onOpen?.(task)}
+          onUndo={onUndo ? () => onUndo(task) : undefined}
+          onStop={() => {
+            onStop?.(task);
+            void stopLiveTask(createServicesClient(), task).catch(() => {});
+          }}
+        />
+      ))}
     </div>
   );
 }

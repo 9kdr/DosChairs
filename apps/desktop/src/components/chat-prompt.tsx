@@ -15,10 +15,8 @@ import { filterActions, type Action } from "@/orchestrator/actions";
 import { enabledModels, PROVIDERS, type ProviderId } from "@/settings/providers";
 import { useSettings } from "@/settings/useSettings";
 
-const CLOSED_WIDTH = 452;
-const OPEN_WIDTH = 520;
 const CLOSED_RADIUS = 24;
-const OPEN_RADIUS = 22;
+const OPEN_RADIUS = 24;
 const MORPH = "380ms cubic-bezier(0.22, 1, 0.36, 1)";
 const LINE = 22;
 const MAX_ROWS = 4;
@@ -419,7 +417,7 @@ export function ChatPrompt({
   const chunksRef = useRef<Blob[]>([]);
   const streamRef = useRef<MediaStream | null>(null);
   const blobsRef = useRef(new Map<string, Blob>());
-  const [box, setBox] = useState({ width: CLOSED_WIDTH, height: 48 });
+  const [box, setBox] = useState({ width: 0, height: 48 });
   // Dropping chips in lands a whole row of content at once: tweening the box
   // around it leaves the full-size content spilling out of a small rounded
   // box mid-flight, which reads as broken. Snap that one commit instead.
@@ -574,13 +572,11 @@ export function ChatPrompt({
     if (!bar || !content) return;
 
     const measure = () => {
-      const available = bar.parentElement?.clientWidth ?? OPEN_WIDTH;
-      const cap = open ? (wide ? available : OPEN_WIDTH) : CLOSED_WIDTH;
-      const preferred = Math.min(cap, available);
+      const available = bar.parentElement?.clientWidth ?? 0;
       const previousContentWidth = content.style.width;
       content.style.width = "max-content";
       const needed = Math.ceil(content.getBoundingClientRect().width);
-      const width = open ? preferred : Math.min(Math.max(preferred, needed), available);
+      const width = open ? available : Math.min(needed, available);
       content.style.width = `${width}px`;
       const height = Math.ceil(content.getBoundingClientRect().height);
       content.style.width = previousContentWidth;
@@ -970,10 +966,10 @@ export function ChatPrompt({
       <div
         className={cn(
           "absolute inset-0 overflow-hidden",
-          "bg-[#1a1a1a]/95 shadow-raised ring-1 ring-white/[0.08] backdrop-blur-md",
-          "supports-[backdrop-filter]:bg-[#1a1a1a]/88",
-          "focus-within:ring-white/15",
-          dragOver && "bg-[#222]! ring-2 ring-white/20",
+          "bg-card/95 shadow-rim backdrop-blur-md",
+          "supports-[backdrop-filter]:bg-card/88",
+          "focus-within:ring-1 focus-within:ring-white/15",
+          dragOver && "bg-surface-raised! ring-2 ring-white/20",
         )}
         style={{ borderRadius: radius, transition: morph }}
       >
@@ -1145,7 +1141,7 @@ export function ChatPrompt({
                         onClick={() => onOpenSettings?.()}
                       >
                         <KeyRound />
-                        <span className="truncate">Add a model key</span>
+                        <span className="truncate max-[480px]:hidden">Add a model key</span>
                       </Button>
                     ) : (
                       <Menu
@@ -1165,13 +1161,15 @@ export function ChatPrompt({
                             />
                           }
                         >
-                          <span className="truncate">{model ?? "Select model"}</span>
+                          <span className="truncate max-[480px]:hidden">
+                            {model ?? "Select model"}
+                          </span>
                           <ChevronDown />
                         </MenuTrigger>
                         <MenuPopup
                           side="top"
                           align="start"
-                          className="rounded-2xl border-white/10 bg-[#1a1a1a] text-neutral-100 shadow-raised ring-1 ring-white/10 before:hidden"
+                          className="rounded-2xl border-white/10 bg-popover text-neutral-100 ring-1 ring-white/10 before:hidden"
                         >
                           <MenuRadioGroup
                             value={model ?? undefined}
@@ -1214,7 +1212,7 @@ export function ChatPrompt({
                     <Button
                       type="submit"
                       size="icon-sm"
-                      className="rounded-full"
+                      variant="send"
                       aria-label="Send"
                       disabled={(!draft.trim() && files.length === 0) || options.length === 0}
                     >
@@ -1242,7 +1240,7 @@ export function ChatPrompt({
                   exit={reduce ? undefined : { opacity: 0, y: 4, scale: 0.98 }}
                   transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
                   style={{ position: "fixed", left: actionsBox.left, bottom: actionsBox.bottom }}
-                  className="z-50 w-72 origin-bottom-left rounded-2xl bg-[#1a1a1a] p-1 shadow-raised ring-1 ring-white/10"
+                  className="z-50 w-72 origin-bottom-left rounded-2xl bg-popover p-1 ring-1 ring-white/10"
                 >
                   {actions.map((action, index) => (
                     <li key={action.key}>

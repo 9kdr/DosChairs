@@ -100,11 +100,10 @@ export function TaskChat({
           <ArrowLeft />
           Back
         </Button>
-        <h2 className="min-w-0 truncate text-sm font-semibold tracking-wide">{task.name}</h2>
-        <span className="rounded-full bg-white/8 px-2 py-0.5 text-xs text-neutral-300">
-          {LANE[task.lane]}
+        <h2 className="min-w-0 truncate text-title font-medium">{task.name}</h2>
+        <span className="ml-auto shrink-0 truncate text-xs text-muted-foreground">
+          {LANE[task.lane]} · {task.status}
         </span>
-        <span className="ml-auto text-xs text-neutral-500">{task.status}</span>
       </header>
 
       <div className="flex min-h-0 flex-1 gap-4 px-4">
@@ -113,17 +112,19 @@ export function TaskChat({
           className="min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain [scrollbar-gutter:stable]"
         >
           <SmoothScrollTarget target={threadRef} lerp={0.075} />
-          <ol className="mx-auto flex w-full max-w-3xl flex-col gap-6 py-4">
+          <ol className="mx-auto flex w-full max-w-3xl flex-col gap-5 py-4">
             {[...opening, ...turns].map((turn) =>
               turn.role === "user" ? (
                 <li key={turn.id} className="flex justify-end">
-                  <p className="max-w-[80%] rounded-2xl bg-[#1a1a1a] px-4 py-3 text-sm leading-6 text-neutral-100 shadow-raised ring-1 ring-white/8">
+                  <p className="max-w-[85%] rounded-card bg-surface-raised px-5 py-4 text-sm leading-6 text-neutral-100">
                     {turn.text}
                   </p>
                 </li>
               ) : (
-                <li key={turn.id} className="max-w-[40rem]">
-                  <p className="text-sm leading-6 text-neutral-200">{turn.text}</p>
+                <li key={turn.id} className="flex max-w-[85%]">
+                  <p className="rounded-card bg-card px-5 py-4 text-sm leading-6 text-neutral-200">
+                    {turn.text}
+                  </p>
                 </li>
               ),
             )}
