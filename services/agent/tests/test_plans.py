@@ -3,7 +3,6 @@
 from pathlib import Path
 
 import pytest
-from chair_agent import plans
 from chair_agent.client import Completion
 from chair_agent.plans import (
     PlanError,

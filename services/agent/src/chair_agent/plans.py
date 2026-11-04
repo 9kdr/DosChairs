@@ -13,7 +13,7 @@ import hashlib
 import json
 import os
 import threading
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, Literal
 
@@ -159,7 +159,8 @@ def _store_path(project_id: str, env: Mapping[str, str] | None = None) -> Path:
 
 def front_hash(front: PlanFront) -> str:
     """Hash of the canonical front JSON; the back is stale when this moves."""
-    canonical = json.dumps(front.model_dump(mode="json", by_alias=True, exclude_none=True), sort_keys=True)
+    dumped = front.model_dump(mode="json", by_alias=True, exclude_none=True)
+    canonical = json.dumps(dumped, sort_keys=True)
     return hashlib.sha256(canonical.encode()).hexdigest()[:16]
 
 
@@ -453,7 +454,9 @@ def iter_board_items(
     return items
 
 
-def find_board_item(key: str, env: Mapping[str, str] | None = None) -> dict[str, Any] | None:
+def find_board_item(
+    key: str, env: Mapping[str, str] | None = None
+) -> dict[str, Any] | None:
     """Match a board item by id or title, for `board:<id>` and `@title` refs."""
     norm = key.strip()
     if norm.startswith("@"):
