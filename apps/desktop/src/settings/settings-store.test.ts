@@ -55,6 +55,18 @@ describe("parseSettings", () => {
     expect(parseSettings({ orchestrator: 42 }).orchestrator).toBeNull();
   });
 
+  it("defaults apply mode to auto and keeps a saved ask", async () => {
+    expect(EMPTY_SETTINGS.applyMode).toBe("auto");
+    expect(parseSettings({}).applyMode).toBe("auto");
+    expect(parseSettings({ applyMode: "ask" }).applyMode).toBe("ask");
+    expect(parseSettings({ applyMode: "auto" }).applyMode).toBe("auto");
+    expect(parseSettings({ applyMode: "manual" }).applyMode).toBe("auto");
+    const store = createSettingsStore(memoryBackend({}));
+    expect((await store.load()).applyMode).toBe("auto");
+    expect((await store.saveApplyMode("ask")).applyMode).toBe("ask");
+    expect((await store.load()).applyMode).toBe("ask");
+  });
+
   it("defaults every provider to enabled and keeps saved flags", () => {
     expect(parseSettings({}).enabled).toEqual({
       meta: true,

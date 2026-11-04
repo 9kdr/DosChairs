@@ -122,6 +122,40 @@ def test_fixture_changeset_validates() -> None:
     assert validate_changeset(fixture).id == "cs_example"
 
 
+def test_fallback_travels_with_capability_and_reason() -> None:
+    item = ChangesetItem(
+        id="item_fx",
+        op="add_effect",
+        rationale="Kinetic type over the hook.",
+        fallback={
+            "capability": "fusionComps",
+            "reason": "Resolve can't place this directly — pre-rendered clip instead",
+        },
+    )
+    validated = validate_changeset(_dumped([item]))
+    assert validated.items[0].fallback is not None
+    assert validated.items[0].fallback.capability == "fusionComps"
+    assert validated.items[0].fallback.reason == (
+        "Resolve can't place this directly — pre-rendered clip instead"
+    )
+
+
+def test_fallback_without_reason_is_rejected_before_the_ui() -> None:
+    good = _dumped(_all_ops())
+    cases = [
+        {**good, "items": [{**good["items"][0], "fallback": {"capability": "fusionComps"}}]},
+        {
+            **good,
+            "items": [
+                {**good["items"][0], "fallback": {"capability": "fusionComps", "reason": ""}}
+            ],
+        },
+    ]
+    for bad in cases:
+        with pytest.raises(InvalidChangeset):
+            validate_changeset(bad)
+
+
 def test_removal_ops_validate_for_undo_changesets() -> None:
     ops = ["remove_marker", "remove_effect", "remove_transition", "remove_track"]
     items = [

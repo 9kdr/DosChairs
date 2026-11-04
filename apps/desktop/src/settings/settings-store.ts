@@ -29,6 +29,8 @@ export type AppSettings = {
   disabledModels: Record<ProviderId, string[]>;
   /** The orchestrator pick from the composer input bar. Null keeps Chair. */
   orchestrator: string | null;
+  /** How agent edits land: applied on arrival (auto) or held for review (ask). */
+  applyMode: "auto" | "ask";
   editors: Record<EditorId, EditorConnection | null>;
 };
 
@@ -39,6 +41,7 @@ export const EMPTY_SETTINGS: AppSettings = {
   customModels: { meta: [], openai: [], anthropic: [] },
   disabledModels: { meta: [], openai: [], anthropic: [] },
   orchestrator: null,
+  applyMode: "auto",
   editors: { resolve: null, kdenlive: null, otio: null },
 };
 
@@ -70,6 +73,7 @@ export function parseSettings(doc: unknown): AppSettings {
   };
   const editors = { ...EMPTY_SETTINGS.editors };
   let orchestrator: string | null = null;
+  let applyMode: "auto" | "ask" = "auto";
   if (!isRecord(doc))
     return {
       keys,
@@ -78,6 +82,7 @@ export function parseSettings(doc: unknown): AppSettings {
       customModels,
       disabledModels,
       orchestrator,
+      applyMode,
       editors,
     };
   if (isRecord(doc.keys)) {
@@ -127,6 +132,9 @@ export function parseSettings(doc: unknown): AppSettings {
   if (typeof doc.orchestrator === "string" && doc.orchestrator.length > 0) {
     orchestrator = doc.orchestrator;
   }
+  if (doc.applyMode === "auto" || doc.applyMode === "ask") {
+    applyMode = doc.applyMode;
+  }
   if (isRecord(doc.editors)) {
     for (const [id, value] of Object.entries(doc.editors)) {
       if (isEditorId(id) && (value === null || isEditorConnection(value))) {
@@ -141,6 +149,7 @@ export function parseSettings(doc: unknown): AppSettings {
     customModels,
     disabledModels,
     orchestrator,
+    applyMode,
     editors,
   };
 }
@@ -189,6 +198,7 @@ export function createSettingsStore(backend: SettingsBackend) {
           keys: { ...EMPTY_SETTINGS.keys },
           models: { ...EMPTY_SETTINGS.models },
           enabled: { ...EMPTY_SETTINGS.enabled },
+          applyMode: "auto",
           customModels: {
             meta: [],
             openai: [],
@@ -286,6 +296,13 @@ export function createSettingsStore(backend: SettingsBackend) {
         ...current,
         orchestrator: name && name.length > 0 ? name : null,
       };
+      await backend.write(next);
+      notify(next);
+      return next;
+    },
+    async saveApplyMode(mode: "auto" | "ask"): Promise<AppSettings> {
+      const current = await this.load();
+      const next: AppSettings = { ...current, applyMode: mode };
       await backend.write(next);
       notify(next);
       return next;

@@ -21,6 +21,7 @@ import { TaskChat, UNDO_PROMPT } from "./orchestrator/TaskChat";
 import type { RunningTask } from "./orchestrator/RunningTasks";
 import { ReviewBoard } from "./project/ReviewBoard";
 import { historyForTask, useProject } from "./project/store";
+import { useSettings } from "./settings/useSettings";
 
 /** Same field as the home gallery (`HomeScreen`). */
 const SHELL_BG = "#111111";
@@ -48,26 +49,24 @@ type SectionId = (typeof SECTIONS)[number]["id"];
 /** Blank project view: a way home, a command bar, section nav, and the Chair mark. */
 export function ProjectShell({ projectId, projectName, editorId, onHome }: ProjectShellProps) {
   const [section, setSection] = useState<SectionId>("review");
-  const project = useProject(projectId, projectName);
+  const { settings } = useSettings();
+  const project = useProject(projectId, projectName, { applyMode: settings.applyMode });
   const [barOpen, setBarOpen] = useState(false);
   const [command, setCommand] = useState<{ id: number; text: string } | null>(null);
   const [createdTasks, setCreatedTasks] = useState<RunningTask[]>([]);
   const [taskChat, setTaskChat] = useState<RunningTask | null>(null);
   const [taskNote, setTaskNote] = useState<{ id: number; text: string } | null>(null);
 
-  /** Answer an undo prompt by proposing the task's full tail as one changeset. */
+  /** Answer an undo prompt by rewinding the task's full tail at once. */
   const requestTaskUndo = (task: RunningTask): string => {
     const entries = historyForTask(project.history, task.id);
-    if (entries.length === 0) return `No accepted edits to rewind for ${task.name} yet.`;
+    if (entries.length === 0) return `No applied edits to rewind for ${task.name} yet.`;
     const tip = entries[entries.length - 1]!;
     const undone = buildUndoChangeset(project.history, tip.itemId);
     if (!undone.ok) return `Can't rewind ${task.name} yet: ${undone.reason}`;
     project.undoToHere(tip.itemId);
     const count = entries.length === 1 ? "1 edit" : `${entries.length} edits`;
-    return (
-      `Proposed undoing ${count} for ${task.name} as one changeset — ` +
-      `open Review to accept it. Nothing changed yet.`
-    );
+    return `Rewound ${count} for ${task.name} onto a copy — History shows every step.`;
   };
 
   return (
@@ -141,6 +140,7 @@ export function ProjectShell({ projectId, projectName, editorId, onHome }: Proje
                 setTaskNote({ id: Date.now(), text: UNDO_PROMPT });
               }}
               onUndoEntry={(entry) => project.undoToHere(entry.itemId)}
+              onUndoLast={() => project.undoLast()}
             />
           ) : (
             <CreationBoard />

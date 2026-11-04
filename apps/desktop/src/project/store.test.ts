@@ -137,6 +137,36 @@ describe("tryHistoryEntry", () => {
       },
       acceptedAt: "2026-10-31T12:00:00.000Z",
       acceptedBy: "you",
+      actor: "user",
+    });
+  });
+
+  it("marks agent applies and carries the adapter fallback", () => {
+    const changeset = makeChangeset();
+    const item = {
+      ...changeset.items[0]!,
+      fallback: {
+        capability: "fusionComps",
+        reason: "Resolve can't place this directly — pre-rendered clip instead",
+      },
+    };
+    const checked = tryHistoryEntry(
+      changeset,
+      item,
+      makeTimeline(),
+      "agent",
+      "2026-10-31T12:00:00.000Z",
+      "task-1",
+      "agent",
+    );
+
+    expect(checked.ok).toBe(true);
+    if (!checked.ok) return;
+    expect(checked.entry.actor).toBe("agent");
+    expect(checked.entry.acceptedBy).toBe("agent");
+    expect(checked.entry.fallback).toEqual({
+      capability: "fusionComps",
+      reason: "Resolve can't place this directly — pre-rendered clip instead",
     });
   });
 
@@ -223,15 +253,15 @@ describe("undoSummaryForTask", () => {
     const history = [acceptedEntry("a", "task-1"), acceptedEntry("b", "task-2"), acceptedEntry("c", "task-1")];
 
     expect(undoSummaryForTask(history, "task-1", "Assemble rough cut")).toBe(
-      "2 accepted edits for Assemble rough cut, newest first: " +
+      "2 applied edits for Assemble rough cut, newest first: " +
         "Add Marker; Add Marker. " +
-        "Pick Undo to here in History to propose the rewind — it lands in Review for accept.",
+        "Press u or pick Undo to here in History to rewind — it applies at once onto a copy.",
     );
   });
 
   it("says so honestly with nothing to rewind", () => {
     expect(undoSummaryForTask([], "task-1", "Assemble rough cut")).toBe(
-      "No accepted edits to rewind for Assemble rough cut yet.",
+      "No applied edits to rewind for Assemble rough cut yet.",
     );
   });
 });

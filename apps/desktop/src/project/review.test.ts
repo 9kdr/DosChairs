@@ -202,4 +202,54 @@ describe("reviewFromJson", () => {
     if (review.kind !== "proposal") return;
     expect(review.changeset.items[0]?.status).toBe("pending");
   });
+
+  it("parses a fallback capability and reason on the item", () => {
+    const review = reviewFromJson(
+      bundle({
+        status: "proposed",
+        ops: [
+          {
+            ...OP,
+            op: "add_effect",
+            fallback: {
+              capability: "fusionComps",
+              reason: "Resolve can't place this directly — pre-rendered clip instead",
+            },
+          },
+        ],
+      }),
+    );
+    expect(review.kind).toBe("proposal");
+    if (review.kind !== "proposal") return;
+    expect(review.changeset.items[0]?.fallback).toEqual({
+      capability: "fusionComps",
+      reason: "Resolve can't place this directly — pre-rendered clip instead",
+    });
+  });
+
+  it("leaves items without a fallback alone", () => {
+    const review = reviewFromJson(bundle({ status: "proposed", ops: [OP] }));
+    expect(review.kind).toBe("proposal");
+    if (review.kind !== "proposal") return;
+    expect(review.changeset.items[0]?.fallback).toBeUndefined();
+  });
+
+  it("rejects a fallback without a capability and reason", () => {
+    expect(() =>
+      reviewFromJson(
+        bundle({
+          status: "proposed",
+          ops: [{ ...OP, fallback: { capability: "fusionComps" } }],
+        }),
+      ),
+    ).toThrowError(/without capability and reason/);
+    expect(() =>
+      reviewFromJson(
+        bundle({
+          status: "proposed",
+          ops: [{ ...OP, fallback: { capability: "fusionComps", reason: "" } }],
+        }),
+      ),
+    ).toThrowError(/without capability and reason/);
+  });
 });

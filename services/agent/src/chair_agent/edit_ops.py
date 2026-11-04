@@ -1,10 +1,11 @@
 """Typed edit ops that emit changeset items.
 
 Cut, trim, ripple, move, speed, transition, and marker builders map onto the
-op enum in schemas/changeset.schema.json. Every emitted item is pending: a
-proposed edit never changes the timeline. validate_changeset checks raw tool
-output against that schema file and rejects invalid payloads before they
-reach the UI.
+op enum in schemas/changeset.schema.json. Every emitted item applies onto a
+copy — never source media, never the person's timeline in place — with its
+inverse kept in history so it stays undoable. validate_changeset checks raw
+tool output against that schema file and rejects invalid payloads before
+they reach the UI.
 """
 
 import json
@@ -40,6 +41,16 @@ MarkerKind = Literal["beat", "hook", "fix", "broll", "user", "range"]
 SCHEMA_VERSION = "0.1.0"
 
 
+class ChangesetFallback(BaseModel):
+    """The adapter could not place this item directly: capability id plus
+    the plain-words substitute the reviewer accepts instead."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    capability: str = Field(min_length=1)
+    reason: str = Field(min_length=1)
+
+
 class ChangesetItem(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, populate_by_name=True)
 
@@ -49,6 +60,7 @@ class ChangesetItem(BaseModel):
     beat_id: str | None = Field(default=None, alias="beatId")
     rationale: str = Field(min_length=1)
     patch: dict[str, Any] | None = None
+    fallback: ChangesetFallback | None = None
     status: Literal["pending", "accepted", "rejected"] = "pending"
 
 

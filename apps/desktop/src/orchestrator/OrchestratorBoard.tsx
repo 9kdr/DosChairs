@@ -27,13 +27,14 @@ type PlanMode = "edit" | "talk";
 type OrchestratorBoardProps = {
   projectId: string;
   command?: { id: number; text: string } | null;
-  /** Accepted edits, shown in the History card under the running tasks. */
+  /** Applied edits, shown in the History card under the running tasks. */
   history: HistoryEntry[];
   /** Tasks prompted into being; shown while their agent jobs are live. */
   createdTasks?: readonly RunningTask[];
   onOpenTask?: (task: RunningTask) => void;
   onUndoTask?: (task: RunningTask) => void;
   onUndoEntry?: (entry: HistoryEntry) => void;
+  onUndoLast?: () => void;
   onCreateTask?: (task: RunningTask) => void;
 };
 
@@ -55,6 +56,7 @@ export function OrchestratorBoard({
   onOpenTask,
   onUndoTask,
   onUndoEntry,
+  onUndoLast,
   onCreateTask,
 }: OrchestratorBoardProps) {
   const [planOpen, setPlanOpen] = useState(false);
@@ -278,7 +280,7 @@ export function OrchestratorBoard({
                 onUndo={onUndoTask}
                 frozen={planTweening}
               />
-              <HistoryCard entries={history} onUndoEntry={onUndoEntry} />
+              <HistoryCard entries={history} onUndoEntry={onUndoEntry} onUndoLast={onUndoLast} />
             </div>,
             slotContainer,
           )}

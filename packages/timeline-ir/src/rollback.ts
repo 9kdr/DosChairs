@@ -38,6 +38,7 @@
  */
 import type {
   Changeset,
+  ChangesetFallback,
   ChangesetItem,
   Clip,
   EditOp,
@@ -61,7 +62,10 @@ export type InvertResult =
 /**
  * One accepted edit's undo point. forward is the accepted patch verbatim;
  * inverse is the op that undoes it. beatId links back to the plan step when
- * the item carries one.
+ * the item carries one. actor marks who caused the apply: the agent
+ * applying on arrival, or the person applying by hand. fallback carries the
+ * item's adapter fallback, when it had one, so history shows the same line
+ * the review showed.
  */
 export interface HistoryEntry {
   taskId: string;
@@ -75,6 +79,8 @@ export interface HistoryEntry {
   inverse: InverseOp;
   acceptedAt: string;
   acceptedBy: string;
+  actor: "agent" | "user";
+  fallback?: ChangesetFallback;
 }
 
 export type UndoResult =

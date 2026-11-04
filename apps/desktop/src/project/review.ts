@@ -115,6 +115,21 @@ function itemFromJson(value: unknown): ChangesetItem {
   if (typeof value.targetId === "string") item.targetId = value.targetId;
   if (typeof value.beatId === "string") item.beatId = value.beatId;
   if (isRecord(value.patch)) item.patch = value.patch;
+  if (value.fallback !== undefined) {
+    if (
+      !isRecord(value.fallback) ||
+      typeof value.fallback.capability !== "string" ||
+      value.fallback.capability.length === 0 ||
+      typeof value.fallback.reason !== "string" ||
+      value.fallback.reason.length === 0
+    ) {
+      throw malformed(`proposal item ${value.id} has a fallback without capability and reason`);
+    }
+    item.fallback = {
+      capability: value.fallback.capability,
+      reason: value.fallback.reason,
+    };
+  }
   return item;
 }
 
