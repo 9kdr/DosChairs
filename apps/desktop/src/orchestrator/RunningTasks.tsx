@@ -14,6 +14,7 @@ import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { DitherShader } from "@/lib/dither";
 import type { DitherColor } from "@/lib/dither";
 import { Button } from "@/components/ui/button";
+import { SleepyChair } from "@/components/sleepy-chair/sleepy-chair";
 import { InfoHint } from "@/components/info-hint";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
@@ -711,30 +712,33 @@ export function RunningTasks({
         ) : null}
       </div>
       {working.length === 0 && recent.length === 0 ? (
-        <div className="flex flex-col items-start gap-3 pb-1">
-          <p className="text-body text-muted-foreground">
-            Nothing running. Describe an edit in the bar below.
-          </p>
-          {suggestions.length > 0 ? (
-            <div
-              className="flex flex-wrap items-center gap-2"
-              role="group"
-              aria-label="Suggested next steps"
-            >
-              {suggestions.map((item) => (
-                <Button
-                  key={item.label}
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  onClick={() => onSuggest?.(item)}
-                >
-                  {item.kind === "retry" ? <RotateCcw /> : null}
-                  {item.label}
-                </Button>
-              ))}
-            </div>
-          ) : null}
+        // The sleepy-chair banner stays (#317), compact, with the one line and
+        // the real suggestion chips beside it (stacked when narrow).
+        <div className="grid grid-cols-1 items-center gap-4 @min-[700px]:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
+          <SleepyChair className="h-36 rounded-2xl" label="Nothing running" />
+          <div className="flex flex-col items-start gap-3">
+            <p className="text-body text-muted-foreground">Describe an edit in the bar below.</p>
+            {suggestions.length > 0 ? (
+              <div
+                className="flex flex-wrap items-center gap-2"
+                role="group"
+                aria-label="Suggested next steps"
+              >
+                {suggestions.map((item) => (
+                  <Button
+                    key={item.label}
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => onSuggest?.(item)}
+                  >
+                    {item.kind === "retry" ? <RotateCcw /> : null}
+                    {item.label}
+                  </Button>
+                ))}
+              </div>
+            ) : null}
+          </div>
         </div>
       ) : (
         <div

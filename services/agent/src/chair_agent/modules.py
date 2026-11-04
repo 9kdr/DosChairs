@@ -390,6 +390,13 @@ def build_generate_messages(
         f"Canvas: {width}x{height}, {fps} fps, {duration_sec}s. Use exactly these numbers in meta."
         + (f" meta.kind must be '{kind}'." if kind else ""),
     ]
+    if kind == "rig":
+        developer.append(
+            "Rig controls: the editor tunes the spring live, so expose it as "
+            "keyframable number props with the same meanings as the "
+            "expressive-mouse reference: target X and Y, stiffness, damping, "
+            "mass, and swing."
+        )
     if skills_block and mode == "wonder":
         developer.append(
             "House skills and an optional toolbox (improvise freely):\n" + skills_block
@@ -1156,8 +1163,8 @@ def install_module(
         "dir": str(folder), "files": [str(manifest_path), str(js_path)],
         "renamed": stem != record.stem,
         "fallback": (
-            "Resolve loads OGraf titles on macOS and Windows only; on Linux copy "
-            "the folder to a Mac or Windows install."
+            "Resolve loads OGraf titles on macOS and Windows only; on Linux the "
+            "agent bakes the piece to a PNG sequence for the Loader path instead."
         ),
     }
     _register(record.model_copy(update={"installs": [*record.installs, install]}), env)

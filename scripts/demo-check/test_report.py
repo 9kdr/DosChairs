@@ -97,3 +97,48 @@ def test_report_json_shape(tmp_path):
     assert [flow["name"] for flow in loaded["flows"]] == ["effect", "rig"]
     assert all("reason" in flow and "seconds" in flow
                for flow in loaded["flows"])
+
+
+def test_rig_controls_found_by_name():
+    run = load_run()
+    ids = ["targetX", "targetY", "stiffness", "mass", "swing", "accent"]
+    assert run.target_axis(ids, "x") == "targetX"
+    assert run.target_axis(ids, "y") == "targetY"
+    assert run.match_control(ids, "stiff") == "stiffness"
+    assert run.match_control(ids, "mass") == "mass"
+    assert run.match_control(ids, "swing") == "swing"
+    assert run.target_axis(["accent"], "x") is None
+    assert run.match_control(["accent"], "mass") is None
+    full = [{"id": "targetX", "type": "number", "default": 960},
+            {"label": "no id here"}, "bare"]
+    assert run.prop_ids(full) == ["targetX", "bare"]
+
+
+def test_strip_png_is_a_valid_png(tmp_path):
+    run = load_run()
+    poses = [{"t": round(i * 0.1, 1), "x": 120.0 + i * 80.0,
+              "y": 540.0, "tilt": 0.0} for i in range(12)]
+    path = run.write_strip_png(poses, str(tmp_path / "strip.png"), cells=4)
+    raw = open(path, "rb").read()
+    assert raw[:8] == b"\x89PNG\r\n\x1a\n"
+    import struct
+    width, height = struct.unpack(">II", raw[16:24])
+    assert (width, height) == (4 * 160 + 3 * 6, 90)
+
+
+def test_flow_rig_passes_on_dry_fakes(tmp_path, monkeypatch):
+    run = load_run()
+    monkeypatch.setattr(run, "REPORT_DIR", str(tmp_path))
+    info = {"width": 1920, "height": 1080, "fps": 24.0,
+            "duration_sec": 40.0, "total_frames": 960, "rate": 24.0,
+            "proxy_url": "/tmp/dry-dialogue.mp4",
+            "music_clip_id": "dry-music-1"}
+    flow = run.flow_rig(run.Dry("http://x"), {"rig": "prompt r"},
+                        info, {"comps": [], "timelines": []})
+    assert flow["status"] == "PASS", flow["reason"]
+    assert flow["evidence"]["module_id"] == "fxm-dry-1"
+    assert flow["evidence"]["controls"]["stiffness"] == "stiffness"
+    assert flow["evidence"]["feel"]["settle_dev_px"] >= 0
+    strips = list((tmp_path / "rig").glob("strip-*.png"))
+    assert len(strips) == 1
+    assert flow["evidence"]["strip"] == str(strips[0])

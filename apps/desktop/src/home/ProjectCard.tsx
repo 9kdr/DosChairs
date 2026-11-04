@@ -5,6 +5,7 @@ import {
   ContextMenuPopup,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
+import { Spinner } from "@/components/ui/spinner";
 import {
   Menu,
   MenuItem,
@@ -20,6 +21,10 @@ export type ProjectCardProps = {
   project: Project;
   /** True while this card is the hover/focus target in the grid. */
   emphasized?: boolean;
+  /** True while the editor is being put on this project. */
+  opening?: boolean;
+  /** Plain failure from the last open attempt, if any. */
+  openError?: string | null;
   onOpen?: () => void;
   cardRef?: Ref<HTMLDivElement>;
 };
@@ -44,6 +49,8 @@ export function ProjectCardActions({
 export function ProjectCard({
   project,
   emphasized = false,
+  opening = false,
+  openError = null,
   onOpen,
   cardRef,
 }: ProjectCardProps) {
@@ -71,6 +78,15 @@ export function ProjectCard({
               className="h-10 w-10 opacity-70"
             />
           </div>
+
+          {opening ? (
+            <div className="absolute inset-0 z-10 grid place-items-center bg-background/70 backdrop-blur-[1px]">
+              <p className="flex items-center gap-2 text-sm text-neutral-200">
+                <Spinner className="size-4" />
+                <span>Opening in {editorShort(editorId)}…</span>
+              </p>
+            </div>
+          ) : null}
 
           {/* Quiet overflow control */}
           <div className="absolute top-2 right-2 z-20 pointer-events-none group-hover:pointer-events-auto group-focus-within:pointer-events-auto group-data-[emphasized]:pointer-events-auto">
@@ -109,6 +125,11 @@ export function ProjectCard({
             <span aria-hidden="true">·</span>
             <time dateTime={project.editedAt}>{formatEditedAt(project.editedAt)}</time>
           </p>
+          {openError !== null ? (
+            <p role="alert" className="mt-1 line-clamp-2 text-xs text-destructive">
+              {openError}
+            </p>
+          ) : null}
         </div>
       </ContextMenuTrigger>
       <ContextMenuPopup

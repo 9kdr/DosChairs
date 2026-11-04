@@ -6,6 +6,7 @@ class Capabilities(BaseModel):
 
     keyframes: bool
     fusion_comps: bool
+    open_project: bool = True
     adjustment_layers: bool
     markers: bool
     subtitles: bool
@@ -34,5 +35,11 @@ MANIFEST = Manifest(
         nested_sequences=True,
         speed_changes=True,
     ),
-    fallbacks={"fusionComps": "prerendered overlay track"},
+    fallbacks={
+        "fusionComps": "prerendered overlay track",
+        "openProject": (
+            "open the .kdenlive file in Kdenlive by hand, "
+            "then open it again in Chair"
+        ),
+    },
 )

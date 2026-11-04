@@ -6,6 +6,7 @@ import {
   findStoredProject,
   mergeEditors,
   mergeProjects,
+  openProjectInEditor,
   readStoredSnapshot,
   snapshotFromJson,
   writeStoredSnapshot,
@@ -212,5 +213,70 @@ describe("stored snapshot", () => {
     const stored = readStoredSnapshot();
     expect(stored.projects).toEqual([]);
     expect(stored.scannedAt).toBeNull();
+  });
+});
+
+describe("openProjectInEditor", () => {
+  const project = { id: "resolve:chair-captest", name: "Chair Captest" };
+
+  it("posts the card id and name, then returns the confirmation", async () => {
+    const seen: Array<{ url: string; init?: RequestInit }> = [];
+    const result = await openProjectInEditor(project, {
+      agentUrl: "http://agent:9999",
+      fetchFn: (url, init) => {
+        seen.push({ url, init });
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: () =>
+            Promise.resolve({
+              project_id: project.id,
+              editor: "resolve",
+              opened: true,
+              alreadyCurrent: true,
+              project: "Chair Captest",
+            }),
+        });
+      },
+    });
+
+    expect(seen).toHaveLength(1);
+    expect(seen[0]!.url).toBe("http://agent:9999/projects/open");
+    expect(JSON.parse(seen[0]!.init?.body as string)).toEqual({
+      project_id: "resolve:chair-captest",
+      name: "Chair Captest",
+    });
+    expect(result).toEqual({
+      opened: true,
+      alreadyCurrent: true,
+      project: "Chair Captest",
+    });
+  });
+
+  it("throws the agent's plain message on failure", async () => {
+    await expect(
+      openProjectInEditor(project, {
+        fetchFn: () =>
+          Promise.resolve({
+            ok: false,
+            status: 503,
+            json: () =>
+              Promise.resolve({
+                error: {
+                  code: "editor_unavailable",
+                  message: "DaVinci Resolve Studio is closed.",
+                },
+              }),
+          }),
+      }),
+    ).rejects.toThrowError("DaVinci Resolve Studio is closed.");
+  });
+
+  it("throws a plain error when the agent is unreachable", async () => {
+    await expect(
+      openProjectInEditor(project, {
+        fetchFn: () => Promise.reject(new TypeError("failed to fetch")),
+      }),
+    ).rejects.toThrowError(/unreachable/);
   });
 });

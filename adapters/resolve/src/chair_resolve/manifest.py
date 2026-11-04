@@ -6,6 +6,7 @@ class Capabilities(BaseModel):
 
     keyframes: bool
     fusion_comps: bool
+    open_project: bool = True
     fusion_macros: bool = True
     fusion_build_api: bool = True
     template_scan: bool = True
@@ -48,6 +49,9 @@ MANIFEST = Manifest(
     # retime clips, so the planner skips or flags them. Reading supports them,
     # so the flags above stay True.
     fallbacks={
+        "openProject": (
+            "open the project in Studio by hand, then open it again in Chair"
+        ),
         "subtitles": "import captions in Studio by hand",
         "adjustmentLayers": "add an adjustment clip in Studio by hand",
         "speedChanges": "retime the clip in Studio by hand",
@@ -63,7 +67,10 @@ MANIFEST = Manifest(
             "used when it actually ingests nodes"
         ),
         "templateScan": "no Fusion folder found: name the macro in the brief by hand",
-        "ografTitles": "install with install_ograf, then drag from Effects > Titles > OGraf",
+        "ografTitles": (
+            "install with install_ograf, then drag from Effects > Titles > OGraf; "
+            "on Linux the agent bakes the piece to a PNG sequence instead"
+        ),
         "placeSfx": (
             "import the SFX file into the media pool, "
             "then append it to a new audio track by hand"
