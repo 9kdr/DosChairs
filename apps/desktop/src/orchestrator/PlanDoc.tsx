@@ -27,6 +27,7 @@ import {
   MenuPopup,
   MenuRadioGroup,
   MenuRadioItem,
+  MenuSeparator,
   MenuTrigger,
 } from "@/components/ui/menu";
 import { Tabs, TabsList, TabsTab } from "@/components/ui/tabs";
@@ -1140,6 +1141,7 @@ export function PlanDoc({ open, mode, onOpen, onClose, notice, className, projec
   };
 
   const excerpt = (texts.brief ?? "").split("\n")[0] ?? "";
+  const activeDocLabel = tabs.find((tab) => tab.id === doc)?.label ?? "Brief";
 
   // Markdown import fills the plan front (beats and board) and mirrors the
   // script into the Brief doc so the Script tab shows what was pasted.
@@ -1502,7 +1504,7 @@ export function PlanDoc({ open, mode, onOpen, onClose, notice, className, projec
               onValueChange={(value) => setSection(value as PlanSection)}
               className="min-w-0 flex-1"
             >
-              <TabsList size="sm" variant="underline" className="w-full justify-start gap-4">
+              <TabsList size="sm" aria-label="Plan section">
                 <TabsTab value="script">Script</TabsTab>
                 <TabsTab value="beats">Beats</TabsTab>
                 <TabsTab value="board">Board</TabsTab>
@@ -1518,67 +1520,75 @@ export function PlanDoc({ open, mode, onOpen, onClose, notice, className, projec
             className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden"
           >
             {section === "script" ? (
-            <Tabs value={doc} onValueChange={(value) => setDoc(value)}>
-              <TabsList
-                size="sm"
-                className="flex w-full items-center gap-1 overflow-x-auto rounded-full bg-muted p-1 [&>[data-slot=tab-indicator]]:hidden"
-              >
-                {tabs.map((item) =>
-                  editingTab === item.id ? (
-                    <Input
-                      key={item.id}
-                      autoFocus
-                      type="text"
-                      size="sm"
-                      value={editingLabel}
-                      aria-label="Tab name"
-                      className="h-7 min-w-24 rounded-full border-white/15 bg-transparent"
-                      onChange={(event) => setEditingLabel(event.target.value)}
-                      onBlur={commitRename}
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter") commitRename();
-                        if (event.key === "Escape") {
-                          setEditingTab(null);
-                          setEditingLabel("");
-                        }
-                      }}
-                      onClick={(event) => event.stopPropagation()}
-                    />
-                  ) : (
-                    <TabsTab
-                      key={item.id}
-                      value={item.id}
-                      className="rounded-full data-active:bg-white/10"
-                      onDoubleClick={(event) => {
-                        event.preventDefault();
-                        startRename(item);
-                      }}
-                      title="Double-click to rename"
-                    >
-                      {item.label}
-                    </TabsTab>
-                  ),
-                )}
-                <Button
-                  type="button"
-                  size="icon-sm"
-                  variant="ghost"
-                  aria-label="Add a tab"
-                  className="ml-auto shrink-0 rounded-full"
-                  onClick={addTab}
-                >
-                  <Plus />
-                </Button>
-              </TabsList>
-            </Tabs>
-            ) : null}
-            {section === "script" ? (
             <>
             <div
               role="toolbar"
               aria-label="Format the plan"
-              className="flex shrink-0 items-center gap-0.5"
+              className="flex shrink-0 items-center gap-0.5 overflow-x-auto [&>button]:shrink-0"
             >
+              {editingTab ? (
+                <Input
+                  autoFocus
+                  type="text"
+                  size="sm"
+                  value={editingLabel}
+                  aria-label="Section name"
+                  className="h-7 w-32 shrink-0 border-white/15 bg-transparent"
+                  onChange={(event) => setEditingLabel(event.target.value)}
+                  onBlur={commitRename}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") commitRename();
+                    if (event.key === "Escape") {
+                      setEditingTab(null);
+                      setEditingLabel("");
+                    }
+                  }}
+                  onClick={(event) => event.stopPropagation()}
+                />
+              ) : (
+                <Menu>
+                  <MenuTrigger
+                    render={
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        aria-label={`Section: ${activeDocLabel}. Change it.`}
+                        className="h-7 max-w-36 px-2"
+                      >
+                        <span className="min-w-0 flex-1 truncate text-left text-meta">
+                          {activeDocLabel}
+                        </span>
+                        <ChevronDown className="size-3!" />
+                      </Button>
+                    }
+                  />
+                  <MenuPopup align="start" className="min-w-44">
+                    <MenuRadioGroup value={doc} onValueChange={(value) => setDoc(value)}>
+                      {tabs.map((item) => (
+                        <MenuRadioItem key={item.id} value={item.id} closeOnClick>
+                          {item.label}
+                        </MenuRadioItem>
+                      ))}
+                    </MenuRadioGroup>
+                    <MenuSeparator />
+                    <MenuItem closeOnClick onClick={addTab}>
+                      <Plus />
+                      New section
+                    </MenuItem>
+                    <MenuItem
+                      closeOnClick
+                      onClick={() => {
+                        const tab = tabs.find((item) => item.id === doc);
+                        if (tab) startRename(tab);
+                      }}
+                    >
+                      <PenLine />
+                      Rename section
+                    </MenuItem>
+                  </MenuPopup>
+                </Menu>
+              )}
               <Menu>
                 <MenuTrigger
                   render={

@@ -5,7 +5,7 @@
  * work this plan runs from.
  */
 import { useRef, useState } from "react";
-import { ImagePlus, Link2, Plus, X } from "lucide-react";
+import { ChevronDown, ImagePlus, Link2, X } from "lucide-react";
 import { motion, useReducedMotion } from "motion/react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -212,21 +212,24 @@ export function PlanBoard({ items, digests, digesting, onChange, onDigest, onFil
                   ease: [0.22, 1, 0.36, 1],
                   delay: Math.min(index * 0.04, 0.24),
                 }}
-                className="group relative flex min-w-0 flex-col overflow-hidden rounded-card bg-surface-raised"
+                className="group relative flex min-w-0 flex-row overflow-hidden rounded-card bg-surface-raised"
               >
                 {cover ? (
-                  <img
-                    src={cover}
-                    alt={item.title || "Board image"}
-                    className="aspect-video w-full object-cover"
-                    loading="lazy"
-                  />
+                  <span className="relative block w-20 shrink-0 self-stretch overflow-hidden">
+                    <img
+                      src={cover}
+                      alt={item.title || "Board image"}
+                      className="absolute inset-0 h-full w-full object-cover"
+                      loading="lazy"
+                    />
+                  </span>
                 ) : item.url ? (
                   <a
                     href={item.url}
                     target="_blank"
                     rel="noreferrer"
-                    className="relative flex h-24 items-center justify-center gap-2 overflow-hidden px-4"
+                    aria-label={`Open ${host ?? "link"}`}
+                    className="relative flex w-20 shrink-0 flex-col items-center justify-center gap-1 self-stretch overflow-hidden px-1 py-2"
                   >
                     <span
                       aria-hidden="true"
@@ -234,18 +237,18 @@ export function PlanBoard({ items, digests, digesting, onChange, onDigest, onFil
                       style={ditherMaskStyle(0.35)}
                     />
                     <Link2 className="relative size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-                    <span className="relative min-w-0 truncate text-meta text-muted-foreground">
+                    <span className="relative w-full truncate text-center text-meta text-muted-foreground">
                       {host}
                     </span>
                   </a>
                 ) : (
                   <span
                     aria-hidden="true"
-                    className="block h-24 bg-white/[0.06]"
+                    className="block w-20 shrink-0 self-stretch bg-white/[0.06]"
                     style={ditherMaskStyle(0.35)}
                   />
                 )}
-                <div className="flex flex-col gap-0.5 p-4">
+                <div className="flex min-w-0 flex-1 flex-col justify-center gap-0.5 p-3">
                   <InlineEdit
                     value={item.title}
                     placeholder="Title"
@@ -413,17 +416,21 @@ type AgentViewProps = {
 
 export function AgentView({ tasks, stale, busy, saveState, notice, onGenerate }: AgentViewProps) {
   return (
-    <details className="shrink-0 rounded-card bg-muted px-4 py-3">
+    <details className="group shrink-0 rounded-card bg-muted px-4 py-3">
       <summary className="flex cursor-pointer list-none items-center gap-2 text-body text-neutral-100 [&::-webkit-details-marker]:hidden">
-        <Plus className="size-3.5 text-neutral-500" aria-hidden="true" />
-        Tasks
+        <ChevronDown
+          className="size-3.5 shrink-0 text-neutral-500 transition-transform group-open:rotate-180"
+          aria-hidden="true"
+        />
+        {tasks.length === 0 ? "No tasks yet" : `${tasks.length} task${tasks.length === 1 ? "" : "s"}`}
         {stale ? (
           <Badge className="border-transparent bg-amber-400/15 text-amber-200">Stale</Badge>
         ) : null}
-        <span className="ml-auto text-meta text-muted-foreground">
-          {tasks.length === 0 ? "No tasks yet" : `${tasks.length} task${tasks.length === 1 ? "" : "s"}`}
-          {saveState === "saving" ? " · Saving…" : saveState === "error" ? " · Save failed" : ""}
-        </span>
+        {saveState === "saving" || saveState === "error" ? (
+          <span className="ml-auto text-meta text-muted-foreground">
+            {saveState === "saving" ? "Saving…" : "Save failed"}
+          </span>
+        ) : null}
       </summary>
       <div className="flex flex-col gap-2 pt-2">
         {notice ? <p className="text-meta text-red-400">{notice}</p> : null}

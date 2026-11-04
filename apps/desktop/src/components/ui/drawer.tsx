@@ -98,7 +98,10 @@ export function DrawerBackdrop({
   return (
     <DrawerPrimitive.Backdrop
       className={cn(
-        "fixed inset-0 z-50 bg-black/32 opacity-[calc(1-var(--drawer-swipe-progress))] backdrop-blur-sm transition-opacity duration-450 ease-[cubic-bezier(0.32,0.72,0,1)] data-ending-style:opacity-0 data-starting-style:opacity-0 data-ending-style:duration-[calc(var(--drawer-swipe-strength)*400ms)] data-swiping:duration-0 supports-[-webkit-touch-callout:none]:absolute",
+        // The top 48px belong to the window chrome (traffic lights plus
+        // drag strip); the backdrop starts below them so they stay
+        // visible and clickable with any drawer open.
+        "fixed inset-x-0 top-12 bottom-0 z-50 bg-black/32 opacity-[calc(1-var(--drawer-swipe-progress))] backdrop-blur-sm transition-opacity duration-450 ease-[cubic-bezier(0.32,0.72,0,1)] data-ending-style:opacity-0 data-starting-style:opacity-0 data-ending-style:duration-[calc(var(--drawer-swipe-strength)*400ms)] data-swiping:duration-0 supports-[-webkit-touch-callout:none]:absolute",
         className,
       )}
       data-slot="drawer-backdrop"
@@ -119,7 +122,9 @@ export function DrawerViewport({
   return (
     <DrawerPrimitive.Viewport
       className={cn(
-        "fixed inset-0 z-50 [--bleed:--spacing(12)] [--inset:0px]",
+        // Starts below the 48px window chrome with the backdrop, so the
+        // traffic lights and drag strip keep their pointer events.
+        "fixed inset-x-0 top-12 bottom-0 z-50 [--bleed:--spacing(12)] [--inset:0px]",
         "touch-none",
         position === "bottom" &&
           "grid grid-rows-[1fr_auto] pt-[max(--spacing(2),env(safe-area-inset-top,0px))]",

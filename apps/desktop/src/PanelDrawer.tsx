@@ -7,6 +7,10 @@ import { Drawer, DrawerPopup, DrawerTitle } from "@/components/ui/drawer";
  * Drawer over the single column. The desktop side column stays as is above
  * 760px.
  *
+ * The drawer starts below the 48px titlebar (the drawer's viewport and
+ * backdrop both clear it), so the traffic lights and drag strip stay
+ * visible and the panel's own close button never sits under them.
+ *
  * The slide is the coss drawer animation at Chair's timing (~220ms
  * ease-out); the content inside gets one soft motion enter. The header row
  * (tabs plus close) belongs to the panel content, not the drawer.
