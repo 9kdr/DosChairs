@@ -6,7 +6,7 @@ export interface RenderAssets {
   images: Map<string, TexImageSource>;
 }
 
-const COLOR_VS = `#version 300 es
+const QUAD_VS = `#version 300 es
 in vec2 aPos; in vec2 aUv; out vec2 vUv;
 uniform vec2 uResolution;
 void main() {
@@ -27,14 +27,7 @@ void main() {
   oColor = uColor;
 }`;
 
-const TEX_VS = `#version 300 es
-in vec2 aPos; in vec2 aUv; out vec2 vUv;
-uniform vec2 uResolution;
-void main() {
-  vUv = aUv;
-  vec2 clip = (aPos / uResolution) * 2.0 - 1.0;
-  gl_Position = vec4(clip.x, -clip.y, 0.0, 1.0);
-}`;
+
 
 const TEX_FS = `#version 300 es
 precision mediump float;
@@ -204,8 +197,8 @@ export function renderFrame(
   assets: RenderAssets = { images: new Map() },
 ): void {
   const c = cache(gl);
-  if (!c.color) c.color = compile(gl, COLOR_VS, COLOR_FS);
-  if (!c.tex) c.tex = compile(gl, TEX_VS, TEX_FS);
+  if (!c.color) c.color = compile(gl, QUAD_VS, COLOR_FS);
+  if (!c.tex) c.tex = compile(gl, QUAD_VS, TEX_FS);
   gl.viewport(0, 0, spec.width, spec.height);
   gl.clearColor(0, 0, 0, 0);
   gl.clear(gl.COLOR_BUFFER_BIT);
