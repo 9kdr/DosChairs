@@ -491,6 +491,24 @@ function TaskTile({
                 >
                   {LANE_LABEL[task.lane]}
                   {status ? ` · ${status}` : ""}
+                  {landed && landed.skipped.length > 0 ? (
+                    <>
+                      {" "}
+                      <InfoHint>
+                        {landed.skipped.length === 1 ? (
+                          landed.skipped[0]!.reason
+                        ) : (
+                          <span>
+                            {landed.skipped.map((skip) => (
+                              <span key={skip.intent} className="block">
+                                {skip.reason}
+                              </span>
+                            ))}
+                          </span>
+                        )}
+                      </InfoHint>
+                    </>
+                  ) : null}
                 </p>
               </div>
             </div>

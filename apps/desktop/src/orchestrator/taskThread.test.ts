@@ -1142,14 +1142,16 @@ describe("finished cut writes", () => {
     expect(landed.skipped).toEqual([
       { intent: "spd-1", reason: "retime the clip in Studio by hand" },
     ]);
-    expect(landedRowsFor([task])).toMatchObject([{ id: task.id, status: landed.line }]);
+    rememberSettledTask({ ...task, status: settledStatusFor(cutJob()) });
+    expect(settledTaskRows()).toMatchObject([{ id: task.id, status: "Done" }]);
   });
 
   it("records a failed write the card can retry", async () => {
     const fetchFn = reply(503, { error: "Resolve is not running" });
     await applyFinishedCut({ requestId: "req_cut1", task, job: cutJob() }, { fetchFn });
     expect(landedFor(task.id)).toMatchObject({ state: "failed", line: "Failed: Resolve is not running" });
-    expect(landedRowsFor([task])).toHaveLength(1);
+    rememberSettledTask({ ...task, status: settledStatusFor(cutJob()) });
+    expect(settledTaskRows()).toHaveLength(1);
     retryLandedWrite(task.id, { fetchFn: reply(200, appliedBody) });
     await vi.waitFor(() => expect(landedFor(task.id)?.state).toBe("landed"));
   });
