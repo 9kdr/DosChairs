@@ -483,6 +483,7 @@ export function ProjectShell({ projectId, projectName, editorId, onHome }: Proje
                   refusal={project.refusal?.reason ?? null}
                   landings={project.landings}
                   onRecordLanding={project.recordLanding}
+                  startOnNewPiece
                 />
               </div>
             </div>

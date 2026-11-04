@@ -430,6 +430,16 @@ function TaskTile({
             }}
           />
         ) : null}
+        {showDither ? (
+          <div
+            aria-hidden
+            className="pointer-events-none absolute inset-0"
+            style={{
+              background:
+                "linear-gradient(to left, var(--card) 0%, var(--card) 12%, transparent 26%)", // taste-skill-ignore: neutral scrim keeps the tile controls off the dither sea.
+            }}
+          />
+        ) : null}
         <div className="relative flex flex-col gap-2 p-4">
           <div className="flex items-center justify-between gap-3">
             <div

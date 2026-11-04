@@ -12,6 +12,8 @@ export type CreationBoardProps = {
   refusal: string | null;
   landings?: Record<string, PieceLanding>;
   onRecordLanding?: (specId: string, landing: PieceLanding) => void;
+  /** Open the Effect Maker on a new piece instead of the list. */
+  startOnNewPiece?: boolean;
 };
 
 /**
@@ -30,6 +32,7 @@ export function CreationBoard(props: CreationBoardProps) {
         refusal={props.refusal}
         landings={props.landings}
         onRecordLanding={props.onRecordLanding}
+        startOnNewPiece={props.startOnNewPiece}
       />
     </div>
   );

@@ -35,6 +35,8 @@ export type PiecesShelfProps = {
   refusal?: string | null;
   landings?: Record<string, PieceLanding>;
   onRecordLanding?: (specId: string, landing: PieceLanding) => void;
+  /** Open the Effect Maker on a new piece instead of the list. */
+  startOnNewPiece?: boolean;
 };
 
 type KindFilter = "all" | PieceKind;
@@ -71,6 +73,7 @@ export function PiecesShelf({
   refusal = null,
   landings,
   onRecordLanding,
+  startOnNewPiece = false,
 }: PiecesShelfProps) {
   /** The last good list; a failed reload never clears it. */
   const [pieces, setPieces] = useState<PieceInfo[] | null>(null);
@@ -81,7 +84,9 @@ export function PiecesShelf({
   const [kindFilter, setKindFilter] = useState<KindFilter>("all");
   const [expandedId, setExpandedId] = useState<string | null>(null);
   /** Effect-kind piece open in the editor, or blank for a new piece. */
-  const [editing, setEditing] = useState<{ id: string; name: string } | null>(null);
+  const [editing, setEditing] = useState<{ id: string; name: string } | null>(() =>
+    startOnNewPiece ? { id: "new", name: "New piece" } : null,
+  );
 
   const load = () => {
     setFailure(null);

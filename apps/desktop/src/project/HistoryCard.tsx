@@ -211,12 +211,7 @@ export function HistoryCard({
                         {entry.beatId ? <span> · step {entry.beatId}</span> : null}
                       </p>
                     </div>
-                  ) : (
-                    <p className="mt-0.5 truncate text-xs text-neutral-500">
-                      <span className="font-mono">{entry.itemId}</span>
-                      {entry.beatId ? <span> · step {entry.beatId}</span> : null}
-                    </p>
-                  )}
+                  ) : null}
                 </div>
                 <Button
                   type="button"
