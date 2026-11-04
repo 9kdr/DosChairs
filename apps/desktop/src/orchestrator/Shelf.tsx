@@ -5,6 +5,7 @@ import {
   Film,
   Folder,
   Image,
+  ListFilter,
   Palette,
   PlusIcon,
   Sparkles,
@@ -17,8 +18,15 @@ import { Button } from "@/components/ui/button";
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
 import { InfoHint } from "@/components/info-hint";
 import { Input } from "@/components/ui/input";
-import { Menu, MenuItem, MenuPopup, MenuTrigger } from "@/components/ui/menu";
-import { Tabs, TabsList, TabsTab } from "@/components/ui/tabs";
+import {
+  Menu,
+  MenuGroupLabel,
+  MenuItem,
+  MenuPopup,
+  MenuRadioGroup,
+  MenuRadioItem,
+  MenuTrigger,
+} from "@/components/ui/menu";
 import { EffectMaker, type ClipChoice } from "@/effects/EffectMaker";
 import {
   PIECE_KIND_LABEL,
@@ -89,7 +97,7 @@ type ShelfProps = {
 };
 
 /**
- * The one Shelf: kind tabs, one search, one Add menu, and ONE list of
+ * The one Shelf: a kind filter next to one search, one Add menu, and ONE list of
  * rows (icon, name, kind tag) combining folders, assets, and pieces.
  * Effect pieces still open the inline editor; anything can be dragged
  * into the brief with the shared chair-ref contract.
@@ -274,28 +282,51 @@ export function Shelf({
           }}
         />
       </div>
-      <Tabs
-        value={kind}
-        onValueChange={(value) => setKind(value as ShelfKind)}
-        className="shrink-0"
-      >
-        <TabsList size="sm" aria-label="Shelf filter" className="flex w-full justify-start">
-          {KINDS.map((item) => (
-            <TabsTab key={item.id} value={item.id} className="min-w-0 flex-1 px-2">
-              {item.label}
-            </TabsTab>
-          ))}
-        </TabsList>
-      </Tabs>
-      <Input
-        type="search"
-        size="sm"
-        value={query}
-        placeholder="Search the shelf"
-        aria-label="Search the shelf"
-        onChange={(event) => setQuery(event.target.value)}
-        className="shrink-0 border-transparent bg-white/[0.04] dark:bg-white/[0.04]"
-      />
+      <div className="flex shrink-0 items-center gap-2">
+        <Input
+          type="search"
+          size="sm"
+          value={query}
+          placeholder="Search the shelf"
+          aria-label="Search the shelf"
+          onChange={(event) => setQuery(event.target.value)}
+          className="min-w-0 flex-1 border-transparent bg-white/[0.04] dark:bg-white/[0.04]"
+        />
+        <Menu>
+          <MenuTrigger
+            render={
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="shrink-0"
+                aria-label={`Filter the shelf, showing ${KINDS.find((item) => item.id === kind)?.label ?? "All"}`}
+              />
+            }
+          >
+            <ListFilter />
+            {kind === "all" ? null : (
+              <>
+                <span className="size-1.5 shrink-0 rounded-full bg-primary" aria-hidden="true" />
+                {KINDS.find((item) => item.id === kind)?.label}
+              </>
+            )}
+          </MenuTrigger>
+          <MenuPopup align="end" aria-label="Shelf filter">
+            <MenuGroupLabel>Show</MenuGroupLabel>
+            <MenuRadioGroup
+              value={kind}
+              onValueChange={(value) => setKind(value as ShelfKind)}
+            >
+              {KINDS.map((item) => (
+                <MenuRadioItem key={item.id} value={item.id} closeOnClick>
+                  {item.label}
+                </MenuRadioItem>
+              ))}
+            </MenuRadioGroup>
+          </MenuPopup>
+        </Menu>
+      </div>
       <div className="-mr-2 min-h-0 flex-1 overflow-y-auto overscroll-contain pr-2">
         {listing.phase === "loading" ? (
           <p className="px-1 py-2 text-meta text-neutral-400">Loading the shelf…</p>
