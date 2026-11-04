@@ -4,6 +4,11 @@ Pure serializer: an effect spec (schemas/effect-spec.schema.json) becomes
 Fusion .comp text for TimelineItem.ImportFusionComp, or a MacroOperator
 .setting for the Fusion Templates/Edit/Titles folder. No Resolve calls here.
 
+spec_to_plan renders the same node graph as data (tools, inputs,
+connections, animated inputs) for the API builder in fusion_build, which
+is the default path now that ImportFusionComp ingests nothing on
+Studio 21.1 (see #266). The .comp text stays for the opt-in fast path.
+
 Spike facts baked in (files in /tmp/chair-spike/, tested on Mel's Studio):
 - ImportFusionComp adds a NEW comp version; the original stays byte-identical.
 - Scalar BezierSpline keyframes (Angle, Size, Blend) survive import.
@@ -220,6 +225,35 @@ def spec_to_comp(
     return {"text": _composition(spec, tools), "paths": dict(graph.paths)}
 
 
+def spec_to_plan(
+    spec: dict[str, Any],
+    baked: dict[str, dict[str, list[dict[str, Any]]]] | None = None,
+    media: dict[str, Any] | None = None,
+    sequences: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Render spec to a node-graph plan for the API builder, or a fallback.
+
+    Same inputs as spec_to_comp (media is accepted for parity but unused:
+    the builder wires the clip's own MediaIn, already bound to footage).
+    On success the return carries "tools": one entry per node in build
+    order, each with name, AddTool registry id ("tool"), layer, role,
+    values, gradient stops, connect, and splines, plus "paths" as in
+    spec_to_comp.
+    """
+    reasons = check_spec(spec, sequences)
+    if reasons:
+        return {
+            "fallback": {
+                "capability": FALLBACK_CAPABILITY,
+                "reason": "; ".join(reasons),
+            }
+        }
+    graph = _Graph(spec, baked or {}, sequences or {}, record=[])
+    graph.comp_tools(media)
+    assert graph.record is not None
+    return {"tools": graph.record, "paths": dict(graph.paths)}
+
+
 def spec_to_macro(spec: dict[str, Any]) -> dict[str, Any]:
     """Render spec to a title-template MacroOperator .setting, or a fallback."""
     reasons = check_spec(spec)
@@ -266,14 +300,24 @@ def install_title_template(
 
 
 def rig_frames_to_baked(frames: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
-    """Map rig sim frames ({time,x,y,rotation,scaleX,scaleY}) to baked keys."""
-    baked: dict[str, list[dict[str, Any]]] = {"x": [], "y": [], "rotation": [], "scale": []}
+    """Map rig sim frames ({time,x,y,rotation,scaleX,scaleY}) to baked keys.
+
+    scaleX and scaleY stay separate so the squash survives the bounce.
+    """
+    baked: dict[str, list[dict[str, Any]]] = {
+        "x": [],
+        "y": [],
+        "rotation": [],
+        "scale": [],
+        "scaley": [],
+    }
     for frame in frames:
         t = float(frame["time"])
         baked["x"].append({"time": t, "value": float(frame["x"])})
         baked["y"].append({"time": t, "value": float(frame["y"])})
         baked["rotation"].append({"time": t, "value": float(frame.get("rotation", 0))})
         baked["scale"].append({"time": t, "value": float(frame.get("scaleX", 1))})
+        baked["scaley"].append({"time": t, "value": float(frame.get("scaleY", 1))})
     return baked
 
 
@@ -362,11 +406,15 @@ def _tool_id(prefix: str, layer_id: str) -> str:
 class _Graph:
     """One ordered tool chain per visible layer, merged back to front."""
 
+    # AddTool registry ids for the mask node types used in .comp text.
+    MASK_REGISTRY = {"Rectangle": "RectangleMask", "Ellipse": "EllipseMask"}
+
     def __init__(
         self,
         spec: dict[str, Any],
         baked: dict[str, dict[str, list[dict[str, Any]]]],
         sequences: dict[str, Any] | None = None,
+        record: list[dict[str, Any]] | None = None,
     ) -> None:
         self.spec = spec
         self.baked = baked
@@ -377,10 +425,77 @@ class _Graph:
         self.height = float(spec["height"])
         self.layers = [layer for layer in spec["layers"] if layer.get("visible", True)]
         self._pos = 0
+        self.record = record
 
     def _place(self, dx: int = 110) -> str:
         self._pos += dx
         return f"{{ {self._pos}, 82.5, }}"
+
+    # -- plan recording (spec_to_plan; None keeps the text path untouched) --
+
+    def _rec(
+        self,
+        name: str,
+        tool: str,
+        layer: dict[str, Any] | None,
+        role: str,
+        existing: bool = False,
+    ) -> dict[str, Any] | None:
+        """Append one plan tool entry, or None when not recording."""
+        if self.record is None:
+            return None
+        entry: dict[str, Any] = {
+            "name": name,
+            "tool": tool,
+            "layer": layer["id"] if layer is not None else None,
+            "role": role,
+            "existing": existing,
+            "values": {},
+            "gradient": {},
+            "connect": {},
+            "splines": {},
+        }
+        self.record.append(entry)
+        return entry
+
+    def _rec_keys(self, keys: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Spec/baked keys -> plan keys with frames, handles, easing."""
+        out: list[dict[str, Any]] = []
+        for key in sorted(keys, key=lambda k: float(k["time"])):
+            item: dict[str, Any] = {
+                "frame": _frame(key["time"], self.fps),
+                "value": float(key["value"]),
+                "lh": None,
+                "rh": None,
+                "easing": key.get("easing", "linear"),
+            }
+            incoming = key.get("inHandle")
+            if isinstance(incoming, (list, tuple)) and len(incoming) == 2:
+                item["lh"] = [float(incoming[0]) * self.fps, float(incoming[1])]
+            outgoing = key.get("outHandle")
+            if isinstance(outgoing, (list, tuple)) and len(outgoing) == 2:
+                item["rh"] = [float(outgoing[0]) * self.fps, float(outgoing[1])]
+            out.append(item)
+        return out
+
+    def _rec_static_spline(
+        self,
+        entry: dict[str, Any] | None,
+        layer: dict[str, Any],
+        input_name: str,
+        curve_prop: str,
+        static: float,
+        scale: float = 1,
+    ) -> None:
+        """Record one input as a static value or an animated spline."""
+        if entry is None:
+            return
+        keys = self.curve(layer, curve_prop)
+        if keys is None:
+            entry["values"][input_name] = static
+            return
+        norm = [{**k, "value": float(k["value"]) / scale} for k in keys]
+        entry["splines"][input_name] = self._rec_keys(norm)
 
     # -- coordinates ----------------------------------------------------
 
@@ -437,6 +552,21 @@ class _Graph:
         mask = _tool_id("Mask", layer["id"])
         fill = params.get("fill", "#ffffff")
         r, g, b = _hex_to_rgb(str(fill))
+        bg_entry = self._rec(bg, "Background", layer, "source")
+        if bg_entry is not None:
+            values: dict[str, Any] = {
+                "Width": int(self.width),
+                "Height": int(self.height),
+                "Gamut.SLogVersion": 0,
+                "Opacity": float(params.get("opacity", 1)),
+            }
+            for corner in ("TopLeft", "TopRight", "BottomLeft", "BottomRight"):
+                values[f"{corner}Red"] = r
+                values[f"{corner}Green"] = g
+                values[f"{corner}Blue"] = b
+                values[f"{corner}Alpha"] = 1
+            bg_entry["values"] = values
+            bg_entry["connect"] = {"EffectMask": [mask, "Mask"]}
         corners = []
         for corner in ("TopLeft", "TopRight", "BottomLeft", "BottomRight"):
             corners.append(f"\t\t\t\t\t\t{corner}Red = Input {{ Value = {_num(r)}, }},")
@@ -464,6 +594,9 @@ class _Graph:
         mask_inputs = [
             f"\t\t\t\tCenter = Input {{ Value = {{ {_num(cx)}, {_num(cy)}, }}, }},",
         ]
+        mask_entry = self._rec(mask, self.MASK_REGISTRY[kind], layer, "mask")
+        if mask_entry is not None:
+            mask_entry["values"]["Center"] = [cx, cy]
         blocks = [bg_block]
         for prop, input_name, default, scale in (
             ("scaleX", "Width", float(params.get("scaleX", self.width)), self.width),
@@ -477,6 +610,8 @@ class _Graph:
                 mask_inputs.append(
                     f"\t\t\t\t{input_name} = Input {{ Value = {_num(default / scale)}, }},"
                 )
+                if mask_entry is not None:
+                    mask_entry["values"][input_name] = default / scale
             else:
                 norm = [
                     {
@@ -492,6 +627,8 @@ class _Graph:
                     f'\t\t\t\t\tSource = "Value",\n'
                     f"\t\t\t\t}},"
                 )
+                if mask_entry is not None:
+                    mask_entry["splines"][input_name] = self._rec_keys(norm)
         blocks.append(
             f"\t\t{mask} = {kind} {{\n"
             f"\t\t\tInputs = {{\n" + "\n".join(mask_inputs) + "\n\t\t\t},\n"
@@ -508,6 +645,22 @@ class _Graph:
         size_default = float(params.get("size", 96)) / self.height
         styled = _str(str(params.get("string", "")))
         font = _str(self._font(str(params.get("font", "sans-serif"))))
+        entry = self._rec(name, "TextPlus", layer, "source")
+        if entry is not None:
+            entry["values"] = {
+                "Width": int(self.width),
+                "Height": int(self.height),
+                "Gamut.SLogVersion": 0,
+                "StyledText": str(params.get("string", "")),
+                "Font": self._font(str(params.get("font", "sans-serif"))),
+                "Style": "Bold",
+                "Red1": r,
+                "Green1": g,
+                "Blue1": b,
+                "Alpha1": 1,
+            }
+            if size_keys is None:
+                entry["values"]["Size"] = size_default
         lines = [
             f"\t\t{name} = TextPlus {{",
             "\t\t\tInputs = {",
@@ -547,6 +700,8 @@ class _Graph:
                 for k in size_keys
             ]
             blocks.append(_spline_block(f"{name}Size", _spline_keys(norm, self.fps)))
+            if entry is not None:
+                entry["splines"]["Size"] = self._rec_keys(norm)
         return blocks, name
 
     def _font(self, font: str) -> str:
@@ -555,6 +710,9 @@ class _Graph:
     def _image(self, layer: dict[str, Any], params: dict[str, Any]) -> tuple[list[str], str]:
         name = _tool_id("Img", layer["id"])
         src = str(params.get("src", ""))
+        entry = self._rec(name, "Loader", layer, "source")
+        if entry is not None:
+            entry["values"] = {"Clip": src}
         block = (
             f"\t\t{name} = Loader {{\n"
             f"\t\t\tClips = {{\n"
@@ -621,6 +779,15 @@ class _Graph:
         )
         size_keys = self.curve(layer, "size")
         size = float(params.get("size", 1))
+        entry = self._rec(name, "FilmGrain", layer, "look")
+        if entry is not None:
+            entry["connect"] = {"Input": [background, "Output"]}
+            entry["values"]["Seed"] = int(params.get("seed", 0))
+            entry["values"]["Monochrome"] = 1 if params.get("monochrome", False) else 0
+        self._rec_static_spline(entry, layer, "MasterStrength", "amount",
+                                float(params.get("amount", 0.5)))
+        self._rec_static_spline(entry, layer, "MasterXSize", "size", size)
+        self._rec_static_spline(entry, layer, "MasterYSize", "size", size)
         if size_keys is None:
             size_lines = [
                 f"\t\t\t\tMasterXSize = Input {{ Value = {_num(size)}, }},",
@@ -677,6 +844,18 @@ class _Graph:
         qx, qy = "floor(mod(x,4)/2)", "floor(mod(y,4)/2)"
         off = f"({qx}*(1-{qy})*2+(1-{qx})*{qy}*3+{qx}*{qy})"
         threshold = f"((4*{b2}+{off})+0.5)/16"
+        entry = self._rec(name, "Custom", layer, "look")
+        if entry is not None:
+            entry["values"] = {
+                "NameforNumber1": "Levels",
+                "RedExpression": f"floor(r1*(n1-1)+{threshold})/(n1-1)",
+                "GreenExpression": f"floor(g1*(n1-1)+{threshold})/(n1-1)",
+                "BlueExpression": f"floor(b1*(n1-1)+{threshold})/(n1-1)",
+                "AlphaExpression": "a1",
+            }
+            entry["connect"] = {"Image1": [background, "Output"]}
+        self._rec_static_spline(entry, layer, "NumberIn1", "levels",
+                                float(params.get("levels", 4)))
         blocks.append(
             f"\t\t{name} = Custom {{\n"
             f"\t\t\tInputs = {{\n"
@@ -721,6 +900,22 @@ class _Graph:
         fv = f"({v}-floor({v}+0.5))"
         dot = f"({fu}*{fu}+{fv}*{fv})"
         tone = "((r1+g1+b1)/3)"
+        entry = self._rec(name, "Custom", layer, "look")
+        if entry is not None:
+            screen = f"(1-({dot}<({tone}*0.5)))"
+            entry["values"] = {
+                "NameforNumber1": "Cell",
+                "NameforNumber2": "Angle",
+                "RedExpression": f"r1*{screen}",
+                "GreenExpression": f"g1*{screen}",
+                "BlueExpression": f"b1*{screen}",
+                "AlphaExpression": "a1",
+            }
+            entry["connect"] = {"Image1": [background, "Output"]}
+        self._rec_static_spline(entry, layer, "NumberIn1", "cell",
+                                float(params.get("cell", 12)))
+        self._rec_static_spline(entry, layer, "NumberIn2", "angle",
+                                float(params.get("angle", 0.785398)))
         blocks.append(
             f"\t\t{name} = Custom {{\n"
             f"\t\t\tInputs = {{\n"
@@ -765,6 +960,28 @@ class _Graph:
         )
         scale = float(params.get("scale", 3))
         seethe = float(params.get("seetheRate", 0.5))
+        entry = self._rec(name, "FastNoise", layer, "look")
+        if entry is not None:
+            entry["values"] = {
+                "XScale": scale,
+                "YScale": scale,
+                "SeetheRate": seethe,
+                "Color1Red": 1,
+                "Color1Green": 1,
+                "Color1Blue": 1,
+                "Color2Red": 0,
+                "Color2Green": 0,
+                "Color2Blue": 0,
+                "Width": int(self.width),
+                "Height": int(self.height),
+                "UseFrameFormatSettings": 0,
+            }
+        self._rec_static_spline(entry, layer, "Detail", "detail",
+                                float(params.get("detail", 5)))
+        self._rec_static_spline(entry, layer, "Contrast", "contrast",
+                                float(params.get("contrast", 1)))
+        self._rec_static_spline(entry, layer, "Brightness", "brightness",
+                                float(params.get("brightness", 0.5)))
         blocks.append(
             f"\t\t{name} = FastNoise {{\n"
             f"\t\t\tInputs = {{\n"
@@ -798,6 +1015,19 @@ class _Graph:
         bottom = _hex_to_rgb(str(colors[1]))
         angle = float(params.get("angle", 180)) * 3.14159265 / 180
         dx, dy = math.cos(angle) / 2, math.sin(angle) / 2
+        entry = self._rec(name, "Background", layer, "look")
+        if entry is not None:
+            entry["values"] = {
+                "Width": int(self.width),
+                "Height": int(self.height),
+                "Gamut.SLogVersion": 0,
+                "Type": "Gradient",
+                "Start": [0.5 - dx, 0.5 - dy],
+                "End": [0.5 + dx, 0.5 + dy],
+            }
+            entry["gradient"] = {
+                "Gradient": [[0, *top, 1], [1, *bottom, 1]],
+            }
         blocks = [
             f"\t\t{name} = Background {{\n"
             f"\t\t\tInputs = {{\n"
@@ -837,6 +1067,13 @@ class _Graph:
             blocks, name, "Threshold", layer, "threshold",
             float(params.get("threshold", 0.5)),
         )
+        entry = self._rec(name, "SoftGlow", layer, "look")
+        if entry is not None:
+            entry["connect"] = {"Input": [background, "Output"]}
+        self._rec_static_spline(entry, layer, "Gain", "gain",
+                                float(params.get("gain", 1)))
+        self._rec_static_spline(entry, layer, "Threshold", "threshold",
+                                float(params.get("threshold", 0.5)))
         blocks.append(
             f"\t\t{name} = SoftGlow {{\n"
             f"\t\t\tInputs = {{\n"
@@ -857,6 +1094,9 @@ class _Graph:
     ) -> tuple[list[str], str]:
         """Baked web render: a Loader over the PNG sequence, merged over the chain."""
         name = _tool_id("Seq", layer["id"])
+        entry = self._rec(name, "Loader", layer, "look")
+        if entry is not None:
+            entry["values"] = {"Clip": files[0]}
         blocks = [
             f"\t\t{name} = Loader {{\n"
             f"\t\t\tClips = {{\n"
@@ -917,6 +1157,11 @@ class _Graph:
         size_line = self._fx_input(
             blocks, name, "BlurSize", layer, "blur", float(entry.get("size", 2))
         )
+        tool_entry = self._rec(name, "Blur", layer, "fx")
+        if tool_entry is not None:
+            tool_entry["connect"] = {"Input": [head, "Output"]}
+        self._rec_static_spline(tool_entry, layer, "BlurSize", "blur",
+                                float(entry.get("size", 2)))
         blocks.append(
             f"\t\t{name} = Blur {{\n"
             f"\t\t\tInputs = {{\n"
@@ -936,6 +1181,11 @@ class _Graph:
     ) -> str:
         name = _tool_id("Glow", layer["id"])
         gain_line = self._fx_input(blocks, name, "Gain", layer, "glow", float(entry.get("gain", 1)))
+        tool_entry = self._rec(name, "SoftGlow", layer, "fx")
+        if tool_entry is not None:
+            tool_entry["connect"] = {"Input": [head, "Output"]}
+        self._rec_static_spline(tool_entry, layer, "Gain", "glow",
+                                float(entry.get("gain", 1)))
         blocks.append(
             f"\t\t{name} = SoftGlow {{\n"
             f"\t\t\tInputs = {{\n"
@@ -955,6 +1205,10 @@ class _Graph:
     ) -> str:
         name = _tool_id("Grade", layer["id"])
         gain_line = self._fx_input(blocks, name, "Gain", layer, None, float(entry.get("gain", 1)))
+        tool_entry = self._rec(name, "ColorCorrector", layer, "fx")
+        if tool_entry is not None:
+            tool_entry["connect"] = {"Input": [head, "Output"]}
+            tool_entry["values"] = {"Gain": float(entry.get("gain", 1))}
         blocks.append(
             f"\t\t{name} = ColorCorrector {{\n"
             f"\t\t\tInputs = {{\n"
@@ -980,6 +1234,7 @@ class _Graph:
         x_keys = self.curve(layer, "x")
         y_keys = self.curve(layer, "y")
         inputs: list[str] = []
+        entry: dict[str, Any] | None = None
         if x_keys is not None or y_keys is not None:
             xy = f"{name}XY"
             x_static = float(params.get("x", self.width / 2))
@@ -988,6 +1243,15 @@ class _Graph:
             y_list = y_keys or [{"time": 0, "value": y_static}]
             x_norm = [{**k, "value": self.nx(float(k["value"]))} for k in x_list]
             y_norm = [{**k, "value": self.ny(float(k["value"]))} for k in y_list]
+            xp_entry = self._rec(xy, "XYPath", layer, "xpath")
+            if xp_entry is not None:
+                xp_entry["splines"] = {
+                    "X": self._rec_keys(x_norm),
+                    "Y": self._rec_keys(y_norm),
+                }
+            entry = self._rec(name, "Transform", layer, "transform")
+            if entry is not None:
+                entry["connect"]["Center"] = [xy, "Value"]
             blocks.append(
                 "\n".join(
                     [
@@ -1018,6 +1282,10 @@ class _Graph:
             cx = self.nx(float(params.get("x", self.width / 2)))
             cy = self.ny(float(params.get("y", self.height / 2)))
             inputs.append(f"\t\t\t\tCenter = Input {{ Value = {{ {_num(cx)}, {_num(cy)}, }}, }},")
+            entry = self._rec(name, "Transform", layer, "transform")
+            if entry is not None:
+                entry["values"]["Center"] = [cx, cy]
+        assert entry is not None or self.record is None
         # Shape layers carry rotation and scaleX/scaleY on the mask node
         # itself (scalar splines, which survive import); Transform skips them.
         is_shape = layer["type"] == "shape"
@@ -1030,17 +1298,33 @@ class _Graph:
                 f'\t\t\t\t\tSource = "Value",\n'
                 f"\t\t\t\t}},"
             )
+            if entry is not None:
+                entry["splines"]["Angle"] = self._rec_keys(rot_keys)
         elif not is_shape and float(params.get("rotation", 0)) != 0:
             inputs.append(
                 f"\t\t\t\tAngle = Input {{ Value = {_num(float(params['rotation']))}, }},"
             )
+            if entry is not None:
+                entry["values"]["Angle"] = float(params["rotation"])
         if is_shape:
             scale_keys = self.curve(layer, "scale")
             size_default = float(params.get("scale", 1))
         else:
             scale_keys = self.curve(layer, "scale") or self.curve(layer, "scaleX")
             size_default = float(params.get("scale", params.get("scaleX", 1)))
-        if scale_keys is not None:
+        # Squash: a scaley curve (or a scaleY multiplier param on non-shape
+        # layers, whose scaleY is not a mask pixel size) splits the uniform
+        # Size into the Transform's XSize/YSize pair.
+        scaley_keys = self.curve(layer, "scaley")
+        use_pair = scaley_keys is not None or ("scaleY" in params and not is_shape)
+        if use_pair:
+            size_y_default = float(params.get("scaleY", params.get("scale", 1)))
+            inputs.append("\t\t\t\tUseSizeAndAspect = Input { Value = 0, },")
+            if entry is not None:
+                entry["values"]["UseSizeAndAspect"] = 0
+            self._axis_size(blocks, inputs, entry, name, "XSize", scale_keys, size_default)
+            self._axis_size(blocks, inputs, entry, name, "YSize", scaley_keys, size_y_default)
+        elif scale_keys is not None:
             blocks.append(_spline_block(f"{name}Size", _spline_keys(scale_keys, self.fps)))
             inputs.append(
                 f"\t\t\t\tSize = Input {{\n"
@@ -1048,8 +1332,14 @@ class _Graph:
                 f'\t\t\t\t\tSource = "Value",\n'
                 f"\t\t\t\t}},"
             )
+            if entry is not None:
+                entry["splines"]["Size"] = self._rec_keys(scale_keys)
         elif size_default != 1:
             inputs.append(f"\t\t\t\tSize = Input {{ Value = {_num(size_default)}, }},")
+            if entry is not None:
+                entry["values"]["Size"] = size_default
+        if entry is not None:
+            entry["connect"]["Input"] = [head, "Output"]
         inputs.append(
             f"\t\t\t\tInput = Input {{\n"
             f'\t\t\t\t\tSourceOp = "{head}",\n'
@@ -1064,10 +1354,50 @@ class _Graph:
         )
         return name
 
+    def _axis_size(
+        self,
+        blocks: list[str],
+        inputs: list[str],
+        entry: dict[str, Any] | None,
+        name: str,
+        input_name: str,
+        keys: list[dict[str, Any]] | None,
+        static: float,
+    ) -> None:
+        """One XSize/YSize input: a spline when animated, else an explicit value."""
+        if keys is not None:
+            blocks.append(_spline_block(f"{name}{input_name}", _spline_keys(keys, self.fps)))
+            inputs.append(
+                f"\t\t\t\t{input_name} = Input {{\n"
+                f'\t\t\t\t\tSourceOp = "{name}{input_name}",\n'
+                f'\t\t\t\t\tSource = "Value",\n'
+                f"\t\t\t\t}},"
+            )
+            if entry is not None:
+                entry["splines"][input_name] = self._rec_keys(keys)
+        else:
+            inputs.append(
+                f"\t\t\t\t{input_name} = Input {{ Value = {_num(static)}, }},"
+            )
+            if entry is not None:
+                entry["values"][input_name] = static
+
     def _merge_block(self, layer: dict[str, Any], merge: str, head: str, background: str) -> str:
         """A Merge compositing head over background."""
         params = layer.get("params") or {}
         blend = BLEND_MODES.get(str(layer.get("blend", "normal")), "Normal")
+        entry = self._rec(merge, "Merge", layer, "merge")
+        if entry is not None:
+            entry["connect"] = {
+                "Background": [background, "Output"],
+                "Foreground": [head, "Output"],
+            }
+            if blend != "Normal":
+                entry["values"]["ApplyMode"] = blend
+            else:
+                entry["values"]["PerformDepthMerge"] = 0
+        self._rec_static_spline(entry, layer, "Blend", "opacity",
+                                float(params.get("opacity", 1)))
         opacity_keys = self.curve(layer, "opacity")
         if opacity_keys is None:
             blend_line = (
@@ -1131,6 +1461,7 @@ class _Graph:
 
     def _media_in(self, media: dict[str, Any] | None) -> str:
         total = max(1, int(round(float(self.spec["durationSec"]) * self.fps)))
+        self._rec("MediaIn1", "Loader", None, "spine", existing=True)
         lines = [
             "\t\tMediaIn1 = Loader {",
             "\t\t\tExtentSet = true,",
@@ -1159,6 +1490,9 @@ class _Graph:
         return "\n".join(lines)
 
     def _media_out(self, source: str) -> str:
+        entry = self._rec("MediaOut1", "Saver", None, "spine", existing=True)
+        if entry is not None:
+            entry["connect"] = {"Input": [source, "Output"]}
         return "\n".join(
             [
                 "\t\tMediaOut1 = Saver {",

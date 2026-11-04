@@ -7,6 +7,7 @@ class Capabilities(BaseModel):
     keyframes: bool
     fusion_comps: bool
     fusion_macros: bool = True
+    fusion_build_api: bool = True
     template_scan: bool = True
     ograf_titles: bool = True
     adjustment_layers: bool
@@ -55,6 +56,11 @@ MANIFEST = Manifest(
             "dither, halftone, fast-noise, gradient, glow) or bake its web "
             "render to a PNG sequence for the Loader path; otherwise render "
             "the effect to a clip and place it by hand"
+        ),
+        "fusionBuild": (
+            "comps are built tool-by-tool through the scripting API on a "
+            "new comp version; ImportFusionComp is an opt-in fast path only, "
+            "used when it actually ingests nodes"
         ),
         "templateScan": "no Fusion folder found: name the macro in the brief by hand",
         "ografTitles": "install with install_ograf, then drag from Effects > Titles > OGraf",

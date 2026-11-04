@@ -1,5 +1,7 @@
+import runpy
 import sys
 import types
+from pathlib import Path
 
 import pytest
 from chair_resolve.manifest import MANIFEST, Capabilities, Manifest
@@ -365,14 +367,21 @@ def test_markers_round_trip_through_read() -> None:
     assert reread["markers"][0]["duration"] == {"value": 8, "rate": 24}
 
 
+_FAKES = runpy.run_path(str(Path(__file__).with_name("fake_fusion.py")))
+FakeItem = _FAKES["FakeItem"]
+
+
 class _FakeItem:
-    def __init__(self, log: list, name: str) -> None:
+    def __init__(self, log: list, name: str, ingested: bool = True) -> None:
         self._log = log
         self._name = name
+        self._ingested = ingested
 
     def ImportFusionComp(self, path: str):
         self._log.append(("import_fusion", self._name, path))
-        return object()
+        if not self._ingested:
+            return object()
+        return FakeItem(ingest_broken=False).ImportFusionComp(path)
 
 
 class _FakeTimeline:
@@ -410,9 +419,12 @@ class _FakeTimeline:
 
 
 class _FakeMediaPool:
-    def __init__(self, log: list, timeline: _FakeTimeline | None) -> None:
+    def __init__(
+        self, log: list, timeline: _FakeTimeline | None, ingested: bool = True
+    ) -> None:
         self._log = log
         self._timeline = timeline
+        self._ingested = ingested
 
     def ImportMedia(self, clips: list) -> list:
         self._log.append(("import", list(clips)))
@@ -424,7 +436,9 @@ class _FakeMediaPool:
 
     def AppendToTimeline(self, clips: list) -> list:
         self._log.append(("append", clips))
-        return [_FakeItem(self._log, f"item-{i}") for i in range(len(clips))]
+        return [
+            _FakeItem(self._log, f"item-{i}", self._ingested) for i in range(len(clips))
+        ]
 
 
 class _FakeProject:
@@ -440,9 +454,9 @@ class _FakeProject:
         return True
 
 
-def _fake_resolve(log: list, counts: dict | None = None):
+def _fake_resolve(log: list, counts: dict | None = None, ingested: bool = True):
     timeline = _FakeTimeline(log, dict(counts or {}))
-    pool = _FakeMediaPool(log, timeline)
+    pool = _FakeMediaPool(log, timeline, ingested)
     project = _FakeProject(log, pool)
     return types.SimpleNamespace(
         GetProjectManager=lambda: types.SimpleNamespace(GetCurrentProject=lambda: project)
@@ -477,6 +491,15 @@ def test_write_timeline_drives_studio() -> None:
     assert [(c["startFrame"], c["endFrame"]) for c in appended] == [(100, 147), (100, 123)]
     assert ("marker", 86410, "Green", "Hook", "", 8, "hook") in log
     assert ("marker", 86420, "Blue", "Note", "check", 0, "user") in log
+    assert ("import_fusion", "item-0", "/macros/glow.comp") in log
+
+
+def test_write_timeline_skips_comp_import_that_ingests_nothing() -> None:
+    """Sweep #2: a no-op import counts as skipped, never as success."""
+    log: list = []
+    summary = write_timeline(TIMELINE, resolve=_fake_resolve(log, ingested=False))
+    assert summary["fusion"] == 0
+    assert summary["skipped"] == 2
     assert ("import_fusion", "item-0", "/macros/glow.comp") in log
 
 

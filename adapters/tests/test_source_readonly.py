@@ -151,10 +151,13 @@ def _fake_studio():
             return fake_tl
 
         def AppendToTimeline(self, clips: list) -> list:
-            return [
-                types.SimpleNamespace(ImportFusionComp=lambda p: log.append(p))
-                for _ in clips
-            ]
+            def _imported(path: str):
+                # Models a Studio that ingested the comp: the ingest check
+                # counts tools, and a bare comp holds MediaIn + MediaOut.
+                log.append(path)
+                return types.SimpleNamespace(GetToolList=lambda flat: {1: 1, 2: 2, 3: 3})
+
+            return [types.SimpleNamespace(ImportFusionComp=_imported) for _ in clips]
 
     pool = FakeMediaPool()
     project = types.SimpleNamespace(
