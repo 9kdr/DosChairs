@@ -65,6 +65,76 @@ function malformed(detail: string): ServiceError {
   return new ServiceError("agent", `effect payload was malformed (${detail})`);
 }
 
+async function get(path: string, options: Options): Promise<unknown> {
+  const url = `${agentBaseUrl(options.agentUrl)}${path}`;
+  let response: Awaited<ReturnType<FetchFn>>;
+  try {
+    response = await (options.fetchFn ?? fetch)(url, { signal: options.signal });
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") throw error;
+    throw new ServiceError("agent", `agent is unreachable at ${url}`);
+  }
+  let payload: unknown = null;
+  try {
+    payload = await response.json();
+  } catch {
+    payload = null;
+  }
+  if (!response.ok) {
+    const error = isRecord(payload) && isRecord(payload.error) ? payload.error : null;
+    const message =
+      error && typeof error.message === "string" ? error.message : `agent failed (${response.status})`;
+    throw new ServiceError("agent", message, {
+      status: response.status,
+      code: error && typeof error.code === "string" ? error.code : undefined,
+    });
+  }
+  return payload;
+}
+
+/** A stored draft, for the maker's edit mode: the spec, the agent's notes, the brief it keeps. */
+export type StoredEffect = { id: string; spec: EffectSpec; notes: string };
+
+const BRIEF_KEY_PREFIX = "chair.piece-brief.";
+
+/**
+ * The brief a piece was drafted from, kept beside the window: the agent
+ * stores the spec and its notes, not the person's own words, so the
+ * maker remembers them per effect id and edit mode loads them back.
+ */
+export function readPieceBrief(id: string): string | null {
+  if (typeof localStorage === "undefined") return null;
+  try {
+    const brief = localStorage.getItem(`${BRIEF_KEY_PREFIX}${id}`);
+    return brief && brief.trim() ? brief : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Remember what a draft was asked for, for a later edit session. */
+export function writePieceBrief(id: string, brief: string): void {
+  if (typeof localStorage === "undefined") return;
+  try {
+    localStorage.setItem(`${BRIEF_KEY_PREFIX}${id}`, brief);
+  } catch {
+    // Private window or quota: the brief just won't reload.
+  }
+}
+
+/** Read one stored effect back: GET /effects/:id serves the record the agent kept. */
+export async function fetchEffect(id: string, options: Options = {}): Promise<StoredEffect> {
+  const payload = await get(`/effects/${encodeURIComponent(id)}`, options);
+  if (!isRecord(payload) || typeof payload.id !== "string" || !isRecord(payload.spec)) {
+    throw malformed("effect needs an id and a spec");
+  }
+  return {
+    id: payload.id,
+    spec: payload.spec as unknown as EffectSpec,
+    notes: typeof payload.notes === "string" ? payload.notes : "",
+  };
+}
+
 export async function generateEffect(input: GenerateInput, options: Options = {}): Promise<Generated> {
   const payload = await post(
     "/effects/generate",

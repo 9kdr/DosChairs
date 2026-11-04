@@ -2,10 +2,12 @@ import { describe, expect, it } from "vitest";
 import { ServiceError, type FetchFn } from "@/lib/services/client";
 import {
   applyPiece,
+  fetchEffect,
   generateEffect,
   isClipGoneError,
   isPieceFallback,
   pieceUndoErrorMessage,
+  readPieceBrief,
   revertPiece,
   sampleEffect,
   verifyEffect,
@@ -164,6 +166,33 @@ describe("revertPiece", () => {
   it("names the missing undo route plainly", async () => {
     const error = await revertPiece({ toComp: "Comp 1" }, { fetchFn: reply(404, {}) }).catch((e: unknown) => e);
     expect(pieceUndoErrorMessage(error)).toBe("Undo isn't available on this agent yet.");
+  });
+});
+
+describe("fetchEffect", () => {
+  it("reads one stored draft back by id", async () => {
+    let url = "";
+    const fetchFn: FetchFn = async (seen) => {
+      url = seen;
+      return { ok: true, status: 200, json: async () => ({ id: "fx-1", spec: sampleEffect(), notes: "Drafted." }) };
+    };
+    const record = await fetchEffect("fx-1", { fetchFn, agentUrl: "http://agent" });
+    expect(url).toBe("http://agent/effects/fx-1");
+    expect(record).toMatchObject({ id: "fx-1", notes: "Drafted." });
+    expect(record.spec.id).toBe("bounce-title");
+  });
+
+  it("carries the agent's unknown-effect refusal", async () => {
+    const error = await fetchEffect("nope", {
+      fetchFn: reply(400, { error: { code: "invalid_effect", message: "unknown effect: 'nope'" } }),
+    }).catch((e: unknown) => e);
+    expect(error).toMatchObject({ message: "unknown effect: 'nope'", status: 400 });
+  });
+});
+
+describe("piece briefs", () => {
+  it("reads a missing brief as missing without storage", () => {
+    expect(readPieceBrief("fx-1")).toBeNull();
   });
 });
 
