@@ -98,6 +98,22 @@ description = "Local CI mirror"
 depends = ["check", "test"]
 run = "echo 'ci ok'"
 
+[tasks."export-ograf-sample"]
+description = "Export the sample effect + React example as OGraf titles into /tmp/chair-ograf-sample"
+run = """
+set -e
+rm -rf /tmp/chair-ograf-build
+mkdir -p /tmp/chair-ograf-build
+ROOT="$PWD"
+OUT="$ROOT/packages/ograf/.tmp-export-ograf"
+rm -rf "$OUT"
+mkdir -p "$OUT"
+pnpm --filter @chair/ograf exec esbuild "$ROOT/scripts/export-ograf.ts" --bundle --platform=node --format=esm --outfile="$OUT/export-ograf.mjs" --tsconfig="$ROOT/scripts/tsconfig.json" --external:esbuild --log-level=warning
+node "$OUT/export-ograf.mjs" --out /tmp/chair-ograf-sample
+rm -rf "$OUT"
+ls -la /tmp/chair-ograf-sample
+"""
+
 [tasks.codegen]
 description = "Regenerate types from JSON schemas"
 run = "pnpm codegen"

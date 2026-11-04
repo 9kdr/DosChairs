@@ -42,9 +42,14 @@ export function controlToProp(control: Control): OgrafProp {
   };
 }
 
-/** Both files Resolve scans: `<id>.ograf.json` manifest + `<id>.js` component. */
-export async function exportOGraf(spec: EffectSpec): Promise<OgrafBundle> {
-  const entry = fileURLToPath(new URL("./spec-view.tsx", import.meta.url));
+/**
+ * Both files Resolve scans: `<id>.ograf.json` manifest + `<id>.js` component.
+ * The view entry defaults to the sibling `spec-view.tsx`; pass `entry`
+ * explicitly when calling from a bundled script, where `import.meta.url` no
+ * longer points at this package's source.
+ */
+export async function exportOGraf(spec: EffectSpec, opts?: { entry?: string }): Promise<OgrafBundle> {
+  const entry = opts?.entry ?? fileURLToPath(new URL("./spec-view.tsx", import.meta.url));
   return wrapReactComponent({
     id: spec.id,
     name: spec.name,
