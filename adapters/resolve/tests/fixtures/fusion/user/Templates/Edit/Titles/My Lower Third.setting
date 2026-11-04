@@ -1,0 +1,101 @@
+{
+	Tools = ordered() {
+		MyLowerThird = MacroOperator {
+			CtrlWZoom = false,
+			-- a comment the reader must skip
+			Inputs = ordered() {
+				MainInput1 = InstanceInput {
+					SourceOp = "Text1",
+					Source = "Input",
+				},
+				Input1 = InstanceInput {
+					SourceOp = "Text1",
+					Source = "StyledText",
+					Name = "Name",
+					Default = "MEL \"HOST\"",
+				},
+				Input2 = InstanceInput {
+					SourceOp = "Text1",
+					Source = "Red1",
+					Name = "Bar Color Red",
+					ControlGroup = 1,
+					Default = 1,
+				},
+				Input3 = InstanceInput {
+					SourceOp = "Text1",
+					Source = "Green1",
+					ControlGroup = 1,
+					Default = 0.5,
+				},
+				Input4 = InstanceInput {
+					SourceOp = "Text1",
+					Source = "Blue1",
+					ControlGroup = 1,
+					Default = 0,
+				},
+				Input5 = InstanceInput {
+					SourceOp = "Transform1",
+					Source = "Size",
+					Name = "Size",
+					Default = 1,
+					MinScale = 0.25,
+					MaxScale = 4,
+				},
+				Input6 = InstanceInput {
+					SourceOp = "Text1",
+					Source = "Flip",
+					Name = "Flip",
+				},
+				Input7 = InstanceInput {
+					SourceOp = "Text1",
+					Source = "Align",
+					Name = "Align",
+				},
+				Input8 = InstanceInput {
+					SourceOp = "Text1",
+					Source = "Header",
+					Name = "Section",
+				},
+			},
+			Outputs = {
+				MainOutput1 = InstanceOutput {
+					SourceOp = "Merge1",
+					Source = "Output",
+				}
+			},
+			Tools = ordered() {
+				Text1 = TextPlus {
+					Inputs = {
+						Align = Input { Value = 1, },
+					},
+					UserControls = ordered() {
+						Flip = {
+							LINKID_DataType = "Number",
+							INPID_InputControl = "CheckboxControl",
+							INP_Default = 0,
+						},
+						Align = {
+							INPID_InputControl = "ComboControl",
+							INP_Default = 1,
+							{ CCS_AddString = "Left" },
+							{ CCS_AddString = "Center" },
+							{ CCS_AddString = "Right" },
+						},
+						Header = {
+							INPID_InputControl = "LabelControl",
+						},
+					},
+				},
+				Transform1 = Transform {
+					UserControls = ordered() {
+						Size = {
+							INPID_InputControl = "SliderControl",
+							INP_MinAllowed = 0.1,
+						},
+					},
+				},
+			},
+		}
+	},
+	ActiveTool = "MyLowerThird"
+}

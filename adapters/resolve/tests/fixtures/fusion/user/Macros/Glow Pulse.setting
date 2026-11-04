@@ -1,0 +1,10 @@
+{
+	Tools = ordered() {
+		GlowPulse = MacroOperator {
+			Inputs = ordered() {
+				Gain = InstanceInput { SourceOp = "Glow1", Source = "Gain", Default = 0.8, },
+			},
+			Tools = ordered() { Glow1 = SoftGlow { }, },
+		}
+	}
+}
