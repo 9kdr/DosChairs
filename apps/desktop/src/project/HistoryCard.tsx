@@ -1,8 +1,9 @@
 import { Dialog } from "@base-ui/react/dialog";
 import { HistoryIcon, KeyboardIcon, TriangleAlertIcon, Undo2Icon } from "lucide-react";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Kbd } from "@/components/ui/kbd";
 import { cn } from "@/lib/utils";
 import { fallbackNotice } from "./OpDiff";
 import {
@@ -36,15 +37,6 @@ export function HistoryFallbackLine({ entry }: { entry: HistoryEntry }) {
         {notice}
       </span>
     </p>
-  );
-}
-
-/** One key cap in the hint row and the shortcut overlay. */
-function Kbd({ children }: { children: ReactNode }) {
-  return (
-    <kbd className="rounded-md bg-white/[0.06] px-1.5 py-0.5 font-mono text-[10px] font-medium text-neutral-300 ring-1 ring-inset ring-white/10">
-      {children}
-    </kbd>
   );
 }
 

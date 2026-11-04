@@ -6,10 +6,11 @@ import {
   ListChecksIcon,
   TriangleAlertIcon,
 } from "lucide-react";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ChangesetItem, RationalTime, Timeline } from "@chair/timeline-ir";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Kbd } from "@/components/ui/kbd";
 import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
 import { fallbackNotice, OpDiff } from "./OpDiff";
@@ -112,15 +113,6 @@ function ReviewEmpty({ onRetry }: { onRetry: () => void }) {
         </div>
       </section>
     </div>
-  );
-}
-
-/** One key cap in the hint row and the shortcut overlay. */
-function Kbd({ children }: { children: ReactNode }) {
-  return (
-    <kbd className="rounded-md bg-white/[0.06] px-1.5 py-0.5 font-mono text-[10px] font-medium text-neutral-300 ring-1 ring-inset ring-white/10">
-      {children}
-    </kbd>
   );
 }
 
