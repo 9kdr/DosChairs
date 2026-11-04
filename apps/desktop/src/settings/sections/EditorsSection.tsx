@@ -5,7 +5,6 @@ import type { EditorId, EditorInfo, EditorStatus } from "../../home/data";
 import { cn } from "@/lib/utils";
 import type { EditorConnection } from "../settings-store";
 import {
-  capabilityLine,
   detectedStatus,
   EDITOR_CONNECTION_LABEL,
   EDITORS,
@@ -54,25 +53,20 @@ export function EditorsSection({
   refresh,
 }: EditorsSectionProps) {
   return (
-    <div className="flex flex-col gap-8">
-      <p className="text-sm text-neutral-400">
-        Which editing app Chair hands the cut to.
-      </p>
-      <div className="space-y-2">
-        {EDITORS.map((editor) => (
-          <EditorCard
-            key={editor.id}
-            editor={editor}
-            connection={connections[editor.id]}
-            agentUp={agentUp}
-            detected={detectedStatus(detected, editor.id)}
-            onConnect={(connection) =>
-              saveConnection(editor.id, connection).then(() => refresh())
-            }
-            onDisconnect={() => saveConnection(editor.id, null)}
-          />
-        ))}
-      </div>
+    <div className="space-y-2">
+      {EDITORS.map((editor) => (
+        <EditorCard
+          key={editor.id}
+          editor={editor}
+          connection={connections[editor.id]}
+          agentUp={agentUp}
+          detected={detectedStatus(detected, editor.id)}
+          onConnect={(connection) =>
+            saveConnection(editor.id, connection).then(() => refresh())
+          }
+          onDisconnect={() => saveConnection(editor.id, null)}
+        />
+      ))}
     </div>
   );
 }
@@ -126,8 +120,6 @@ function EditorCard({
           {EDITOR_CONNECTION_LABEL[state]}
         </p>
       </div>
-      <p className="mt-0.5 text-xs text-muted-foreground">{editor.blurb}</p>
-
       <div className="mt-3 flex items-center gap-2">
         {editor.endpointLabel != null && !linked ? (
           <Input
@@ -172,21 +164,11 @@ function EditorCard({
         )}
       </div>
 
-      <p className="mt-2 truncate text-xs text-muted-foreground">
-        {state === "connected"
-          ? "Linked · the agent answered."
-          : state === "unreachable"
-            ? unreachableCopy(editor.id, detected)
-            : state === "checking"
-              ? "Checking the agent…"
-              : editor.endpointLabel != null
-                ? "Not linked yet."
-                : "Not linked yet — open your project in Studio, then Connect."}
-      </p>
-
-      <p className="mt-3 border-t border-white/[0.06] pt-3 text-xs text-muted-foreground">
-        {capabilityLine(editor)}
-      </p>
+      {state === "unreachable" ? (
+        <p className="mt-2 truncate text-xs text-muted-foreground">
+          {unreachableCopy(editor.id, detected)}
+        </p>
+      ) : null}
     </div>
   );
 }

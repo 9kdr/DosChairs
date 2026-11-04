@@ -6,7 +6,6 @@ import {
   Empty,
   EmptyArt,
   EmptyContent,
-  EmptyDescription,
   EmptyHeader,
   EmptyTitle,
 } from "@/components/ui/empty";
@@ -235,7 +234,6 @@ export function PiecesShelf({
                   <DitherArt seed={5} />
                 </EmptyArt>
                 <EmptyTitle>No pieces yet</EmptyTitle>
-                <EmptyDescription>Pieces the agent offers land here.</EmptyDescription>
               </EmptyHeader>
               <EmptyContent>
                 <Button type="button" size="sm" variant="outline" onClick={load}>

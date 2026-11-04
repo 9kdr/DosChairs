@@ -3,6 +3,7 @@ import { Radio } from "@base-ui/react/radio";
 import { RadioGroup } from "@base-ui/react/radio-group";
 import { CheckIcon, EyeIcon, EyeOffIcon } from "lucide-react";
 import { useState } from "react";
+import { InfoHint } from "@/components/info-hint";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
@@ -113,9 +114,6 @@ export function AddProviderDialog({
           <Dialog.Title className="text-base font-semibold text-neutral-100">
             Add provider
           </Dialog.Title>
-          <Dialog.Description className="mt-1 text-sm text-neutral-400">
-            Pick a provider and paste its key.
-          </Dialog.Description>
 
           <ol
             aria-label="Setup progress"
@@ -220,12 +218,15 @@ export function AddProviderDialog({
               </div>
             ) : (
               <div>
-                <label
-                  htmlFor="add-provider-key"
-                  className="text-sm font-medium text-neutral-100"
-                >
-                  {label} key
-                </label>
+                <span className="flex items-center gap-1">
+                  <label
+                    htmlFor="add-provider-key"
+                    className="text-sm font-medium text-neutral-100"
+                  >
+                    {label} key
+                  </label>
+                  <InfoHint>Detection never sends the key anywhere.</InfoHint>
+                </span>
                 <div className="mt-2 flex items-center gap-2">
                   <Input
                     id="add-provider-key"
@@ -250,18 +251,19 @@ export function AddProviderDialog({
                     {shown ? <EyeOffIcon /> : <EyeIcon />}
                   </Button>
                 </div>
-                <p className="mt-2 text-xs text-neutral-500">
-                  <KeyHint
-                    draft={draft}
-                    pickedLabel={label}
-                    empty={!keyValid}
-                    switchedFrom={
-                      switchedFrom != null && switchedFrom !== provider
-                        ? providerLabel(switchedFrom)
-                        : null
-                    }
-                  />
-                </p>
+                {keyValid ? (
+                  <p className="mt-2 text-xs text-neutral-500">
+                    <KeyHint
+                      draft={draft}
+                      pickedLabel={label}
+                      switchedFrom={
+                        switchedFrom != null && switchedFrom !== provider
+                          ? providerLabel(switchedFrom)
+                          : null
+                      }
+                    />
+                  </p>
+                ) : null}
               </div>
             )}
           </div>
@@ -306,24 +308,18 @@ export function AddProviderDialog({
 function KeyHint({
   draft,
   pickedLabel,
-  empty,
   switchedFrom,
 }: {
   draft: { provider: ProviderId; detected: ProviderId | null; switched: boolean };
   pickedLabel: string;
-  empty: boolean;
   switchedFrom: string | null;
 }) {
-  if (empty) {
-    return <>Detection never sends the key anywhere.</>;
-  }
   const label = providerLabel(draft.provider);
   const article = label === "Anthropic" ? "an" : "a";
   if (draft.detected == null) {
     return (
       <>
-        Unknown format. Filed under {pickedLabel}. Detection never sends the
-        key anywhere.
+        Unknown format. Filed under {pickedLabel}.
       </>
     );
   }

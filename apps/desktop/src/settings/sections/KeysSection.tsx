@@ -266,7 +266,6 @@ function ProviderDetail({
       <KeyBlock
         provider={provider}
         saved={saved}
-        envKey={envKey}
         onSave={onSave}
         onClear={onClear}
       />
@@ -285,7 +284,6 @@ function ProviderDetail({
 type KeyBlockProps = {
   provider: Provider;
   saved: string | null;
-  envKey: boolean;
   onSave: (key: string) => Promise<void>;
   onClear: () => Promise<void>;
 };
@@ -297,7 +295,6 @@ type KeyBlockProps = {
 function KeyBlock({
   provider,
   saved,
-  envKey,
   onSave,
   onClear,
 }: KeyBlockProps) {
@@ -335,9 +332,6 @@ function KeyBlock({
   return (
     <div className="mt-4">
       <p className="text-sm font-medium text-neutral-100">API key</p>
-      {saved == null && !envKey ? (
-        <p className="mt-1 text-xs text-muted-foreground">No key — paste one below</p>
-      ) : null}
       <div className="mt-2 flex items-center gap-2">
         <Input
           type={shown ? "text" : "password"}
@@ -452,11 +446,7 @@ function ModelsBlock({
   return (
     <div className="mt-4 border-t border-white/[0.06] pt-4">
       <p className="text-sm font-medium text-neutral-100">Models</p>
-      {known.length === 0 && customModels.length === 0 ? (
-        <p className="mt-2 text-xs text-muted-foreground">
-          No models on file yet. Add one below.
-        </p>
-      ) : (
+      {known.length === 0 && customModels.length === 0 ? null : (
         <ul className="mt-2 flex flex-col divide-y divide-white/[0.06]">
           {known.map((name) => {
             const off = disabledModels.includes(name);
