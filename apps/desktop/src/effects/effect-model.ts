@@ -112,13 +112,19 @@ export function bakeRig(spec: EffectSpec, rig: Rig | null): RigBake {
       tolerance: channel.tolerance,
       samples: frames.map((frame): Sample => ({ t: frame.time, v: channel.pick(frame) })),
     })),
-    // Squash and stretch scale a shape's own size; text has no size param to scale.
+    // Squash and stretch scale a shape's own pixel size; any other carrier
+    // (text, image, an unsized shape) gets the raw multipliers as the
+    // scale/scaley pair the Resolve Transform reads, so squash lands there
+    // too instead of vanishing without a word (#294).
     ...(target.type === "shape" && baseW > 0 && baseH > 0
       ? [
           { prop: "scaleX", tolerance: baseW * 0.01, samples: frames.map((f): Sample => ({ t: f.time, v: baseW * f.scaleX })) },
           { prop: "scaleY", tolerance: baseH * 0.01, samples: frames.map((f): Sample => ({ t: f.time, v: baseH * f.scaleY })) },
         ]
-      : []),
+      : [
+          { prop: "scale", tolerance: 0.01, samples: frames.map((f): Sample => ({ t: f.time, v: f.scaleX })) },
+          { prop: "scaley", tolerance: 0.01, samples: frames.map((f): Sample => ({ t: f.time, v: f.scaleY })) },
+        ]),
   ];
   for (const channel of channels) {
     if (flat(channel.samples)) {
