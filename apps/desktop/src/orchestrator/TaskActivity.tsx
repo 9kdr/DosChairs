@@ -89,7 +89,7 @@ export function TaskActivityPanel({
             aria-hidden
             className="pointer-events-none absolute inset-0"
             style={{
-              background: "linear-gradient(to top, #1a1a1a 0%, #1a1a1a 45%, transparent 100%)",
+              background: "linear-gradient(to top, #1a1a1a 0%, #1a1a1a 45%, transparent 100%)", // taste-skill-ignore: neutral scrim keeps the headline legible over the task art.
             }}
           />
           <p className="absolute inset-x-3 bottom-2 text-xs leading-5 text-neutral-300">
