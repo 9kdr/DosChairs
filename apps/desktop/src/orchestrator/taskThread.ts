@@ -704,16 +704,18 @@ export function textForJob(job: AgentJob): string {
   const previewBit =
     previews === 0 ? "no previews" : previews === 1 ? "1 preview" : `${previews} previews`;
   const opBit = ops === 0 ? "no edits" : ops === 1 ? "1 edit" : `${ops} edits`;
-  // Finished sound turns fire the Resolve write on arrival, so the reply
-  // points at the card that says what landed, with Undo. Other edit ops
-  // have no apply path yet: described honestly, never silently landed.
-  const landing =
-    ops === 0
-      ? "Nothing changed."
-      : hasSoundItems(job)
-        ? "Writing to Resolve on a copy — the card says what landed, with Undo."
-        : "They haven't reached Resolve yet — only sound lands on its own.";
-  let text = `Done: ${previewBit}, ${opBit}. ${landing}`;
+  // Finished sound turns fire the Resolve write on arrival; the reply
+  // says it landed, with Undo on the card. Other edit ops are planned
+  // cuts that don't land yet: described honestly, never silently landed.
+  let text: string;
+  if (ops === 0) {
+    text = `Done: ${previewBit}, ${opBit}. Nothing changed.`;
+  } else if (hasSoundItems(job)) {
+    text = `Done: ${previewBit}, ${opBit}. Landed on a copy in Resolve. Undo is on the card.`;
+  } else {
+    const cuts = ops === 1 ? "1 cut" : `${ops} cuts`;
+    text = `Planned ${cuts}. Cuts don't land in Resolve yet.`;
+  }
   if (previews > 0) {
     text += ` Preview files: ${job.artifacts.map((artifact) => artifact.url).join(", ")}.`;
   }

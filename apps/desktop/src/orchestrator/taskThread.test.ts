@@ -185,7 +185,7 @@ describe("thread copy", () => {
     expect(working).toContain("working on it");
   });
 
-  it("points a finished sound turn at the card that says what landed", () => {
+  it("says a finished sound turn landed, with Undo on the card", () => {
     const text = textForJob(
       job("completed", {
         artifacts: [{ url: "http://127.0.0.1:8787/p/preview.mp4" }],
@@ -195,24 +195,23 @@ describe("thread copy", () => {
     expect(text).toContain("1 preview");
     expect(text).toContain("1 edit");
     expect(text).toContain("http://127.0.0.1:8787/p/preview.mp4");
-    expect(text).toContain("Writing to Resolve on a copy");
-    expect(text).toContain("the card says what landed, with Undo");
+    expect(text).toContain("Landed on a copy in Resolve.");
+    expect(text).toContain("Undo is on the card.");
     expect(text).not.toContain("proposed");
     expect(text).not.toContain("accept");
   });
 
-  it("says honestly when other edits have no apply path yet", () => {
+  it("says plainly when cuts don't land yet", () => {
     const text = textForJob(
       job("completed", {
         changeset: { status: "proposed", ops: [{ id: "op-1" }, { id: "op-2" }] },
       }),
     );
-    expect(text).toContain("2 edits");
-    expect(text).toContain("haven't reached Resolve yet");
-    expect(text).toContain("only sound lands on its own");
+    expect(text).toBe("Planned 2 cuts. Cuts don't land in Resolve yet.");
     expect(text).not.toContain("proposed");
     expect(text).not.toContain("accept");
     expect(text).not.toContain("Review");
+    expect(text).not.toContain("no previews");
   });
 
   it("says plainly when the turn produced nothing", () => {
