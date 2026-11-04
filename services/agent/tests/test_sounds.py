@@ -684,3 +684,41 @@ def test_sounds_undo_restores_and_optionally_deletes(
         assert body == {"error": "undo refuses to delete the original timeline"}
     finally:
         _stop_sounds_apply(server, thread, old)
+
+
+def test_resolve_lookup_uses_the_installed_scripting_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Without an importable host, the route retries via the installed path."""
+    import sys as _sys
+    import types as _types
+
+    import chair_resolve.read as resolve_read
+    from chair_agent.__main__ import _resolve_project_timeline
+
+    (tmp_path / "DaVinciResolveScript.py").write_text(
+        "import sys as _sys\n"
+        "def scriptapp(name):\n"
+        "    return _sys.modules['sounds_apply_probe_holder'].APP\n"
+    )
+    project = _FakeSoundProject("Chair Captest", [_FakeSoundTimeline("Timeline 1")])
+    holder = _types.ModuleType("sounds_apply_probe_holder")
+    holder.APP = _types.SimpleNamespace(
+        GetProjectManager=lambda: _types.SimpleNamespace(
+            GetCurrentProject=lambda: project
+        ),
+    )
+    monkeypatch.setitem(_sys.modules, "sounds_apply_probe_holder", holder)
+    monkeypatch.setattr(resolve_read, "scripting_module_paths", lambda: [str(tmp_path)])
+    had_module = _sys.modules.pop("DaVinciResolveScript", None)
+    assert str(tmp_path) not in _sys.path
+    try:
+        found_project, found_timeline = _resolve_project_timeline("Chair Captest", None)
+    finally:
+        _sys.modules.pop("DaVinciResolveScript", None)
+        if had_module is not None:
+            _sys.modules["DaVinciResolveScript"] = had_module
+        while str(tmp_path) in _sys.path:
+            _sys.path.remove(str(tmp_path))
+    assert found_project is project
+    assert found_timeline.GetName() == "Timeline 1"

@@ -677,13 +677,31 @@ def _resolve_project(project_name: Any) -> Any:
     _ResolveFailed when no project is open or the named one is not open.
     """
     try:
-        import DaVinciResolveScript as bmd
-        from chair_resolve.read import resolve_app  # noqa: F401
+        from chair_resolve.read import (  # noqa: F401
+            resolve_app,
+            scripting_module_paths,
+        )
     except ImportError as error:
         raise _ResolveUnavailable(
             "the Resolve adapter or scripting host is missing here; run the "
             f"agent where chair-adapter-resolve and DaVinciResolveScript import ({error})"
         ) from error
+    try:
+        import DaVinciResolveScript as bmd
+    except ImportError:
+        import sys as _sys
+
+        for path in scripting_module_paths():
+            if path not in _sys.path:
+                _sys.path.insert(0, path)
+        try:
+            import DaVinciResolveScript as bmd
+        except ImportError as error:
+            raise _ResolveUnavailable(
+                "the Resolve adapter or scripting host is missing here; run the "
+                "agent where chair-adapter-resolve and DaVinciResolveScript "
+                f"import ({error})"
+            ) from error
     try:
         resolve = bmd.scriptapp("Resolve")
         manager = resolve.GetProjectManager()
