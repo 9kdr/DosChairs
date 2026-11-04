@@ -94,7 +94,6 @@ export function HistoryCard({
       if (!historyKeyAllowed(event.target)) return;
       const action = historyKeyAction(event);
       if (!action) return;
-      if (action === "accept" || action === "reject") return;
       if (entries.length === 0) return;
       if (action === "help") {
         event.preventDefault();
@@ -143,10 +142,7 @@ export function HistoryCard({
   return (
     <section
       aria-label="History"
-      className={cn(
-        "flex flex-col gap-1 rounded-card bg-card p-4 text-neutral-100",
-        className,
-      )}
+      className={cn("flex flex-col gap-1 rounded-card bg-card p-4 text-neutral-100", className)}
     >
       <div className="flex items-center gap-2 px-1 pb-1">
         <HistoryIcon className="size-4 text-neutral-400" aria-hidden="true" />
@@ -170,9 +166,7 @@ export function HistoryCard({
         ) : null}
       </div>
       {entries.length === 0 ? (
-        <p className="px-1 py-2 text-xs text-muted-foreground">
-          Nothing applied yet.
-        </p>
+        <p className="px-1 py-2 text-xs text-muted-foreground">Nothing applied yet.</p>
       ) : (
         <ol aria-label="History entries" className="flex min-h-0 flex-col">
           {entries.map((entry, index) => {
@@ -210,9 +204,7 @@ export function HistoryCard({
                   <HistoryFallbackLine entry={entry} />
                   {open ? (
                     <div className="mt-1.5 rounded-xl bg-black/30 p-3">
-                      <p className="truncate font-mono text-xs text-neutral-400">
-                        {entry.itemId}
-                      </p>
+                      <p className="truncate font-mono text-xs text-neutral-400">{entry.itemId}</p>
                       <p className="mt-1 text-xs leading-5 text-muted-foreground">
                         Rewinds with {opLabel(entry.inverse.op)}
                         {entry.inverse.targetId ? ` on ${entry.inverse.targetId}` : ""}

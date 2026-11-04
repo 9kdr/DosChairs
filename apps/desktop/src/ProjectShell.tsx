@@ -19,9 +19,12 @@ import { ShelfPieces } from "./orchestrator/ShelfPieces";
 import { TaskChat, UNDO_PROMPT } from "./orchestrator/TaskChat";
 import { setupTask } from "./orchestrator/taskSetup";
 import {
+  isLiveTaskSettled,
+  landedFor,
   redoLandedWrite,
   retryLandedWrite,
   retryLiveTask,
+  settledTaskRows,
   undoLandedWrite,
   useLiveTasks,
 } from "./orchestrator/taskThread";
@@ -38,12 +41,12 @@ type ProjectShellProps = {
   onHome: () => void;
 };
 
-/** Suggested prompts that fill the composer on the empty board. */
+/** Suggested prompts that fill the composer on the empty board. Demo-only: every one lands in Resolve today. */
 const SUGGESTIONS = [
-  "Trim the silences",
-  "Riser into the montage",
+  "Riser into the reveal",
   "Duck music under my voice",
   "Make a dither title piece",
+  "Bouncy cursor on the click",
 ];
 
 /** Compact cut line for the header from the timeline the store already has. */
@@ -118,9 +121,7 @@ function SidePanel({
           </Button>
         ) : null}
       </div>
-      <div className="mt-3 min-h-0 flex-1 overflow-hidden">
-        {tab === "plan" ? plan : shelf}
-      </div>
+      <div className="mt-3 min-h-0 flex-1 overflow-hidden">{tab === "plan" ? plan : shelf}</div>
     </Tabs>
   );
 }
@@ -143,6 +144,13 @@ export function ProjectShell({ projectId, projectName, editorId, onHome }: Proje
   // Bumped after card Undo/Redo/Retry so the rows repaint at once, not next poll.
   const [liveNonce, setLiveNonce] = useState(0);
   const liveTasks = useLiveTasks(createdTasks, liveNonce);
+  const workingTasks = liveTasks.filter((task) => !isLiveTaskSettled(task.id));
+  // Finished tasks read newest first below; a Resolve write replaces the
+  // plain Done line with what landed.
+  const recentTasks = settledTaskRows().map((task) => {
+    const landed = landedFor(task.id);
+    return landed ? { ...task, status: landed.line } : task;
+  });
   const seen = useRef(0);
 
   useEffect(() => {
@@ -153,9 +161,7 @@ export function ProjectShell({ projectId, projectName, editorId, onHome }: Proje
       if (command.text.trim()) {
         setCreatedTasks((current) => {
           const task = { ...setupTask(command.text, command.id), projectId };
-          return current.some((existing) => existing.id === task.id)
-            ? current
-            : [task, ...current];
+          return current.some((existing) => existing.id === task.id) ? current : [task, ...current];
         });
       }
       return;
@@ -165,11 +171,6 @@ export function ProjectShell({ projectId, projectName, editorId, onHome }: Proje
       setPlanOpen(true);
       setSideTab("plan");
       setNotice(null);
-      return;
-    }
-    if (action.key === "accept") {
-      setPlanOpen(false);
-      setNotice("Accepted. The timeline is unchanged.");
       return;
     }
     if (action.key === "again") {
@@ -334,9 +335,7 @@ export function ProjectShell({ projectId, projectName, editorId, onHome }: Proje
           <TooltipPopup side="bottom">Home</TooltipPopup>
         </Tooltip>
         {editorId ? <EditorLogo id={editorId} className="size-4" /> : null}
-        <h1 className="min-w-0 truncate text-sm font-medium text-neutral-200">
-          {projectName}
-        </h1>
+        <h1 className="min-w-0 truncate text-sm font-medium text-neutral-200">{projectName}</h1>
         {cutBits ? (
           <span className="hidden shrink-0 text-xs tabular-nums text-muted-foreground md:block">
             {cutBits}
@@ -409,10 +408,11 @@ export function ProjectShell({ projectId, projectName, editorId, onHome }: Proje
           ) : page === "board" ? (
             <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden">
               <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
-                <div className="mx-auto flex w-full max-w-3xl flex-col gap-3 py-2 @max-[760px]:max-w-none">
+                <div className="mx-auto flex w-full max-w-5xl flex-col gap-3 py-2 @max-[760px]:max-w-none">
                   <RunningTasks
                     history={project.history}
-                    tasks={liveTasks}
+                    tasks={workingTasks}
+                    recentTasks={recentTasks}
                     onOpen={openTask}
                     onUndo={(task) => {
                       setTaskChat(task);
@@ -421,12 +421,17 @@ export function ProjectShell({ projectId, projectName, editorId, onHome }: Proje
                     onRetry={retryTask}
                     onUndoResolve={undoResolveWrite}
                     onRedoResolve={redoResolveWrite}
+                    onOpenHistory={openHistoryPage}
                   />
                 </div>
               </div>
               <div className="mx-auto flex w-full max-w-3xl shrink-0 flex-col gap-2 @max-[760px]:max-w-none">
                 {createdTasks.length === 0 ? (
-                  <div className="flex flex-wrap gap-1.5 px-1" role="group" aria-label="Suggested prompts">
+                  <div
+                    className="flex flex-wrap gap-1.5 px-1"
+                    role="group"
+                    aria-label="Suggested prompts"
+                  >
                     {SUGGESTIONS.map((text) => (
                       <button
                         key={text}
@@ -506,12 +511,12 @@ export function ProjectShell({ projectId, projectName, editorId, onHome }: Proje
           )}
         </main>
         {showSide ? (
-        <aside
-          aria-label="Project panel"
-          className="flex min-h-0 w-80 shrink-0 flex-col overflow-hidden rounded-card bg-card p-4 text-neutral-100 @max-[760px]:hidden xl:w-96"
-        >
-          <SidePanel tab={sideTab} onTab={setSideTab} plan={planPane} shelf={shelfPane} />
-        </aside>
+          <aside
+            aria-label="Project panel"
+            className="flex min-h-0 w-80 shrink-0 flex-col overflow-hidden rounded-card bg-card p-4 text-neutral-100 @max-[760px]:hidden xl:w-96"
+          >
+            <SidePanel tab={sideTab} onTab={setSideTab} plan={planPane} shelf={shelfPane} />
+          </aside>
         ) : null}
         <PanelDrawer open={panelOpen} onClose={() => setPanelOpen(false)}>
           <SidePanel

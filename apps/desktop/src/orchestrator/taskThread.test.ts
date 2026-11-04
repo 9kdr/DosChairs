@@ -21,11 +21,13 @@ import {
   headlineForSubmitError,
   initialTurnsFor,
   inputForTurn,
+  isTaskSeen,
   isThreadDemo,
   landedFor,
   liveJobEntries,
   liveRowsForJobs,
   liveSubmitError,
+  markTaskSeen,
   maybeApplyFinishedCut,
   maybeApplyFinishedSound,
   noteKey,
@@ -600,6 +602,15 @@ describe("settled tasks", () => {
   });
 });
 
+describe("seen tasks", () => {
+  it("clears the unseen dot once the task is looked at, per project", () => {
+    expect(isTaskSeen("p1", "task-a")).toBe(false);
+    markTaskSeen("p1", "task-a");
+    expect(isTaskSeen("p1", "task-a")).toBe(true);
+    expect(isTaskSeen("p2", "task-a")).toBe(false);
+  });
+});
+
 describe("waiting and failed rows", () => {
   const prompted: RunningTask = {
     id: "task-prompt-7",
@@ -622,14 +633,10 @@ describe("waiting and failed rows", () => {
     };
     const client = createServicesClient({ fetchFn: failing });
     await submitLiveTurn(client, prompted);
-    expect(liveSubmitError(prompted.id)).toBe(
-      "agent is unreachable at http://127.0.0.1:8787/jobs",
-    );
+    expect(liveSubmitError(prompted.id)).toBe("agent is unreachable at http://127.0.0.1:8787/jobs");
     const rows = waitingRowsFor([prompted]);
     expect(rows).toHaveLength(1);
-    expect(rows[0]?.status).toBe(
-      "Failed: agent is unreachable at http://127.0.0.1:8787/jobs",
-    );
+    expect(rows[0]?.status).toBe("Failed: agent is unreachable at http://127.0.0.1:8787/jobs");
   });
 
   it("clears the failure once a later submit succeeds", async () => {
@@ -718,9 +725,7 @@ describe("turn model and files", () => {
   it("names the turn model on live and terminal copy", () => {
     const queued = textForJob(job("queued", { input: { model: "Chair fast" } }));
     expect(queued).toContain("Model: Chair fast.");
-    const done = textForJob(
-      job("completed", { input: { model: "muse-spark-1 (Meta)" } }),
-    );
+    const done = textForJob(job("completed", { input: { model: "muse-spark-1 (Meta)" } }));
     expect(done).toContain("Model: muse-spark-1 (Meta).");
     expect(textForJob(job("completed"))).not.toContain("Model:");
   });
@@ -813,11 +818,19 @@ describe("hasSoundItems", () => {
   it("sees ducking, audio tracks, and sound clips", () => {
     expect(hasSoundItems(done([{ op: "set_gain", patch: { gainDb: -12 } }]))).toBe(true);
     expect(
-      hasSoundItems(done([{ op: "add_track", patch: { track: { id: "audio-sfx-1", kind: "audio" } } }])),
+      hasSoundItems(
+        done([{ op: "add_track", patch: { track: { id: "audio-sfx-1", kind: "audio" } } }]),
+      ),
     ).toBe(true);
     expect(
       hasSoundItems(
-        done([{ op: "add_clip", targetId: "audio-sfx-1", patch: { clipId: "sfx-riser-1", kind: "riser" } }]),
+        done([
+          {
+            op: "add_clip",
+            targetId: "audio-sfx-1",
+            patch: { clipId: "sfx-riser-1", kind: "riser" },
+          },
+        ]),
       ),
     ).toBe(true);
   });
@@ -871,7 +884,10 @@ describe("finished sound writes", () => {
   it("records a failed write the card can retry", async () => {
     const fetchFn = reply(503, { error: "Resolve is not running" });
     await applyFinishedSound({ requestId: "req_sound1", task, job: soundJob() }, { fetchFn });
-    expect(landedFor(task.id)).toMatchObject({ state: "failed", line: "Failed: Resolve is not running" });
+    expect(landedFor(task.id)).toMatchObject({
+      state: "failed",
+      line: "Failed: Resolve is not running",
+    });
     retryLandedWrite(task.id, { fetchFn: reply(200, appliedBody) });
     await vi.waitFor(() => expect(landedFor(task.id)?.state).toBe("landed"));
   });

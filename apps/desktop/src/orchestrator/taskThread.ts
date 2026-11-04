@@ -306,11 +306,61 @@ export function settledTaskRows(): RunningTask[] {
   return [...settledRows.values()];
 }
 
+/** Seen finished tasks, per project: the Recent dot clears once looked at. */
+const SEEN_KEY_PREFIX = "chair.seenTasks.";
+const SEEN_CAP = 200;
+const seenCache = new Map<string, Set<string>>();
+
+function seenKey(projectId: string | undefined): string {
+  return `${SEEN_KEY_PREFIX}${projectId ?? "local"}`;
+}
+
+function seenSet(projectId: string | undefined): Set<string> {
+  const key = seenKey(projectId);
+  const cached = seenCache.get(key);
+  if (cached) return cached;
+  const ids = new Set<string>();
+  try {
+    const raw = typeof localStorage === "undefined" ? null : localStorage.getItem(key);
+    if (raw) {
+      for (const id of JSON.parse(raw) as unknown[]) {
+        if (typeof id === "string") ids.add(id);
+      }
+    }
+  } catch {
+    // A broken seen list reads as unseen; the next mark rewrites it.
+  }
+  seenCache.set(key, ids);
+  return ids;
+}
+
+/** True once the person expanded or opened the finished task. */
+export function isTaskSeen(projectId: string | undefined, taskId: string): boolean {
+  return seenSet(projectId).has(taskId);
+}
+
+/** Mark a finished task looked at; the Recent dot clears. */
+export function markTaskSeen(projectId: string | undefined, taskId: string): void {
+  const ids = seenSet(projectId);
+  if (ids.has(taskId)) return;
+  ids.add(taskId);
+  const trimmed = [...ids].slice(-SEEN_CAP);
+  seenCache.set(seenKey(projectId), new Set(trimmed));
+  try {
+    if (typeof localStorage !== "undefined") {
+      localStorage.setItem(seenKey(projectId), JSON.stringify(trimmed));
+    }
+  } catch {
+    // Private windows keep the mark for the session only.
+  }
+}
+
 /** Test support: clear remembered jobs, failures, and settled tasks. */
 export function resetLiveJobs(): void {
   liveJobs.clear();
   settledTasks.clear();
   settledRows.clear();
+  seenCache.clear();
   submitErrors.clear();
   pollFailures.clear();
   appliedJobs.clear();
@@ -494,7 +544,10 @@ type ApplyOptions = { agentUrl?: string; fetchFn?: FetchFn };
  * timeline, never touching the original. The agent reads the job by
  * id; project and timeline stay unset so it uses what is current.
  */
-export async function applyFinishedSound(entry: LiveJobEntry, options: ApplyOptions = {}): Promise<void> {
+export async function applyFinishedSound(
+  entry: LiveJobEntry,
+  options: ApplyOptions = {},
+): Promise<void> {
   const job = entry.job;
   if (!job || job.status !== "completed" || !hasSoundItems(job)) return;
   try {
@@ -594,7 +647,10 @@ export function retryLandedWrite(taskId: string, options: ApplyOptions = {}): vo
  * copy stays. True when Resolve answered; the card keeps its Undo
  * button on failure so the person can try again.
  */
-export async function undoLandedWrite(taskId: string, options: ApplyOptions = {}): Promise<boolean> {
+export async function undoLandedWrite(
+  taskId: string,
+  options: ApplyOptions = {},
+): Promise<boolean> {
   const landed = landedByTask.get(taskId);
   if (!landed || landed.state !== "landed" || !landed.undo) return false;
   const undo = landed.kind === "cut" ? revertCut : revertSound;
@@ -622,7 +678,10 @@ export async function undoLandedWrite(taskId: string, options: ApplyOptions = {}
 }
 
 /** Redo an undone write: the stored apply body goes again as a new copy. */
-export async function redoLandedWrite(taskId: string, options: ApplyOptions = {}): Promise<boolean> {
+export async function redoLandedWrite(
+  taskId: string,
+  options: ApplyOptions = {},
+): Promise<boolean> {
   const landed = landedByTask.get(taskId);
   if (!landed || landed.state !== "undone" || !landed.redo) return false;
   const apply = landed.kind === "cut" ? applyCut : applySound;
@@ -731,10 +790,7 @@ export function waitingRowsFor(tasks: readonly RunningTask[]): RunningTask[] {
  * submit-error map (never swallowed) so the row stays visible as failed;
  * the next poll resubmits under the same idempotent key.
  */
-export async function submitLiveTurn(
-  client: ServicesClient,
-  task: RunningTask,
-): Promise<void> {
+export async function submitLiveTurn(client: ServicesClient, task: RunningTask): Promise<void> {
   if (isLiveTaskSettled(task.id)) return;
   const scope = openTurnScope(task.id, task.lane, true);
   // Same key and input as the thread's primary opening turn, so opening
@@ -752,7 +808,10 @@ export async function submitLiveTurn(
   }
 }
 
-export function useLiveTasks(createdTasks: readonly RunningTask[], refreshKey?: unknown): RunningTask[] {
+export function useLiveTasks(
+  createdTasks: readonly RunningTask[],
+  refreshKey?: unknown,
+): RunningTask[] {
   const client = useServicesClient();
   const [rows, setRows] = useState<RunningTask[]>([]);
   const rowsRef = useRef(rows);

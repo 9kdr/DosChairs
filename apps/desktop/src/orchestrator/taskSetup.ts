@@ -48,6 +48,7 @@ export function setupTask(prompt: string, commandId: number): RunningTask {
     status: "Running",
     lane: plan.lanes[0]!,
     plan,
+    startedAt: commandId,
   };
 }
 
@@ -97,8 +98,5 @@ export function gatedAgentText(agent: Subagent): string {
       : agent.lane === "colour"
         ? "colour work"
         : "editing work";
-  return (
-    `${agent.label} isn't connected yet — ${work} is still on the way. ` +
-    "Nothing changed."
-  );
+  return `${agent.label} isn't connected yet — ${work} is still on the way. ` + "Nothing changed.";
 }
