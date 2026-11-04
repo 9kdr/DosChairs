@@ -372,7 +372,7 @@ function ReviewReady({ store, timeline }: { store: ProjectStore; timeline: Timel
               {timeline.rate.num} fps
             </span>
           </div>
-          <p className="shrink-0 px-1 text-xs text-neutral-500">{timeline.name} · read-only</p>
+          <p className="shrink-0 px-1 text-xs text-neutral-500">{timeline.name} · follows every apply</p>
           <ul className="flex min-h-0 flex-col gap-3">
             {timeline.tracks.map((track) => (
               <li key={track.id}>

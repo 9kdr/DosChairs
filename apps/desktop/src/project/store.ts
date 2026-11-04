@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { Changeset, ChangesetItem, EditOp, Timeline } from "@chair/timeline-ir";
-import { buildUndoChangeset, invertItem } from "@chair/timeline-ir";
+import { applyChangesetItem, buildUndoChangeset, invertItem } from "@chair/timeline-ir";
 import type { HistoryEntry } from "@chair/timeline-ir";
 import { readReviewSnapshot, withStoredDecisions, writeReviewSnapshot } from "./persist";
 import { fetchProjectReview, type ReviewJob } from "./review";
@@ -17,7 +17,9 @@ export type { HistoryEntry } from "@chair/timeline-ir";
  * apply — agent or person, forward or undo — appends a history entry
  * with the item's inverse, and undo applies its inverses at once.
  * Nothing here writes source media: applies land on copies (a new
- * timeline, version, or track) on the agent side.
+ * timeline, version, or track) on the agent side, and the local mirror
+ * — the app's copy of the cut — follows every apply and undo so the
+ * next inverse snapshots the state it needs.
  */
 
 export type Decision = "accepted" | "rejected";
@@ -140,6 +142,30 @@ export type Refusal = {
   itemId?: string;
   reason: string;
 };
+
+/**
+ * Move the local mirror with what applied. The mirror is the app's copy
+ * of the cut, not the source, so it follows every apply and undo — and
+ * the next inverse snapshots the post-apply state it needs. Items the
+ * applier cannot place skip; the accept path already failed closed on
+ * anything without a way back.
+ */
+export function advanceMirror(mirror: Timeline, entries: HistoryEntry[]): Timeline {
+  if (entries.length === 0) return mirror;
+  const next = structuredClone(mirror);
+  for (const entry of entries) {
+    applyChangesetItem(next, {
+      id: entry.itemId,
+      op: entry.op,
+      ...(entry.targetId ? { targetId: entry.targetId } : {}),
+      ...(entry.beatId ? { beatId: entry.beatId } : {}),
+      rationale: "",
+      patch: entry.forward,
+      status: "accepted",
+    });
+  }
+  return next;
+}
 
 /**
  * Where one project open stands: loading the review, ready with a
@@ -301,6 +327,16 @@ export function useProject(
     });
   };
 
+  /**
+   * Record an apply after its entries are built: the mirror follows so
+   * the next inverse snapshots the post-apply state, then history grows.
+   */
+  const recordEntries = (entries: HistoryEntry[]) => {
+    if (entries.length === 0) return;
+    setTimeline((current) => (current ? advanceMirror(current, entries) : current));
+    appendEntries(entries);
+  };
+
   /** The person applies by hand: their entries read actor user. */
   const acceptItem = (id: string) => {
     if (!changeset || !timeline) return;
@@ -320,7 +356,7 @@ export function useProject(
       return;
     }
     setChangeset(reviewItem(changeset, id, "accepted"));
-    appendEntries([checked.entry]);
+    recordEntries([checked.entry]);
     setRefusal(null);
   };
 
@@ -335,7 +371,7 @@ export function useProject(
     );
     if (entries.length > 0) {
       setChangeset(next);
-      appendEntries(entries);
+      recordEntries(entries);
     }
     setRefusal(blocked);
   };
@@ -365,7 +401,7 @@ export function useProject(
       STAND_IN_ACCEPTED_BY,
       "user",
     );
-    if (entries.length > 0) appendEntries(entries);
+    if (entries.length > 0) recordEntries(entries);
     setRefusal(blocked);
   };
 
@@ -394,7 +430,7 @@ export function useProject(
     );
     if (entries.length > 0) {
       setChangeset(next);
-      appendEntries(entries);
+      recordEntries(entries);
     }
     setRefusal(blocked);
   });

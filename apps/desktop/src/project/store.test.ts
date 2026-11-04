@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { Changeset, HistoryEntry, Timeline } from "@chair/timeline-ir";
 import { emptyTimeline } from "@chair/timeline-ir";
 import {
+  advanceMirror,
   canUndoTask,
   historyForTask,
   reviewItem,
@@ -203,6 +204,44 @@ describe("tryHistoryEntry", () => {
     );
     expect(checked.ok).toBe(true);
     if (checked.ok) expect(checked.entry.taskId).toBe("task-1");
+  });
+});
+
+describe("advanceMirror", () => {
+  it("moves the local copy with what applied so the next inverse snapshots it", () => {
+    const timeline = makeTimeline();
+    const changeset = makeChangeset();
+    const marker = tryHistoryEntry(
+      changeset,
+      changeset.items[0]!,
+      timeline,
+      "agent",
+      "2026-10-31T12:00:00.000Z",
+      "task-1",
+      "agent",
+    );
+    const trim = tryHistoryEntry(
+      changeset,
+      changeset.items[1]!,
+      timeline,
+      "agent",
+      "2026-10-31T12:00:00.000Z",
+      "task-1",
+      "agent",
+    );
+    if (!marker.ok || !trim.ok) throw new Error("fixtures must invert");
+
+    const next = advanceMirror(timeline, [marker.entry, trim.entry]);
+    expect(next.markers.map((entry) => entry.id)).toEqual(["mark-hook-beat"]);
+    expect(next.tracks[0]!.clips[0]!.timelineRange.start).toEqual({ value: 12, rate: 24 });
+    // The input mirror is untouched: the advance is a copy.
+    expect(timeline.markers).toEqual([]);
+    expect(timeline.tracks[0]!.clips[0]!.timelineRange.start).toEqual({ value: 0, rate: 24 });
+  });
+
+  it("leaves the mirror alone with no entries", () => {
+    const timeline = makeTimeline();
+    expect(advanceMirror(timeline, [])).toBe(timeline);
   });
 });
 
