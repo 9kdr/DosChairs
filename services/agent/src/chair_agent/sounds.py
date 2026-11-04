@@ -377,6 +377,32 @@ def _kinds_for_brief(brief: str) -> list[str]:
             if any(w in lowered for w in words)] or ["riser", "whoosh"]
 
 
+# Kinds whose transient is the END of the file: they lead into a cut or
+# downbeat, so start = moment - duration. Hit kinds start ON the moment.
+_PRE_HIT_KINDS = frozenset({"riser", "reverse-swell", "whoosh"})
+
+
+def _cue_start(
+    kind: str, moment: float, duration: float, used: Sequence[float],
+) -> float | None:
+    """Start time for one cue, or None when it must be skipped.
+
+    Pre-hit cues end on the moment (start = moment - duration; None when that
+    lands before 0). None also when the transient (the moment itself) falls
+    within 0.1s of an already placed one — one cue per moment.
+    """
+    transient = round(moment, 3)
+    if kind in _PRE_HIT_KINDS:
+        start = round(moment - duration, 3)
+        if start < 0:
+            return None
+    else:
+        start = transient
+    if any(abs(transient - taken) <= 0.1 for taken in used):
+        return None
+    return start
+
+
 def pick_cues_rules(
     brief: str,
     context: CueContext,
@@ -387,25 +413,39 @@ def pick_cues_rules(
         raise ValueError("brief must be a non-empty string")
     cues: list[Cue] = []
     used_kinds: set[str] = set()
+    used_moments: list[float] = []
     moments = list(context.cuts[:4]) or list(context.beats[:4]) or [0.0]
     for kind in _kinds_for_brief(brief):
         if kind in used_kinds:
             continue
-        match = next(
-            (e for e in entries if _KIND_TAGS[kind] & set(e.tags)), None,
-        ) or next((e for e in entries if e.tags), None)
-        if match is None:
+        tagged = [e for e in entries if _KIND_TAGS[kind] & set(e.tags)]
+        tagged_ids = {e.id for e in tagged}
+        candidates = tagged + [e for e in entries if e.tags and e.id not in tagged_ids]
+        if not candidates:
             continue
-        start = _snap_to_beat(moments[len(cues) % len(moments)], context.beats)
-        duration = match.duration or 1.0
-        if _covers_dialogue(start, duration, context.words):
-            continue
-        gain = -14.0 if kind == "impact" else -10.0
-        cues.append(Cue(
-            entry_id=match.id, kind=kind, start_seconds=start, gain_db=gain,
-            reason=f"{kind} from {match.name} lands on the beat at {start:.2f}s.",
-        ))
-        used_kinds.add(kind)
+        for attempt in range(len(moments)):
+            moment = _snap_to_beat(
+                moments[(len(cues) + attempt) % len(moments)], context.beats,
+            )
+            placed = False
+            for match in candidates:
+                duration = match.duration or 1.0
+                start = _cue_start(kind, moment, duration, used_moments)
+                if start is None:  # clamped below 0, or moment already taken
+                    continue
+                if _covers_dialogue(start, duration, context.words):
+                    continue
+                gain = -14.0 if kind == "impact" else -10.0
+                cues.append(Cue(
+                    entry_id=match.id, kind=kind, start_seconds=start, gain_db=gain,
+                    reason=f"{kind} from {match.name} lands on the beat at {start:.2f}s.",
+                ))
+                used_moments.append(round(moment, 3))
+                used_kinds.add(kind)
+                placed = True
+                break
+            if placed:  # each moment gets at most one cue; otherwise try the next
+                break
         if len(cues) >= 3:  # less is more: never stack cues
             break
     return cues
@@ -425,7 +465,9 @@ def build_cue_messages(
         "Reply with a JSON array: "
         '[{"entry_id": "<id>", "kind": "<cue kind>", '
         '"start_seconds": <number>, "gain_db": <number <= 0>, '
-        '"reason": "<one line>"}]. At most 3 cues.',
+        '"reason": "<one line>"}]. At most 3 cues. '
+        "start_seconds is the landing moment (the beat or cut): riser, "
+        "reverse-swell, and whoosh end on it; tape-stop and impact start on it.",
         f"Cuts at seconds: {context.cuts[:8] or 'none'}",
         f"Beat grid seconds: {context.beats[:16] or 'none'}",
         f"Transcript words: {len(context.words)} spans (never cover them)",
@@ -440,6 +482,37 @@ def build_cue_messages(
         Message(role="developer", content="\n".join(lines)),
         Message(role="user", content=brief),
     ]
+
+
+def normalize_cues(
+    cues: Sequence[Cue],
+    context: CueContext,
+    entries: Sequence[SoundEntry],
+) -> list[Cue]:
+    """Enforce the taste rules on model cues with the same helper as rules.
+
+    start_seconds names the landing moment: pre-hit kinds back up so they end
+    on it, hit kinds start on it. Colliding (within 0.1s) or dialogue-covering
+    cues are dropped.
+    """
+    by_id = {entry.id: entry for entry in entries}
+    kept: list[Cue] = []
+    used_moments: list[float] = []
+    for cue in cues:
+        entry = by_id.get(cue.entry_id)
+        if entry is None:
+            continue
+        duration = entry.duration or 1.0
+        moment = _snap_to_beat(cue.start_seconds, context.beats)
+        start = _cue_start(cue.kind, moment, duration, used_moments)
+        if start is None:
+            continue
+        if _covers_dialogue(start, duration, context.words):
+            continue
+        used_moments.append(round(moment, 3))
+        kept.append(cue if cue.start_seconds == start
+                    else cue.model_copy(update={"start_seconds": start}))
+    return kept
 
 
 def _parse_cue_completion(text: str, entries: Sequence[SoundEntry]) -> list[Cue]:
@@ -473,7 +546,8 @@ def pick_cues(
     if client is not None:
         try:
             completion = client.execute(build_cue_messages(brief, context, entries))
-            cues = _parse_cue_completion(completion.text, entries)
+            raw = _parse_cue_completion(completion.text, entries)
+            cues = normalize_cues(raw, context, entries)
             _note_pick()
             return cues, "model"
         except Exception as error:

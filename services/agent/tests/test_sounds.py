@@ -82,6 +82,67 @@ def test_rules_pick_lands_on_beat_with_reasons(library: Path) -> None:
     assert all(item.status == "pending" for item in changeset.items)
 
 
+def test_rules_pre_hit_ends_on_the_moment(library: Path) -> None:
+    entries = sounds.refresh_library()
+    by_id = {entry.id: entry for entry in entries}
+    context = sounds.CueContext(cuts=[2.0], beats=[1.0, 2.0, 3.0], words=[])
+    cues, _ = sounds.pick_cues("riser build into the downbeat", context, entries)
+    assert cues and cues[0].kind == "riser"
+    duration = by_id[cues[0].entry_id].duration or 1.0
+    assert cues[0].start_seconds == pytest.approx(2.0 - duration, abs=0.01)
+    assert cues[0].start_seconds + duration == pytest.approx(2.0, abs=0.01)
+
+
+def test_rules_no_stacked_transients_on_one_moment(library: Path) -> None:
+    entries = sounds.refresh_library()
+    context = sounds.CueContext(cuts=[2.0], beats=[2.0], words=[])
+    cues, _ = sounds.pick_cues(
+        "tape stop at the hard cut, then a riser build into it", context, entries,
+    )
+    kinds = {cue.kind for cue in cues}
+    assert "tape-stop" in kinds
+    assert not ({"tape-stop", "riser"} <= kinds), \
+        "one moment holds one transient: the riser must move on or drop"
+    by_id = {entry.id: entry for entry in entries}
+    transients = [
+        cue.start_seconds + (by_id[cue.entry_id].duration or 1.0)
+        if cue.kind in ("riser", "reverse-swell", "whoosh")
+        else cue.start_seconds
+        for cue in cues
+    ]
+    for first in range(len(transients)):
+        for second in range(first + 1, len(transients)):
+            assert abs(transients[first] - transients[second]) > 0.1
+
+
+def test_model_cues_are_normalized_not_stacked(library: Path) -> None:
+    entries = sounds.refresh_library()
+    by_id = {entry.id: entry for entry in entries}
+    riser = next(e for e in entries if "riser" in e.tags)
+    hit = next(e for e in entries if "tape" in e.tags)
+
+    class FakeClient:
+        def execute(self, messages):
+            return Completion(model="muse-spark-1", text=json.dumps([
+                {"entry_id": riser.id, "kind": "riser",
+                 "start_seconds": 3.0, "gain_db": -10.0,
+                 "reason": "Riser into the downbeat at 3.00s."},
+                {"entry_id": hit.id, "kind": "tape-stop",
+                 "start_seconds": 3.0, "gain_db": -10.0,
+                 "reason": "Tape-stop on the same downbeat at 3.00s."},
+            ]))
+
+    context = sounds.CueContext(cuts=[3.0], beats=[3.0], words=[])
+    cues, picker = sounds.pick_cues(
+        "riser and tape stop on the downbeat", context, entries, client=FakeClient(),  # type: ignore[arg-type]
+    )
+    assert picker == "model"
+    assert len(cues) == 1, "the stacked transient must be dropped"
+    assert cues[0].kind == "riser"
+    duration = by_id[cues[0].entry_id].duration or 1.0
+    assert cues[0].start_seconds == pytest.approx(3.0 - duration, abs=0.01)
+
+
 def test_rules_pick_leaves_dialogue_clear(library: Path) -> None:
     entries = sounds.refresh_library()
     words = [{"word": "hello", "start": 1.9, "end": 2.4}]
