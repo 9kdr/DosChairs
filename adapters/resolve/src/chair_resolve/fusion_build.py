@@ -16,28 +16,45 @@ from __future__ import annotations
 from typing import Any
 
 LAYOUT_DX = 2
-# Flow rows in FlowView grid units (measured live: 1 x-unit is 110
-# Pos-pixels, 1 y-unit is 33, off the (55, 16) origin; a node fills
-# exactly 1x1). The spine (media + merges) runs left to right at y=0,
-# each node kind gets its own lane, and every tool gets its own column
-# with a column to spare, so no two nodes can overlap.
-LANE_Y = {
-    "spine": 0,
-    "merge": 0,
-    "source": -4,
-    "look": -4,
-    "mask": -8,
-    "transform": 4,
-    "xpath": 6,
-    "fx": 8,
-}
+# Flow positions in FlowView grid units (measured live: 1 x-unit is 110
+# Pos-pixels, 1 y-unit is 33; a node fills exactly 1x1, so a pitch of 2
+# leaves about one node of air between columns and rows).
+#
+# The layout is automatic, never the model: this pure function decides
+# every position from the graph alone, and anything position-like on the
+# spec is ignored. The main spine (MediaIn, merges, MediaOut) runs left
+# to right on row 0; every layer's side chain (mask, source, effects,
+# transform) sits on the side row just above, each merge directly below
+# its own transform. Columns are unique per tool, so nothing overlaps,
+# and a re-applied piece lays the full graph out again from scratch.
+SPINE_ROW = 0
+SIDE_ROW = -2
 
 
 def layout_plan(plan: dict[str, Any]) -> dict[str, tuple[int, int]]:
-    """Plan tools -> Flow positions. Pure: column per tool, lane per role."""
+    """Plan tools -> Flow positions. Pure and deterministic."""
+    side = [t for t in plan["tools"] if t.get("role") not in ("spine", "merge")]
+    merges = [t for t in plan["tools"] if t.get("role") == "merge"]
+    media = [t for t in plan["tools"] if t.get("role") == "spine"]
     positions: dict[str, tuple[int, int]] = {}
-    for index, tool in enumerate(plan["tools"]):
-        positions[tool["name"]] = (index * LAYOUT_DX, LANE_Y.get(tool.get("role", ""), 0))
+    if media:
+        positions[media[0]["name"]] = (0, SPINE_ROW)
+    x = LAYOUT_DX
+    for tool in side:
+        positions[tool["name"]] = (x, SIDE_ROW)
+        x += LAYOUT_DX
+    xf_x_by_layer = {
+        t["layer"]: positions[t["name"]][0] for t in side if t.get("role") == "transform"
+    }
+    last_merge_x = 0
+    for merge in merges:
+        mx = xf_x_by_layer.get(merge.get("layer"))
+        if mx is None:  # defensive: a merge with no transform keeps order
+            mx = last_merge_x + LAYOUT_DX
+        positions[merge["name"]] = (mx, SPINE_ROW)
+        last_merge_x = max(last_merge_x, mx)
+    if len(media) > 1:
+        positions[media[-1]["name"]] = (last_merge_x + LAYOUT_DX, SPINE_ROW)
     return positions
 
 

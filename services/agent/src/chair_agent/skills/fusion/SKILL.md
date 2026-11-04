@@ -13,6 +13,26 @@ each with `params` and `curves`. The builder maps it to native tools,
 builds it tool-by-tool on a NEW comp version (never touching the
 person's existing comp), and lays the Flow out left to right.
 
+## Native first, custom last
+
+Prefer what Resolve already ships, in this order: the Effects Library
+title or generator for the job, a Fusion title, Text+ with modifiers,
+then a custom piece from this builder. Name the preset you used.
+
+## Ranges and spans (the adapter owns the calls)
+
+- An effect over a TIME RANGE on one track wants an adjustment clip.
+  Resolve scripting cannot create one, so declare the range and let
+  the adapter pick the fallback from its capability manifest.
+- An effect spanning SEVERAL CLIPS wants a Fusion clip: one composition
+  over the range. The adapter owns combining the clips (Resolve:
+  `timeline.CreateFusionClip`); titles and generators arrive via
+  `InsertFusionTitleIntoTimeline`, `InsertFusionGeneratorIntoTimeline`,
+  and `InsertFusionCompositionIntoTimeline`.
+- Editor specifics live behind `adapters/<editor>` and its manifest,
+  never in section-agent prompts, so Kdenlive and OTIO plug in later
+  with their own fallbacks.
+
 ## Safe native tools
 
 | You write | Builder makes |

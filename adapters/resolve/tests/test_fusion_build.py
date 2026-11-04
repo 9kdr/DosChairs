@@ -28,27 +28,67 @@ def _spline_frames(text: str, tool: str) -> list[int]:
     return sorted(int(match.group(1)) for match in re.finditer(r"\[(\d+)\] = ", block.group(1)))
 
 
-def test_layout_runs_left_to_right_with_one_row_per_kind() -> None:
-    positions = layout_plan(spec_to_plan(_spec()))
-    names = [tool["name"] for tool in spec_to_plan(_spec())["tools"]]
+def test_layout_spine_with_side_row_above() -> None:
+    plan = spec_to_plan(_spec())
+    positions = layout_plan(plan)
+    names = [tool["name"] for tool in plan["tools"]]
     assert names[0] == "MediaIn1" and names[-1] == "MediaOut1"
     assert positions["MediaIn1"] == (0, 0)
     assert positions["MediaOut1"][1] == 0
-    assert positions["MediaOut1"][0] > positions["MediaIn1"][0]
-    xs = [positions[name][0] for name in names]
-    assert xs == sorted(xs)  # build order reads left to right
+    assert positions["MediaOut1"][0] == max(x for x, _ in positions.values())
     assert len(set(positions.values())) == len(names)  # nothing overlaps
-    assert positions["Merge_bg"][1] == 0 == positions["Merge_ball"][1]
-    assert positions["Bg_bg"][1] == positions["Bg_ball"][1] != 0
-    assert positions["Mask_bg"][1] == positions["Mask_ball"][1]
-    assert positions["Xf_bg"][1] == positions["Xf_title"][1]
-    rows = {
-        positions["Bg_bg"][1],
-        positions["Mask_bg"][1],
-        positions["Xf_bg"][1],
-        positions["Merge_bg"][1],
-    }
-    assert len(rows) == 4  # background, mask, transform, merge each own a row
+    merges = [t for t in plan["tools"] if t["role"] == "merge"]
+    assert [positions[m["name"]][1] for m in merges] == [0] * len(merges)
+    merge_xs = [positions[m["name"]][0] for m in merges]
+    assert merge_xs == sorted(merge_xs)  # spine runs left to right
+    side = [t for t in plan["tools"] if t["role"] not in ("spine", "merge")]
+    assert {positions[t["name"]][1] for t in side} == {-2}  # one side row
+    side_xs = [positions[t["name"]][0] for t in side]
+    assert side_xs == sorted(side_xs)  # plan order reads left to right
+    for merge in merges:  # each merge sits below its own transform
+        xf = next(t for t in side if t["layer"] == merge["layer"] and t["role"] == "transform")
+        assert positions[merge["name"]][0] == positions[xf["name"]][0]
+
+
+def test_layout_is_deterministic_and_ignores_positions() -> None:
+    plan = spec_to_plan(_spec())
+    assert layout_plan(plan) == layout_plan(spec_to_plan(_spec()))
+    for tool in plan["tools"]:
+        tool["pos"] = [999, 999]
+        tool["x"] = 999
+        tool["y"] = 999
+    assert layout_plan(plan) == layout_plan(spec_to_plan(_spec()))
+
+
+def test_layout_15_nodes_stays_bounded() -> None:
+    tools = [{"name": "MediaIn1", "role": "spine", "layer": None}]
+    for layer in range(4):
+        lid = f"L{layer}"
+        tools += [
+            {"name": f"Bg_{lid}", "role": "source", "layer": lid},
+            {"name": f"Xf_{lid}", "role": "transform", "layer": lid},
+            {"name": f"Merge_{lid}", "role": "merge", "layer": lid},
+        ]
+    tools += [
+        {"name": "Mask_L0", "role": "mask", "layer": "L0"},
+        {"name": "MediaOut1", "role": "spine", "layer": None},
+    ]
+    assert len(tools) == 15
+    positions = layout_plan({"tools": tools})
+    assert len(set(positions.values())) == 15
+    width = max(x for x, _ in positions.values()) - min(x for x, _ in positions.values())
+    height = max(y for _, y in positions.values()) - min(y for _, y in positions.values())
+    assert width <= 24  # about one Flow screen wide at rest zoom
+    assert height <= 4  # spine plus side row, nothing sprawling
+
+
+def test_rebuild_lays_full_graph_out_again() -> None:
+    item = FakeItem()
+    plan = spec_to_plan(_spec())
+    first = build_comp(item, plan)
+    second = build_comp(item, plan)
+    assert first["layout"] is True and second["layout"] is True
+    assert item.comps["Comp 2"].flow.positions == item.comps["Comp 3"].flow.positions
 
 
 def test_spline_table_carries_easing_and_handles() -> None:
