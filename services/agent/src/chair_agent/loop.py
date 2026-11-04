@@ -10,6 +10,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from chair_agent import sounds
 from chair_agent.beats import StoryPlan
 from chair_agent.client import ModelClient
 from chair_agent.dispatch import (
@@ -18,7 +19,6 @@ from chair_agent.dispatch import (
     build_sidecar_tools,
     dispatch_spans,
 )
-from chair_agent import sounds
 from chair_agent.edit_ops import build_changeset
 from chair_agent.executor import (
     SfxFile,

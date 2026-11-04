@@ -423,6 +423,7 @@ class JobStore:
         | SynthRequest | TapeStopRequest,
     ) -> dict:
         synth: dict | None = None
+        source: Path | None = None
         if tool in FFMPEG_TOOLS:
             if not isinstance(request, MediaRequest):
                 raise ValueError(f"{tool} needs source and time fields")
@@ -467,8 +468,6 @@ class JobStore:
                     raise ValueError("tape_stop needs source, at, and duration fields")
                 synth = {"at": request.at, "duration": request.duration}
                 source = Path(request.source).expanduser().resolve()
-                if not source.is_file():
-                    raise ValueError(f"source is not a file: {source}")
             time_s = None
             threshold = DEFAULT_SCENE_THRESHOLD
             min_shot = DEFAULT_MIN_SHOT
@@ -476,12 +475,10 @@ class JobStore:
             music = None
         else:
             raise ValueError(f"unknown tool: {tool}")
-        if source is None and tool not in SYNTH_TOOLS:
-            raise ValueError(f"{tool} needs a source file")
-        if source is not None:
-            source = Path(source).expanduser().resolve()
-            if not source.is_file():
-                raise ValueError(f"source is not a file: {source}")
+        if tool not in SYNTH_TOOLS:
+            source = Path(request.source).expanduser().resolve()
+        if source is not None and not source.is_file():
+            raise ValueError(f"source is not a file: {source}")
         job = JobRecord(
             id=uuid.uuid4().hex,
             tool=tool,

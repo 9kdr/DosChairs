@@ -708,8 +708,8 @@ def _timeline_start(clip: dict[str, Any], label: str) -> float:
     try:
         start = clip["timelineRange"]["start"]
         return float(start["value"]) / float(start["rate"])
-    except (KeyError, TypeError, ValueError, ZeroDivisionError):
-        raise ValueError(f"Clip {label!r} has no timeline start.")
+    except (KeyError, TypeError, ValueError, ZeroDivisionError) as error:
+        raise ValueError(f"Clip {label!r} has no timeline start.") from error
 
 
 def _find_clip(tracks: list[Any], clip_id: str) -> dict[str, Any] | None:
