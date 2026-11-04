@@ -23,7 +23,6 @@ import {
   inputForTurn,
   isThreadDemo,
   landedFor,
-  landedRowsFor,
   liveJobEntries,
   liveRowsForJobs,
   liveSubmitError,
@@ -38,12 +37,15 @@ import {
   POLL_FAIL_LIMIT,
   recordLiveJob,
   redoLandedWrite,
+  rememberSettledTask,
   replyForSubmitError,
   resetLiveJobs,
   retryLandedWrite,
   retryLiveTask,
   runTurn,
   selectionForNote,
+  settledStatusFor,
+  settledTaskRows,
   stopLiveTask,
   submitLiveTurn,
   taskForLiveJob,
@@ -578,6 +580,26 @@ describe("live task list", () => {
   });
 });
 
+describe("settled tasks", () => {
+  it("reads the terminal outcome as a short status line", () => {
+    expect(settledStatusFor(job("completed"))).toBe("Done");
+    expect(settledStatusFor(job("failed", { error: "no faces found\nframe 12" }))).toBe(
+      "Failed: no faces found",
+    );
+    expect(settledStatusFor(job("canceled"))).toBe("Canceled");
+    expect(settledStatusFor(job("moderated"))).toBe("Stopped");
+  });
+
+  it("keeps settled rows oldest first until reset", () => {
+    expect(settledTaskRows()).toEqual([]);
+    rememberSettledTask({ ...task, id: "task-a", status: "Done" });
+    rememberSettledTask({ ...task, id: "task-b", status: "Done" });
+    expect(settledTaskRows().map((row) => row.id)).toEqual(["task-a", "task-b"]);
+    resetLiveJobs();
+    expect(settledTaskRows()).toEqual([]);
+  });
+});
+
 describe("waiting and failed rows", () => {
   const prompted: RunningTask = {
     id: "task-prompt-7",
@@ -844,14 +866,12 @@ describe("finished sound writes", () => {
     expect(landed.line).toBe("Added to Demo Cut (sound copy) · 1 skipped");
     expect(landed.detail).toContain("Skipped sting: no sting in the library");
     expect(landed.detail).toContain("Fallback: set the Fairlight ducking by hand");
-    expect(landedRowsFor([task])).toMatchObject([{ id: task.id, status: landed.line }]);
   });
 
   it("records a failed write the card can retry", async () => {
     const fetchFn = reply(503, { error: "Resolve is not running" });
     await applyFinishedSound({ requestId: "req_sound1", task, job: soundJob() }, { fetchFn });
     expect(landedFor(task.id)).toMatchObject({ state: "failed", line: "Failed: Resolve is not running" });
-    expect(landedRowsFor([task])).toHaveLength(1);
     retryLandedWrite(task.id, { fetchFn: reply(200, appliedBody) });
     await vi.waitFor(() => expect(landedFor(task.id)?.state).toBe("landed"));
   });
@@ -862,7 +882,6 @@ describe("finished sound writes", () => {
     await applyFinishedSound({ requestId: "req_plain", task, job: plain }, { fetchFn });
     expect(fetchFn).not.toHaveBeenCalled();
     expect(landedFor(task.id)).toBeUndefined();
-    expect(landedRowsFor([task])).toEqual([]);
   });
 
   it("undoes back to the original and redoes as a new copy", async () => {

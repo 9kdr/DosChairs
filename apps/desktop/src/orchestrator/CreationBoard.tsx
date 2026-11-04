@@ -21,7 +21,7 @@ export type CreationBoardProps = {
  */
 export function CreationBoard(props: CreationBoardProps) {
   return (
-    <div className="flex h-full min-h-0 flex-col overflow-hidden p-4 pb-[9.5rem]">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden p-4">
       <PiecesShelf
         clips={props.clips}
         onApplyPiece={props.onApplyEffect}

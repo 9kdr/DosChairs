@@ -293,10 +293,24 @@ export function liveJobEntries(): [string, RunningTask][] {
   return [...liveJobs.entries()];
 }
 
+/** Final rows for settled tasks, oldest first, for the board's Recent group. */
+const settledRows = new Map<string, RunningTask>();
+
+/** Remember a settled task's final row so the Recent group can show it. */
+export function rememberSettledTask(task: RunningTask): void {
+  settledRows.set(task.id, task);
+}
+
+/** Settled tasks, oldest first. */
+export function settledTaskRows(): RunningTask[] {
+  return [...settledRows.values()];
+}
+
 /** Test support: clear remembered jobs, failures, and settled tasks. */
 export function resetLiveJobs(): void {
   liveJobs.clear();
   settledTasks.clear();
+  settledRows.clear();
   submitErrors.clear();
   pollFailures.clear();
   appliedJobs.clear();
@@ -623,6 +637,20 @@ export async function redoLandedWrite(taskId: string, options: ApplyOptions = {}
   return true;
 }
 
+/** The Recent row's status line for a terminal job: short, no machinery. */
+export function settledStatusFor(job: AgentJob): string {
+  switch (job.status) {
+    case "failed":
+      return `Failed: ${firstLine(job.error ?? "failed")}`;
+    case "canceled":
+      return "Canceled";
+    case "moderated":
+      return "Stopped";
+    default:
+      return "Done";
+  }
+}
+
 /** One row per task from a live job. Null when the job already finished. */
 export function taskForLiveJob(job: AgentJob, task: RunningTask): RunningTask | null {
   if (isAgentTerminal(job.status)) return null;
@@ -667,15 +695,6 @@ export function liveRowsForJobs(entries: LiveJobEntry[]): {
 export function stopLiveTask(client: ServicesClient, task: RunningTask): Promise<AgentJob | null> {
   if (task.jobId === undefined) return Promise.resolve(null);
   return client.cancelAgentJob(task.jobId);
-}
-
-/** Cards for finished tasks that wrote to Resolve: what landed, with Undo and Redo. */
-export function landedRowsFor(tasks: readonly RunningTask[]): RunningTask[] {
-  return tasks.flatMap((task) => {
-    const landed = landedByTask.get(task.id);
-    if (!landed) return [];
-    return [{ ...task, status: landed.line, jobId: landed.requestId, jobStatus: "completed" as const }];
-  });
 }
 
 const LIVE_POLL_MS = 2000;
@@ -785,6 +804,19 @@ export function useLiveTasks(createdTasks: readonly RunningTask[], refreshKey?: 
           }
         }
         const merged = liveRowsForJobs(entries);
+        // Finished tasks stay for the Recent group: their final row keeps
+        // the terminal outcome, so nothing that ran vanishes from the board.
+        for (const entry of entries) {
+          const job = entry.job;
+          if (job && isAgentTerminal(job.status)) {
+            rememberSettledTask({
+              ...entry.task,
+              status: settledStatusFor(job),
+              jobId: entry.requestId,
+              jobStatus: job.status,
+            });
+          }
+        }
         for (const requestId of merged.forget) forgetLiveJob(requestId);
         for (const taskId of merged.settle) {
           settleLiveTask(taskId);
@@ -794,7 +826,7 @@ export function useLiveTasks(createdTasks: readonly RunningTask[], refreshKey?: 
           void maybeApplyFinishedSound(entry);
           void maybeApplyFinishedCut(entry);
         }
-        if (live) setRows([...waitingRowsFor(tasks), ...stale, ...merged.rows, ...landedRowsFor(tasks)]);
+        if (live) setRows([...waitingRowsFor(tasks), ...stale, ...merged.rows]);
       } finally {
         ticking = false;
       }

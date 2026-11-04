@@ -1,19 +1,12 @@
-import { ArrowLeft, BlocksIcon, HomeIcon, MessageSquareIcon, PanelRight, X } from "lucide-react";
+import { ArrowLeft, HistoryIcon, HomeIcon, PanelRight, X } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { ChatPrompt } from "@/components/chat-prompt";
 import { ServiceStatus } from "@/components/service-status";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTab } from "@/components/ui/tabs";
 import type { Timeline } from "@chair/timeline-ir";
-import {
-  Tooltip,
-  TooltipCreateHandle,
-  TooltipPopup,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "@/components/ui/tooltip";
 import { formatCutDuration } from "@/lib/format";
-import { cn } from "@/lib/utils";
 import type { EditorId } from "./home/data";
 import { EditorLogo } from "./home/EditorLogo";
 import { buildUndoChangeset } from "@chair/timeline-ir";
@@ -22,6 +15,7 @@ import { CreationBoard } from "./orchestrator/CreationBoard";
 import { parseAction } from "./orchestrator/actions";
 import { PlanDoc } from "./orchestrator/PlanDoc";
 import { RunningTasks, type RunningTask } from "./orchestrator/RunningTasks";
+import { ShelfPieces } from "./orchestrator/ShelfPieces";
 import { TaskChat, UNDO_PROMPT } from "./orchestrator/TaskChat";
 import { setupTask } from "./orchestrator/taskSetup";
 import {
@@ -33,6 +27,7 @@ import {
 } from "./orchestrator/taskThread";
 import { PanelDrawer } from "./PanelDrawer";
 import { HistoryCard } from "./project/HistoryCard";
+import { historyKeyAction, historyKeyAllowed } from "./project/history-keys";
 import { historyForTask, useProject } from "./project/store";
 import { SettingsScreen } from "./settings/SettingsScreen";
 
@@ -42,16 +37,6 @@ type ProjectShellProps = {
   editorId?: EditorId;
   onHome: () => void;
 };
-
-/** Chat first: the thread is the screen, Pieces is the shelf beside it. */
-const SECTIONS = [
-  { id: "chat", label: "Chat", icon: MessageSquareIcon },
-  { id: "pieces", label: "Pieces", icon: BlocksIcon },
-] as const;
-
-type DockTipPayload = { label: string };
-
-const dockTooltip = TooltipCreateHandle<DockTipPayload>();
 
 /** Suggested prompts that fill the composer on the empty board. */
 const SUGGESTIONS = [
@@ -81,28 +66,27 @@ function cutSummary(timeline: Timeline | null): string | null {
   return `${trackBit} · ${clipBit} · ${formatCutDuration(seconds)}`;
 }
 
-type SectionId = (typeof SECTIONS)[number]["id"];
-type SideTab = "plan" | "shelf" | "history";
+/** Main-area pages: the board, or one full page with a Back button. */
+type Page = "board" | "maker" | "history";
+type SideTab = "plan" | "shelf";
 type PlanMode = "edit" | "talk";
 
 /**
- * The tabbed Plan/Shelf/History card, shared by the side column and the
- * narrow drawer. In the drawer, one header row holds the tabs plus the
- * close button; the side column has no close button.
+ * The tabbed Plan/Shelf card, shared by the side column and the narrow
+ * drawer. In the drawer, one header row holds the tabs plus the close
+ * button; the side column has no close button.
  */
 function SidePanel({
   tab,
   onTab,
   plan,
   shelf,
-  history,
   onClose,
 }: {
   tab: SideTab;
   onTab: (tab: SideTab) => void;
   plan: ReactNode;
   shelf: ReactNode;
-  history: ReactNode;
   onClose?: () => void;
 }) {
   return (
@@ -115,11 +99,10 @@ function SidePanel({
         <TabsList
           variant="underline"
           size="sm"
-          className="grid w-full flex-1 grid-cols-3 border-b border-line"
+          className="grid w-full flex-1 grid-cols-2 border-b border-line"
         >
           <TabsTab value="plan">Plan</TabsTab>
           <TabsTab value="shelf">Shelf</TabsTab>
-          <TabsTab value="history">History</TabsTab>
         </TabsList>
         {onClose ? (
           <Button
@@ -136,15 +119,15 @@ function SidePanel({
         ) : null}
       </div>
       <div className="mt-3 min-h-0 flex-1 overflow-hidden">
-        {tab === "plan" ? plan : tab === "shelf" ? shelf : history}
+        {tab === "plan" ? plan : shelf}
       </div>
     </Tabs>
   );
 }
 
-/** Chat in the center, Plan/Shelf/History in the side panel. */
+/** The board in the center, Plan/Shelf in the side panel. */
 export function ProjectShell({ projectId, projectName, editorId, onHome }: ProjectShellProps) {
-  const [section, setSection] = useState<SectionId>("chat");
+  const [page, setPage] = useState<Page>("board");
   const [sideTab, setSideTab] = useState<SideTab>("plan");
   const project = useProject(projectId, projectName);
   const [command, setCommand] = useState<{ id: number; text: string } | null>(null);
@@ -161,13 +144,6 @@ export function ProjectShell({ projectId, projectName, editorId, onHome }: Proje
   const [liveNonce, setLiveNonce] = useState(0);
   const liveTasks = useLiveTasks(createdTasks, liveNonce);
   const seen = useRef(0);
-  // The panel opens on Plan with no tasks and on History once one exists,
-  // until the person picks a tab themselves.
-  const sideTouched = useRef(false);
-  useEffect(() => {
-    if (sideTouched.current) return;
-    setSideTab(createdTasks.length > 0 ? "history" : "plan");
-  }, [createdTasks.length]);
 
   useEffect(() => {
     if (!command || seen.current === command.id) return;
@@ -237,6 +213,36 @@ export function ProjectShell({ projectId, projectName, editorId, onHome }: Proje
     setTaskChat(task);
   };
 
+  /** History as a full page. Closes any task thread, like the old dock did. */
+  const openHistoryPage = () => {
+    setTaskChat(null);
+    setTaskNote(null);
+    setPanelOpen(false);
+    setPage("history");
+  };
+
+  /** The Effect Maker as a full page, from the Shelf's Create button. */
+  const openMakerPage = () => {
+    setTaskChat(null);
+    setTaskNote(null);
+    setPanelOpen(false);
+    setPage("maker");
+  };
+
+  // u (and its shortcut twin) opens the History page from the board; the
+  // page itself keeps the undo behavior, unchanged.
+  useEffect(() => {
+    if (page !== "board" || taskChat || settingsOpen) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!historyKeyAllowed(event.target)) return;
+      if (historyKeyAction(event) !== "undo") return;
+      event.preventDefault();
+      openHistoryPage();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  });
+
   /** Retry a failed card: resubmit the turn, or re-fire a failed write. */
   const retryTask = (task: RunningTask) => {
     retryLiveTask(task.id);
@@ -270,14 +276,9 @@ export function ProjectShell({ projectId, projectName, editorId, onHome }: Proje
     })();
   };
 
-  // The Piece Maker takes the full width: the side panel steps aside while
-  // the Pieces section (or Settings) owns the screen.
-  const showSide = section !== "pieces" && !settingsOpen;
-
-  const pickSideTab = (value: SideTab) => {
-    sideTouched.current = true;
-    setSideTab(value);
-  };
+  // The Effect Maker takes the full width: the side panel steps aside
+  // while it (or Settings) owns the screen. History keeps the panel.
+  const showSide = page !== "maker" && !settingsOpen;
 
   const planPane = (
     <div className="h-full min-h-0 overflow-y-auto overscroll-contain">
@@ -295,22 +296,17 @@ export function ProjectShell({ projectId, projectName, editorId, onHome }: Proje
     </div>
   );
   const shelfPane = (
-    <AssetShelf
-      projectId={projectId}
-      clips={effectClips}
-      onApplyPiece={project.applyItem}
-      onUndoPiece={(itemId) => project.undoToHere(itemId)}
-      onOpenHistory={() => setSideTab("history")}
-      pieceRefusal={project.refusal?.reason ?? null}
-    />
-  );
-  const historyPane = (
-    <div className="h-full min-h-0 overflow-y-auto overscroll-contain">
-      <HistoryCard
-        entries={project.history}
-        onUndoEntry={(entry) => project.undoToHere(entry.itemId)}
-        onUndoLast={() => project.undoLast()}
+    <div className="flex h-full min-h-0 flex-col gap-3 overflow-hidden">
+      <AssetShelf
+        projectId={projectId}
+        clips={effectClips}
+        onApplyPiece={project.applyItem}
+        onUndoPiece={(itemId) => project.undoToHere(itemId)}
+        onOpenHistory={openHistoryPage}
+        pieceRefusal={project.refusal?.reason ?? null}
+        className="min-h-0 flex-1"
       />
+      <ShelfPieces onCreate={openMakerPage} className="min-h-0 flex-1" />
     </div>
   );
 
@@ -347,6 +343,23 @@ export function ProjectShell({ projectId, projectName, editorId, onHome }: Proje
           </span>
         ) : null}
         <div className="ml-auto flex shrink-0 items-center gap-1">
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button
+                  type="button"
+                  size="icon-sm"
+                  variant="ghost"
+                  aria-label="History"
+                  onClick={openHistoryPage}
+                  className="rounded-lg text-neutral-400 hover:bg-white/[0.06] hover:text-neutral-100"
+                />
+              }
+            >
+              <HistoryIcon />
+            </TooltipTrigger>
+            <TooltipPopup side="bottom">History</TooltipPopup>
+          </Tooltip>
           <Button
             type="button"
             size="icon-sm"
@@ -393,7 +406,7 @@ export function ProjectShell({ projectId, projectName, editorId, onHome }: Proje
               onUndoEntry={(entry) => project.undoToHere(entry.itemId)}
               onOpenSettings={() => setSettingsOpen(true)}
             />
-          ) : section === "chat" ? (
+          ) : page === "board" ? (
             <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden">
               <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
                 <div className="mx-auto flex w-full max-w-3xl flex-col gap-3 py-2 @max-[760px]:max-w-none">
@@ -411,7 +424,7 @@ export function ProjectShell({ projectId, projectName, editorId, onHome }: Proje
                   />
                 </div>
               </div>
-              <div className="mx-auto flex w-full max-w-3xl shrink-0 flex-col gap-2 pb-20 @max-[760px]:max-w-none">
+              <div className="mx-auto flex w-full max-w-3xl shrink-0 flex-col gap-2 @max-[760px]:max-w-none">
                 {createdTasks.length === 0 ? (
                   <div className="flex flex-wrap gap-1.5 px-1" role="group" aria-label="Suggested prompts">
                     {SUGGESTIONS.map((text) => (
@@ -442,16 +455,54 @@ export function ProjectShell({ projectId, projectName, editorId, onHome }: Proje
                 />
               </div>
             </div>
+          ) : page === "maker" ? (
+            <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-2 py-2 overscroll-contain">
+              <div className="mx-auto flex w-full max-w-4xl shrink-0">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  aria-label="Back to tasks"
+                  onClick={() => setPage("board")}
+                >
+                  <ArrowLeft />
+                  Back
+                </Button>
+              </div>
+              <div className="mx-auto min-h-0 w-full max-w-4xl flex-1">
+                <CreationBoard
+                  clips={effectClips}
+                  onApplyEffect={project.applyItem}
+                  onUndoEffect={(itemId) => project.undoToHere(itemId)}
+                  onOpenHistory={openHistoryPage}
+                  refusal={project.refusal?.reason ?? null}
+                  landings={project.landings}
+                  onRecordLanding={project.recordLanding}
+                />
+              </div>
+            </div>
           ) : (
-            <CreationBoard
-              clips={effectClips}
-              onApplyEffect={project.applyItem}
-              onUndoEffect={(itemId) => project.undoToHere(itemId)}
-              onOpenHistory={() => setSideTab("history")}
-              refusal={project.refusal?.reason ?? null}
-              landings={project.landings}
-              onRecordLanding={project.recordLanding}
-            />
+            <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-2 py-2 overscroll-contain">
+              <div className="mx-auto flex w-full max-w-4xl shrink-0">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  aria-label="Back to tasks"
+                  onClick={() => setPage("board")}
+                >
+                  <ArrowLeft />
+                  Back
+                </Button>
+              </div>
+              <div className="mx-auto w-full max-w-4xl">
+                <HistoryCard
+                  entries={project.history}
+                  onUndoEntry={(entry) => project.undoToHere(entry.itemId)}
+                  onUndoLast={() => project.undoLast()}
+                />
+              </div>
+            </div>
           )}
         </main>
         {showSide ? (
@@ -459,110 +510,19 @@ export function ProjectShell({ projectId, projectName, editorId, onHome }: Proje
           aria-label="Project panel"
           className="flex min-h-0 w-80 shrink-0 flex-col overflow-hidden rounded-card bg-card p-4 text-neutral-100 @max-[760px]:hidden xl:w-96"
         >
-          <SidePanel
-            tab={sideTab}
-            onTab={pickSideTab}
-            plan={planPane}
-            shelf={shelfPane}
-            history={historyPane}
-          />
+          <SidePanel tab={sideTab} onTab={setSideTab} plan={planPane} shelf={shelfPane} />
         </aside>
         ) : null}
         <PanelDrawer open={panelOpen} onClose={() => setPanelOpen(false)}>
           <SidePanel
             tab={sideTab}
-            onTab={pickSideTab}
+            onTab={setSideTab}
             plan={planPane}
             shelf={shelfPane}
-            history={historyPane}
             onClose={() => setPanelOpen(false)}
           />
         </PanelDrawer>
       </div>
-      <div
-        aria-hidden="true"
-        className="pointer-events-none absolute inset-x-0 bottom-0 z-10 h-24"
-        style={{
-          background: `linear-gradient(to top, var(--background) 0%, color-mix(in srgb, var(--background) 78%, transparent) 38%, transparent 100%)`, // taste-skill-ignore: neutral scrim keeps the dock legible over scrolled content.
-        }}
-      />
-      <TooltipProvider delay={220} closeDelay={120} timeout={500}>
-        <nav
-          aria-label="Project sections"
-          className="pointer-events-auto absolute inset-x-0 bottom-5 z-20 flex justify-center px-4"
-        >
-          <div
-            className={cn(
-              "flex h-12 max-w-full items-center gap-1 rounded-full px-2",
-              "bg-card/95 shadow-rim backdrop-blur-md",
-              "supports-[backdrop-filter]:bg-card/88",
-            )}
-          >
-            {SECTIONS.map((item) => {
-              const Icon = item.icon;
-              return (
-                <DockButton
-                  key={item.id}
-                  label={item.label}
-                  active={section === item.id}
-                  onClick={() => {
-                    setSection(item.id);
-                    setTaskChat(null);
-                    setTaskNote(null);
-                    setPanelOpen(false);
-                  }}
-                >
-                  <Icon />
-                </DockButton>
-              );
-            })}
-          </div>
-          <Tooltip handle={dockTooltip}>
-            {({ payload }) => (
-              <TooltipPopup side="top" sideOffset={10}>
-                {payload?.label}
-              </TooltipPopup>
-            )}
-          </Tooltip>
-        </nav>
-      </TooltipProvider>
     </section>
-  );
-}
-
-function DockButton({
-  label,
-  active,
-  children,
-  onClick,
-}: {
-  label: string;
-  active?: boolean;
-  children: ReactNode;
-  onClick: () => void;
-}) {
-  return (
-    <TooltipTrigger
-      handle={dockTooltip}
-      payload={{ label }}
-      delay={220}
-      closeDelay={120}
-      render={
-        <Button
-          type="button"
-          size="icon-sm"
-          variant="ghost"
-          aria-label={label}
-          aria-pressed={active}
-          onClick={onClick}
-          className={cn(
-            "relative size-9 rounded-full text-muted-foreground hover:bg-foreground/[0.06] hover:text-foreground",
-            active && "bg-foreground/[0.1] text-foreground",
-          )}
-        />
-      }
-    >
-      {children}
-    </TooltipTrigger>
   );
 }
