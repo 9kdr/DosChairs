@@ -141,10 +141,16 @@ def test_place_ograf_title_reports_whether_scripting_knows_it() -> None:
 
 
 def _fake_resolve_without_ograf_api(log: list):
+    counts: dict = {}
+
+    def _add_track(kind: str) -> bool:
+        counts[kind] = counts.get(kind, 0) + 1
+        return True
+
     timeline = types.SimpleNamespace(
         SetSettings=lambda settings: True,
-        GetTrackCount=lambda kind: 0,
-        AddTrack=lambda kind: True,
+        GetTrackCount=lambda kind: counts.get(kind, 0),
+        AddTrack=_add_track,
         SetTrackName=lambda kind, index, name: True,
         AddMarker=lambda *args: True,
     )
