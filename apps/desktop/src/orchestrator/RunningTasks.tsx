@@ -414,7 +414,7 @@ function TaskTile({
         onMouseUp={handlePointerUp}
         onClick={handleClick}
         onKeyDown={handleKeyDown}
-        className="dark group relative cursor-pointer overflow-hidden rounded-2xl bg-foreground/[0.03] data-[dragging]:opacity-64"
+        className="dark group relative cursor-pointer overflow-hidden rounded-card bg-card data-[dragging]:opacity-64"
       >
         {showDither ? (
           <DitherShader
@@ -422,18 +422,14 @@ function TaskTile({
             palette={["transparent", LANE_INK[task.lane]]}
             uniforms={{ taskSeed: seed }}
             speed={0.5}
-            animate={!frozen}
-            suspended={frozen}
+            animate={!frozen && !reduce}
+            suspended={frozen || Boolean(reduce)}
             stillTime={1.6}
             cell={3}
-            className="absolute inset-0 opacity-40"
+            className="absolute inset-0 opacity-35"
             style={{
-              maskImage:
-                "linear-gradient(to bottom, transparent, #000 14px, #000 calc(100% - 14px), transparent), linear-gradient(to right, transparent 66%, #000 84%)", // taste-skill-ignore: mask confines the dither sea to the tile's right edge, not a fill.
-              WebkitMaskImage:
-                "linear-gradient(to bottom, transparent, #000 14px, #000 calc(100% - 14px), transparent), linear-gradient(to right, transparent 66%, #000 84%)", // taste-skill-ignore: mask confines the dither sea to the tile's right edge, not a fill.
-              maskComposite: "intersect",
-              WebkitMaskComposite: "source-in",
+              maskImage: "linear-gradient(to right, transparent 30%, #000 65%)", // taste-skill-ignore: mask bleeds the dither flow in from the tile's right edge, not a fill.
+              WebkitMaskImage: "linear-gradient(to right, transparent 30%, #000 65%)", // taste-skill-ignore: mask bleeds the dither flow in from the tile's right edge, not a fill.
             }}
           />
         ) : null}
@@ -442,8 +438,7 @@ function TaskTile({
             aria-hidden
             className="pointer-events-none absolute inset-0"
             style={{
-              background:
-                "linear-gradient(to right, var(--card) 0%, var(--card) 66%, transparent 84%)", // taste-skill-ignore: neutral scrim keeps the task titles legible over the dither sea.
+              background: "linear-gradient(to right, var(--card) 0%, transparent 45%)", // taste-skill-ignore: neutral scrim keeps the task titles legible over the dither sea.
             }}
           />
         ) : null}
@@ -460,7 +455,7 @@ function TaskTile({
         <div className="relative flex flex-col gap-2 p-4">
           <div className="flex items-center justify-between gap-3">
             <div
-              className={cn("flex min-w-0 flex-1 items-center gap-2", showDither && "max-w-[64%]")}
+              className="flex min-w-0 flex-1 items-center gap-2"
             >
               {failed && !seen ? (
                 <span
@@ -700,12 +695,7 @@ export function RunningTasks({
   }
   const toggle = (id: string) => setExpandedId((current) => (current === id ? null : id));
   return (
-    <div
-      className={cn(
-        "@container flex flex-col gap-4 rounded-card bg-card p-4 text-neutral-100",
-        className,
-      )}
-    >
+    <div className={cn("@container flex flex-col gap-4 text-neutral-100", className)}>
       {working.length > 0 ? (
         <section aria-label="Working">
           <div className="flex items-center gap-2 px-1 pb-2">

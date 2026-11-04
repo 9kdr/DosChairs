@@ -35,7 +35,10 @@ export type PiecesShelfProps = {
   refusal?: string | null;
   landings?: Record<string, PieceLanding>;
   onRecordLanding?: (specId: string, landing: PieceLanding) => void;
-  /** Open the Effect Maker on a new piece instead of the list. */
+  /**
+   * Open the Effect Maker on a new piece instead of the list. Page
+   * context: the page owns Back, so the editor hides its own.
+   */
   startOnNewPiece?: boolean;
 };
 
@@ -123,16 +126,18 @@ export function PiecesShelf({
     return (
       <div className={cn("flex min-h-0 min-w-0 flex-1 flex-col gap-3", className)}>
         <div className="flex shrink-0 items-center gap-2">
-          <Button
-            type="button"
-            size="sm"
-            variant="ghost"
-            aria-label="Back to pieces"
-            onClick={() => setEditing(null)}
-          >
-            <ChevronLeftIcon />
-            Pieces
-          </Button>
+          {startOnNewPiece ? null : (
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              aria-label="Back to pieces"
+              onClick={() => setEditing(null)}
+            >
+              <ChevronLeftIcon />
+              Pieces
+            </Button>
+          )}
           <h2 className="min-w-0 truncate text-sm font-medium text-neutral-100">
             {editing.name}
           </h2>
