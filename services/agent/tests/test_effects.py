@@ -196,7 +196,7 @@ def test_http_generate_get_verify_and_health(isolated) -> None:
 
     monkeypatch_client = pytest.MonkeyPatch()
     monkeypatch_client.setattr(
-        "chair_agent.effects._effect_client", lambda: client,
+        "chair_agent.effects._model_client", lambda role: client,
     )
     monkeypatch_client.setattr(
         "chair_agent.client.load_settings",

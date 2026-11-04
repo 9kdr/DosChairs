@@ -303,10 +303,6 @@ def build_repair_messages(
     ]
 
 
-def _validation_messages(error: InvalidEffect) -> list[str]:
-    return [str(error)]
-
-
 def _model_client(role: str) -> ModelClient:
     from chair_agent.client import build_client, load_settings
 
@@ -322,10 +318,6 @@ def _model_client(role: str) -> ModelClient:
         return build_client()
     except Exception as error:
         raise InvalidEffect(f"effect model unavailable: {error}") from error
-
-
-def _effect_client() -> ModelClient:
-    return _model_client("generate")
 
 
 def _state_dir(env: Mapping[str, str] | None = None) -> Path:
@@ -401,7 +393,7 @@ def generate_effect(
         raise InvalidEffect("canvas width and height must be positive integers")
     if fps <= 0 or duration_sec <= 0:
         raise InvalidEffect("fps and durationSec must be positive numbers")
-    active = client if client is not None else _effect_client()
+    active = client if client is not None else _model_client("generate")
     messages = build_generate_messages(
         prompt, width=width, height=height, fps=fps,
         duration_sec=duration_sec, rig=rig, reference_image=reference_image,
@@ -417,7 +409,7 @@ def generate_effect(
             spec = validate_effect_spec(draft)
         except InvalidEffect as first_error:
             repair = active.execute(
-                build_repair_messages(draft, _validation_messages(first_error))
+                build_repair_messages(draft, [str(first_error)])
             )
             draft = _parse_spec_completion(repair.text)
             try:
