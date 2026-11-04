@@ -14,6 +14,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsList, TabsTab } from "@/components/ui/tabs";
 import { writeChairRefs } from "@/lib/chair-ref";
+import { ditherMaskStyle, matrixForSeed } from "@/lib/dither";
 import { cn } from "@/lib/utils";
 import type { ChangesetItem } from "@chair/timeline-ir";
 import type { PieceLanding } from "./effect-model";
@@ -47,6 +48,7 @@ const KIND_FILTERS: { id: KindFilter; label: string }[] = [
   { id: "effect", label: "Effects" },
   { id: "motion", label: "Motion" },
   { id: "sound", label: "Sound" },
+  { id: "look", label: "Looks" },
 ];
 
 /** The real reason a pieces load failed, in plain words. */
@@ -57,10 +59,11 @@ function failureText(failure: { kind: PiecesFailureKind; reason: string }): stri
 }
 
 /**
- * The one Pieces shelf: every macro, effect, motion, and sound piece the
- * agent knows, each with its kind. Opening or creating an effect-kind
- * piece shows the Effect Maker editor; other kinds expand in place with
- * their summary and controls. Rows drag out as piece refs for the brief.
+ * The one Pieces shelf: every macro, effect, motion, sound, and look
+ * piece the agent knows, each with its kind. Opening or creating an
+ * effect-kind piece shows the Effect Maker editor; other kinds expand
+ * in place with their summary and controls. Rows drag out as piece
+ * refs for the brief.
  */
 export function PiecesShelf({
   className,
@@ -150,31 +153,37 @@ export function PiecesShelf({
 
   return (
     <div className={cn("flex min-h-0 min-w-0 flex-1 flex-col gap-3", className)}>
-      <div className="flex shrink-0 flex-wrap items-center gap-2">
-        <span className="flex size-7 items-center justify-center rounded-lg bg-white/[0.06]">
-          <BlocksIcon className="size-4 text-neutral-300" aria-hidden="true" />
-        </span>
-        <h2 className="text-sm font-medium text-neutral-100">Pieces</h2>
-        <Tabs value={kindFilter} onValueChange={(value) => setKindFilter(value as KindFilter)}>
-          <TabsList size="sm">
+      <div className="flex shrink-0 flex-col gap-2">
+        <div className="flex items-center gap-2">
+          <span className="flex size-7 items-center justify-center rounded-lg bg-white/[0.06]">
+            <BlocksIcon className="size-4 text-neutral-300" aria-hidden="true" />
+          </span>
+          <h2 className="text-sm font-medium text-neutral-100">Pieces</h2>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            className="ml-auto"
+            title="Draft a new effect piece"
+            onClick={() => setEditing({ id: "new", name: "New piece" })}
+          >
+            <PlusIcon />
+            New piece
+          </Button>
+        </div>
+        <Tabs
+          value={kindFilter}
+          onValueChange={(value) => setKindFilter(value as KindFilter)}
+          className="min-w-0"
+        >
+          <TabsList size="sm" className="max-w-full overflow-x-auto">
             {KIND_FILTERS.map((item) => (
-              <TabsTab key={item.id} value={item.id}>
+              <TabsTab key={item.id} value={item.id} className="shrink-0">
                 {item.label}
               </TabsTab>
             ))}
           </TabsList>
         </Tabs>
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          className="ml-auto"
-          title="Draft a new effect piece"
-          onClick={() => setEditing({ id: "new", name: "New piece" })}
-        >
-          <PlusIcon />
-          New piece
-        </Button>
       </div>
 
       <div className="shrink-0">
@@ -271,7 +280,7 @@ function PieceRow({
   return (
     <li
       className={cn(
-        "rounded-2xl bg-white/[0.03]",
+        "group rounded-2xl bg-white/[0.03]",
         expanded && "bg-white/[0.06]",
       )}
     >
@@ -302,24 +311,28 @@ function PieceRow({
             piece.source === "user" ? "bg-amber-300" : "bg-neutral-500",
           )}
         />
+        <span
+          aria-hidden="true"
+          className="size-8 shrink-0 rounded-md bg-white/[0.10]"
+          style={ditherMaskStyle(0.35, { matrix: matrixForSeed(piece.id) })}
+        />
         <span className="min-w-0 flex-1 truncate text-sm text-neutral-200">{piece.name}</span>
         <Badge variant="outline" size="sm" className="shrink-0">
           {PIECE_KIND_LABEL[piece.kind]}
         </Badge>
-        {piece.kind === "effect" ? (
-          <Button
-            type="button"
-            size="xs"
-            variant="ghost"
-            aria-label={`Open ${piece.name}`}
-            onClick={(event) => {
-              event.stopPropagation();
-              onOpen();
-            }}
-          >
-            Open
-          </Button>
-        ) : null}
+        <Button
+          type="button"
+          size="xs"
+          variant="ghost"
+          aria-label={`Open ${piece.name}`}
+          onClick={(event) => {
+            event.stopPropagation();
+            onOpen();
+          }}
+          className="shrink-0 opacity-0 group-focus-within:opacity-100 group-hover:opacity-100 focus-visible:opacity-100"
+        >
+          Open
+        </Button>
       </div>
       {expanded ? (
         <div className="px-3 pb-3">
@@ -328,7 +341,7 @@ function PieceRow({
           </p>
           <p className="mt-1 text-xs text-muted-foreground">
             {piece.controls.length === 0
-              ? "No published controls."
+              ? "No published controls — drag it into the brief to use it."
               : `${piece.controls.length} control${piece.controls.length === 1 ? "" : "s"}: ${piece.controls
                   .slice(0, 4)
                   .map((control) => control.name)

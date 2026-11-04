@@ -18,17 +18,29 @@ export type PieceControl = {
 };
 
 /**
- * What a piece is: a saved macro, a look/effect, a motion template, or a
- * sound bed. Anything the agent sends that is not one of these reads as a
- * macro, so the shelf always has one shelf to show.
+ * What a piece is: a saved macro, an effect, a motion template, a sound
+ * bed, or a board look (a style or campaign). Anything the agent sends
+ * that is not one of these reads as a macro, so the shelf always has
+ * one shelf to show.
  */
-export type PieceKind = "macro" | "effect" | "motion" | "sound";
+export type PieceKind = "macro" | "effect" | "motion" | "sound" | "look";
 
-const PIECE_KINDS: ReadonlySet<string> = new Set(["macro", "effect", "motion", "sound"]);
+const PIECE_KINDS: ReadonlySet<string> = new Set([
+  "macro",
+  "effect",
+  "motion",
+  "sound",
+  "look",
+]);
+
+/** Board kinds that share the one "Look" shelf kind. */
+const LOOK_KINDS: ReadonlySet<string> = new Set(["look", "style", "campaign"]);
 
 /** Read any raw kind value the agent sends; unknown kinds fall back to macro. */
 export function pieceKindOf(value: unknown): PieceKind {
-  return typeof value === "string" && PIECE_KINDS.has(value) ? (value as PieceKind) : "macro";
+  if (typeof value !== "string") return "macro";
+  if (LOOK_KINDS.has(value)) return "look";
+  return PIECE_KINDS.has(value) ? (value as PieceKind) : "macro";
 }
 
 export const PIECE_KIND_LABEL: Record<PieceKind, string> = {
@@ -36,6 +48,7 @@ export const PIECE_KIND_LABEL: Record<PieceKind, string> = {
   effect: "Effect",
   motion: "Motion",
   sound: "Sound",
+  look: "Look",
 };
 
 export type PieceInfo = {
@@ -139,5 +152,14 @@ export async function fetchPieces(query: string, options: Options = {}): Promise
       kind: "refused",
     });
   }
-  return payload.pieces.flatMap((piece) => pieceOf(piece) ?? []);
+  // The agent lists each board item once per source; the shelf shows each id once.
+  const seen = new Set<string>();
+  const pieces: PieceInfo[] = [];
+  for (const raw of payload.pieces) {
+    const piece = pieceOf(raw);
+    if (piece === null || seen.has(piece.id)) continue;
+    seen.add(piece.id);
+    pieces.push(piece);
+  }
+  return pieces;
 }
