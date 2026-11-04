@@ -12,7 +12,7 @@ import {
 
 function timeline(): Timeline {
   const base = emptyTimeline("t", "Cut");
-  const range = { start: { value: 0, scale: 30 }, duration: { value: 90, scale: 30 } };
+  const range = { start: { value: 0, rate: 30 }, duration: { value: 90, rate: 30 } };
   base.tracks = [
     {
       id: "v1",
