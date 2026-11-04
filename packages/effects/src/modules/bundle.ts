@@ -211,8 +211,11 @@ export async function checkModule(entry: string, opts: CheckOptions = {}): Promi
 }
 
 /** Check, then wrap into an OGraf title. A failed check yields a report and no bundle. */
-export async function bundleModule(entry: string, opts: { data?: unknown } = {}): Promise<ModuleBuild> {
-  const report = await checkModule(entry);
+export async function bundleModule(
+  entry: string,
+  opts: { data?: unknown; scope?: ScopeFlags | null | undefined } = {},
+): Promise<ModuleBuild> {
+  const report = await checkModule(entry, { scope: opts.scope ?? undefined });
   if (!report.ok || !report.meta) return { report, bundle: null };
   const meta = report.meta;
   try {

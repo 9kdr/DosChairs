@@ -367,6 +367,8 @@ class Handler(BaseHTTPRequestHandler):
         try:
             if action == "generate":
                 self._send(200, _modules_generate_body(body))
+            elif action == "plan":
+                self._send(200, _piece_plan_body(body))
             elif action == "import":
                 record = modules.register_source(
                     str(body.get("source", "")), brief=str(body.get("brief", ""))
@@ -436,7 +438,7 @@ def _module_paths(path: str) -> tuple[str, str | None, str | None] | None:
     if len(parts) < 3 or parts[0] != "effects" or parts[1] != "modules":
         return None
     if len(parts) == 3:
-        if parts[2] in ("generate", "import"):
+        if parts[2] in ("generate", "import", "plan"):
             return (parts[2], None, None)
         return ("record", parts[2], None)
     if len(parts) == 4 and parts[3] in ("bundle", "install", "preview"):
@@ -523,7 +525,7 @@ def _pipeline() -> dict[str, Any]:
 
 
 def _health() -> dict[str, Any]:
-    from chair_agent import cuts, effects, modules, sounds
+    from chair_agent import cuts, effects, modules, piece_plan, sounds
     from chair_agent.client import auth_status_snapshot
     from chair_agent.pieces import macros
 
@@ -544,6 +546,7 @@ def _health() -> dict[str, Any]:
         "effects": effects.status_snapshot(),
         "macros": macros.status_snapshot(),
         "modules": modules.status_snapshot() | {"model": modules.module_model()},
+        "piece_plans": piece_plan.status_snapshot(),
         "pipeline": _pipeline(),
         "crew": _crew_status(),
     }
@@ -1393,9 +1396,21 @@ def _module_summary(record: Any) -> dict[str, Any]:
     }
 
 
-def _modules_generate_body(body: dict[str, Any]) -> dict[str, Any]:
-    from chair_agent import modules
+def _piece_plan_body(body: dict[str, Any]) -> dict[str, Any]:
+    from chair_agent import piece_plan
 
+    brief = body.get("brief", "")
+    if not isinstance(brief, str) or not brief.strip():
+        raise ValueError("plan needs a non-empty 'brief'")
+    return piece_plan.plan_piece(brief).model_dump(mode="json", by_alias=True)
+
+
+def _modules_generate_body(body: dict[str, Any]) -> dict[str, Any]:
+    from chair_agent import modules, piece_plan
+
+    brief = body.get("brief", "")
+    if not isinstance(brief, str) or not brief.strip():
+        raise ValueError("generate needs a non-empty 'brief'")
     canvas = body.get("canvas", {})
     if not isinstance(canvas, dict):
         raise ValueError("generate needs a 'canvas' object with width and height")
@@ -1411,8 +1426,10 @@ def _modules_generate_body(body: dict[str, Any]) -> dict[str, Any]:
     mode = body.get("mode", "spark")
     if mode not in modules.MODES:
         raise ValueError("mode must be 'spark' or 'wonder'")
+    plan = piece_plan.plan_piece(brief)
+    plan_dump = plan.model_dump(mode="json", by_alias=True)
     record = modules.generate_module(
-        str(body.get("brief", "")),
+        brief,
         kind=body.get("kind") if isinstance(body.get("kind"), str) else None,
         width=width,
         height=height,
@@ -1422,8 +1439,16 @@ def _modules_generate_body(body: dict[str, Any]) -> dict[str, Any]:
         piece_ids=[str(p) for p in pieces] if isinstance(pieces, list) else None,
         model=modules.WONDER_MODULE_MODEL if mode == "wonder" else None,
         mode=mode,
+        plan=plan,
     )
-    return _module_summary(record)
+    if record is None:
+        return {
+            "id": None,
+            "plan": plan_dump,
+            "notes": piece_plan.guidance(plan),
+            "preview": None,
+        }
+    return _module_summary(record) | {"plan": plan_dump}
 
 
 def _effect_body(effect_id: str) -> dict[str, Any]:
