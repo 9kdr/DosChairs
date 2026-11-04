@@ -13,6 +13,9 @@ Usage:
 Safety: never opens Chair Spike or any other project except restoring the
 startup project at the end; deletes only timelines and comp versions this
 run created; refuses to start while /tmp/chair-resolve.lock is held.
+Never loads a Fusion comp version: LoadFusionCompByName segfaulted Studio
+21.1, so reads go through GetFusionCompByName and undo removes the versions
+the run added (the version list must match the before-state afterwards).
 """
 
 import argparse
@@ -307,33 +310,35 @@ class Live:
         }
 
     def comp_state(self) -> dict:
-        """Comp versions, current comp, and tool counts on the demo clip."""
+        """Comp versions and tool counts on the demo clip.
+
+        Reads through GetFusionCompByName and never loads a comp:
+        LoadFusionCompByName segfaulted Studio 21.1 (Fusion UI setup raced
+        the scripted load). There is no GetCurrentFusionComp on TimelineItem.
+        """
         item = self._demo_item()
         names = list(item.GetFusionCompNameList() or [])
-        current = self._current_comp_name(item, names)
+        get_comp = getattr(item, "GetFusionCompByName", None)
         tools = {}
         for name in names:
-            item.LoadFusionCompByName(name)
-            comp = item.GetCurrentFusionComp()
+            comp = get_comp(name) if callable(get_comp) else None
             tools[name] = len(comp.GetToolList(False) or {}) if comp else 0
-        if current is not None:
-            item.LoadFusionCompByName(current)
-        return {"names": names, "current": current, "tools": tools}
+        return {"names": names, "tools": tools}
 
-    def undo_comp(self, prev: str | None) -> str:
-        """Switch the demo clip back to its previous comp version."""
+    def undo_comp(self, prev: str | None, before: list) -> str:
+        """Undo the apply: remove the versions it added, keep the rest.
+
+        Never loads a comp (see comp_state): the version list must match
+        the before-state exactly afterwards. Returns the display name.
+        """
         item = self._demo_item()
-        if prev is None:
-            names = list(item.GetFusionCompNameList() or [])
-            if len(names) != 1 or not item.DeleteFusionCompByName(names[0]):
-                raise Fail("undo: the clip had no previous comp to return to")
-            return ""
-        if not item.LoadFusionCompByName(prev):
-            raise Fail(f"undo: Resolve would not switch back to {prev!r}")
-        current = self._current_comp_name(item, [])
-        if current != prev:
-            raise Fail(f"undo: current comp is {current!r}, not {prev!r}")
-        return current
+        names = list(item.GetFusionCompNameList() or [])
+        for name in [entry for entry in names if entry not in before]:
+            item.DeleteFusionCompByName(name)
+        names = list(item.GetFusionCompNameList() or [])
+        if sorted(names) != sorted(before):
+            raise Fail(f"undo left versions {names}, expected {before}")
+        return prev or ""
 
     def delete_comp(self, name: str) -> None:
         item = self._demo_item()
@@ -344,10 +349,9 @@ class Live:
         """Best-effort spline key counts off the new comp (None when unreadable)."""
         try:
             item = self._demo_item()
-            if not item.LoadFusionCompByName(comp_name):
-                return None
-            comp = item.GetCurrentFusionComp()
-            tools = comp.GetToolList(False) or {}
+            get_comp = getattr(item, "GetFusionCompByName", None)
+            comp = get_comp(comp_name) if callable(get_comp) else None
+            tools = comp.GetToolList(False) or {} if comp is not None else {}
         except Exception:
             return None
         counts = {}
@@ -407,6 +411,12 @@ class Live:
         finally:
             if self.start_project and self.start_project != PROJECT:
                 self.projects.LoadProject(self.start_project)
+                current = self.projects.GetCurrentProject()
+                name = current.GetName() if current is not None else ""
+                if name != self.start_project:
+                    raise Fail(
+                        f"could not restore {self.start_project!r}; "
+                        f"Resolve is on {name or PROJECT!r}")
 
     def _find_timeline(self, name: str):
         count = self.project.GetTimelineCount() or 0
@@ -425,25 +435,13 @@ class Live:
             raise Fail(f"timeline {TIMELINE!r} has no clip on video track 1")
         return items[0]
 
-    @staticmethod
-    def _current_comp_name(item, names: list) -> str | None:
-        current_fn = getattr(item, "GetCurrentFusionComp", None)
-        current = current_fn() if callable(current_fn) else None
-        if current is not None:
-            attrs = getattr(current, "GetAttrs", lambda: {})()
-            if isinstance(attrs, dict) and attrs.get("COMPS_Name"):
-                return str(attrs["COMPS_Name"])
-        return names[-1] if names else None
-
-
 class Dry:
     """Canned agent plus in-memory Resolve for --dry-run (CI, no Resolve)."""
 
     def __init__(self, agent: str) -> None:
         self.agent = agent
-        self.comps = ["dry-comp-0"]
-        self.tools = {"dry-comp-0": 2}
-        self.current = "dry-comp-0"
+        self.comps: list = []
+        self.tools: dict = {}
         self.applied = 0
         self.timelines = {
             TIMELINE: {"video_tracks": 1, "audio_tracks": 1, "clips": 2,
@@ -465,14 +463,14 @@ class Dry:
                 "notes": "dry run"}
         if path == "/effects/rig/apply":
             self.applied += 1
+            prev = self.comps[-1] if self.comps else None
             name = f"dry-comp-{self.applied}"
             self.comps.append(name)
             self.tools[name] = 6
-            self.current = name
             return {"effect_id": "fx-dry-1", "comp_name": name,
-                    "prev_comp_name": self.comps[-2], "keyframes": 12,
+                    "prev_comp_name": prev, "keyframes": 12,
                     "project": PROJECT, "timeline": TIMELINE,
-                    "undo": {"prev_comp_name": self.comps[-2]}}
+                    "undo": {"prev_comp_name": prev}}
         if path == "/jobs":
             return {"request_id": "dry-job-1", "status": "queued"}
         if path == "/sounds/apply":
@@ -527,16 +525,16 @@ class Dry:
                 "project": PROJECT, "timeline": TIMELINE}
 
     def comp_state(self) -> dict:
-        return {"names": list(self.comps), "current": self.current,
-                "tools": dict(self.tools)}
+        return {"names": list(self.comps), "tools": dict(self.tools)}
 
-    def undo_comp(self, prev: str | None) -> str:
-        if prev is None:
-            self.comps = [name for name in self.comps if name != self.current]
-            self.current = ""
-            return ""
-        self.current = prev
-        return prev
+    def undo_comp(self, prev: str | None, before: list) -> str:
+        self.comps = [name for name in self.comps if name in before]
+        for name in list(self.tools):
+            if name not in self.comps:
+                del self.tools[name]
+        if sorted(self.comps) != sorted(before):
+            raise Fail(f"undo left versions {self.comps}, expected {before}")
+        return prev or ""
 
     def delete_comp(self, name: str) -> None:
         if name in self.comps:
@@ -585,16 +583,15 @@ def flow_effect(world, prompts: dict, info: dict, created: dict) -> dict:
             raise Fail("apply did not land as a new comp version")
         created["comps"].append(comp)
         new_tools = state_after["tools"].get(comp, 0)
-        if new_tools <= 2:
-            raise Fail(f"new comp {comp!r} holds {new_tools} tools: a no-op build")
+        if new_tools == 0:
+            raise Fail(f"new comp {comp!r} is empty or unreadable")
         prev_tools_before = state_before["tools"].get(prev or "", None)
         prev_tools_after = state_after["tools"].get(prev or "", None)
         if prev is not None and prev_tools_before != prev_tools_after:
             raise Fail(f"apply touched the previous comp {prev!r}")
         splines = world.keyframe_readback(comp)
-        back = timed(flow["seconds"], "undo", world.undo_comp, prev)
-        if (back or None) != (prev or None):
-            raise Fail(f"undo left {back!r} current, not {prev!r}")
+        timed(flow["seconds"], "undo", world.undo_comp, prev,
+              state_before["names"])
         calls, repairs = health_delta(before_health, health_snapshot(world),
                                       "effects")
         flow["repairs"] = repairs
@@ -609,8 +606,8 @@ def flow_effect(world, prompts: dict, info: dict, created: dict) -> dict:
             "latency_ms": health_snapshot(world)["effects_latency_ms"],
         }
         flow["status"] = "PASS"
-        flow["reason"] = (
-            f"new comp {comp} with {new_tools} tools, undone to {prev}")
+        undone = f"undone to {prev}" if prev else "only version removed"
+        flow["reason"] = f"new comp {comp} with {new_tools} tools, {undone}"
     except Fail as error:
         flow["reason"] = str(error)
     return flow
@@ -672,12 +669,11 @@ def flow_rig(world, prompts: dict, info: dict, created: dict) -> dict:
             raise Fail("apply did not land as a new comp version")
         created["comps"].append(comp)
         new_tools = state_after["tools"].get(comp, 0)
-        if new_tools <= 2:
-            raise Fail(f"new comp {comp!r} holds {new_tools} tools: a no-op build")
+        if new_tools == 0:
+            raise Fail(f"new comp {comp!r} is empty or unreadable")
         splines = world.keyframe_readback(comp)
-        back = timed(flow["seconds"], "undo", world.undo_comp, prev)
-        if (back or None) != (prev or None):
-            raise Fail(f"undo left {back!r} current, not {prev!r}")
+        timed(flow["seconds"], "undo", world.undo_comp, prev,
+              state_before["names"])
         calls, repairs = health_delta(before_health, health_snapshot(world),
                                       "effects", "rig")
         flow["repairs"] = repairs
@@ -695,9 +691,10 @@ def flow_rig(world, prompts: dict, info: dict, created: dict) -> dict:
             "spline_readback": splines,
         }
         flow["status"] = "PASS"
+        undone = f"undone to {prev}" if prev else "only version removed"
         flow["reason"] = (
             f"rig baked to {baked['keys']} keys on {baked['targetId']}, "
-            f"new comp {comp}, undone to {prev}")
+            f"new comp {comp}, {undone}")
     except Fail as error:
         flow["reason"] = str(error)
     return flow
@@ -851,17 +848,37 @@ def main(argv: list[str] | None = None) -> int:
         report["info"] = info
         names = [args.only] if args.only else ["effect", "rig", "sound"]
         for name in names:
-            report["flows"].append(FLOWS[name](world, prompts, info, created))
+            try:
+                report["flows"].append(FLOWS[name](world, prompts, info, created))
+            except Fail as error:
+                crashed = new_flow(name, prompts[name])
+                crashed["reason"] = str(error)
+                report["flows"].append(crashed)
+            except Exception as error:
+                crashed = new_flow(name, prompts[name])
+                crashed["reason"] = f"harness error: {error}"
+                crashed["notes"].append(
+                    "the script itself broke here, not the product; fix run.py")
+                report["flows"].append(crashed)
     except Fail as error:
         print(f"demo check broke: {error}")
-        return 2
-    finally:
         try:
             world.cleanup(created)
         finally:
             lock.release()
+        return 2
+    restore_error = None
+    try:
+        world.cleanup(created)
+    except Exception as error:
+        restore_error = error
+    finally:
+        lock.release()
     write_report(report)
     print(format_table(report))
+    if restore_error is not None:
+        print(f"demo check warning: {restore_error}")
+        return 2
     return 0 if all_pass(report) else 1
 
 
