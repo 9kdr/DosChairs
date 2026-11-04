@@ -20,6 +20,18 @@ describe("generateEffect", () => {
     expect(seen).toMatchObject({ url: "http://agent/effects/generate", body: { prompt: "bouncy", referenceImage: "data:image/png;base64,AA" } });
   });
 
+  it("sends references only when the brief has chips", async () => {
+    const bodies: Record<string, unknown>[] = [];
+    const fetchFn: FetchFn = async (_url, init) => {
+      bodies.push(JSON.parse(String(init?.body)));
+      return { ok: true, status: 200, json: async () => ({ id: "fx-1", spec: sampleEffect() }) };
+    };
+    await generateEffect({ ...input, references: [{ id: "macro:user:title:lower", label: "My Lower Third" }] }, { fetchFn });
+    await generateEffect({ ...input, references: [] }, { fetchFn });
+    expect(bodies[0]!.references).toEqual([{ id: "macro:user:title:lower", label: "My Lower Third" }]);
+    expect(bodies[1]).not.toHaveProperty("references");
+  });
+
   it("carries the agent's plain message and status", async () => {
     const fetchFn = reply(502, { error: { code: "invalid_effect", message: "effect generate needs a model" } });
     await expect(generateEffect(input, { fetchFn })).rejects.toMatchObject({ message: "effect generate needs a model", status: 502 });
