@@ -474,7 +474,10 @@ export function EffectMaker({
           </Select>
         </div>
 
-        <section aria-label="Preview" className={cn(CARD, "flex min-w-0 flex-col gap-3 p-4")}>
+        <section
+          aria-label="Preview"
+          className={cn(CARD, "flex min-w-0 flex-col gap-3 p-4", !live && "lg:col-span-2")}
+        >
           <div className="flex shrink-0 flex-wrap items-center gap-2 px-1">
             {clips.length > 0 && clip ? (
               <Select
