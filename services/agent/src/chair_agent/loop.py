@@ -432,8 +432,14 @@ def handle_edit(
         rate=rate,
     )
     model_spec = job.input.get("model") if isinstance(job.input.get("model"), str) else None
+    # Image briefs skip the cut/sound planner: it has no image intents,
+    # so planning one can only misplan it into dispatch. They fall
+    # straight through to the crew below.
+    from chair_agent.crew.images import is_image_brief
+
+    image_first = is_image_brief(brief)
     try:
-        planned = plan_brief(brief, client=client, model=model_spec)
+        planned = None if image_first else plan_brief(brief, client=client, model=model_spec)
     except ValueError:
         planned = None
     if planned is None or not _has_dispatchable_intent(planned):

@@ -10,6 +10,7 @@ from chair_agent.client import Completion
 from chair_agent.crew.command import Task, _command_messages
 from chair_agent.crew.images import (
     expand_prompts,
+    is_image_brief,
     match_cut_relevant,
     needs_images,
     shot_count,
@@ -328,6 +329,116 @@ def test_handle_edit_routes_an_image_brief_to_generated_stills(
     assert [op["op"] for op in result.ops] == ["add_effect"]
     assert result.ops[0]["patch"]["assets"] == ["generated/t1-01.png"]
     assert (root / "proj-1" / "generated" / "t1-01.png").is_file()
+
+
+def test_is_image_brief_leaves_video_shots_to_the_planner() -> None:
+    assert is_image_brief(
+        "make a 5-shot match cut: an eye, the moon, same circle centred"
+    )
+    assert is_image_brief("generate key art for a rainy neon city")
+    assert is_image_brief("5 shots that feel lonely")
+    assert is_image_brief("three stills for the trailer")
+    assert not is_image_brief("cut the silences in the wide shots")
+    assert not is_image_brief("trim the opening shot")
+    assert not is_image_brief("cut the silence")
+
+
+def test_handle_edit_skips_planning_for_image_briefs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A live-style misplan (riser intent) must not steal an image brief."""
+    from datetime import UTC, datetime
+
+    from chair_agent import jobs
+    from chair_agent.crew import images as crew_images
+    from chair_agent.loop import handle_edit
+    from chair_agent.planner import Plan, PlanStep
+
+    _projects(monkeypatch, tmp_path)
+    reset_status()
+    monkeypatch.setattr(
+        crew_images, "default_adapter", lambda: FakeImageAdapter()
+    )
+    calls: list[str] = []
+
+    def misplan(brief: str, **kwargs):  # type: ignore[no-untyped-def]
+        calls.append(brief)
+        return Plan(
+            brief=brief, intents=["riser_into_cut"],
+            steps=[PlanStep(tool="editor_op", goal="place a riser")],
+            planner="model",
+        )
+
+    monkeypatch.setattr("chair_agent.loop.plan_brief", misplan)
+
+    class RouteClient:
+        def execute(self, messages):  # type: ignore[no-untyped-def]
+            return Completion(model="fake-spark", text=(
+                '{"tasks": [{"id": "t1", "beatId": "b1", "section": "graphics", '
+                '"goal": "make a 2-shot match cut on the timeline: an eye, '
+                'the moon, same circle centred"}]}'
+            ))
+
+        def complete_model(self, model, messages):  # type: ignore[no-untyped-def]
+            return self.execute(messages)
+
+    job = jobs.Job(
+        request_id="job-img", task="edit",
+        input={
+            "brief": "make a 2-shot match cut on the timeline: an eye, "
+            "the moon, same circle centred",
+            "proxy_url": "file:///proxy.mp4",
+            "project_id": "proj-1",
+        },
+        created_at=datetime.now(UTC),
+    )
+    result = handle_edit(job, client=RouteClient())  # type: ignore[arg-type]
+    assert calls == []
+    assert result.planner == "crew"
+    assert [op["op"] for op in result.ops] == [
+        "add_track", "add_clip", "add_clip",
+    ]
+
+
+def test_handle_edit_still_plans_video_shot_briefs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from datetime import UTC, datetime
+
+    from chair_agent import jobs
+    from chair_agent.loop import handle_edit
+
+    _projects(monkeypatch, tmp_path)
+    reset_status()
+    calls: list[str] = []
+
+    def fail_planning(brief: str, **kwargs):  # type: ignore[no-untyped-def]
+        calls.append(brief)
+        raise ValueError("brief names nothing Chair plans yet")
+
+    monkeypatch.setattr("chair_agent.loop.plan_brief", fail_planning)
+
+    class RouteClient:
+        def execute(self, messages):  # type: ignore[no-untyped-def]
+            return Completion(model="fake-spark", text=(
+                '{"tasks": [{"id": "t1", "beatId": "b1", "section": "graphics", '
+                '"goal": "lower third with the name"}]}'
+            ))
+
+        def complete_model(self, model, messages):  # type: ignore[no-untyped-def]
+            return self.execute(messages)
+
+    job = jobs.Job(
+        request_id="job-vid", task="edit",
+        input={
+            "brief": "cut the silences in the wide shots",
+            "proxy_url": "file:///proxy.mp4",
+        },
+        created_at=datetime.now(UTC),
+    )
+    result = handle_edit(job, client=RouteClient())  # type: ignore[arg-type]
+    assert calls == ["cut the silences in the wide shots"]
+    assert result.planner == "crew"  # unplannable, so the crew takes it
 
 
 def test_store_generated_never_overwrites(tmp_path: Path) -> None:

@@ -131,7 +131,7 @@ def shot_count(goal: str) -> int:
     """How many stills the brief asks for: 1 by default, capped at 8."""
     lowered = (goal or "").lower()
     match = re.search(
-        r"(\d+)\s*-?\s*(?:shot|still|image|picture|photo|frame)s?\b", lowered
+        r"(\d+)\s*-?\s*(?:shot|still|image|picture|photo)s?\b", lowered
     )
     if match:
         return max(1, min(int(match.group(1)), MAX_SHOTS))
@@ -140,6 +140,23 @@ def shot_count(goal: str) -> int:
     if match:
         return _NUMBER_WORDS[match.group(1)]
     return 1
+
+
+_LOOP_WORDS = tuple(word for word in _IMAGE_WORDS if word not in ("shot", "shots"))
+
+
+def is_image_brief(brief: str) -> bool:
+    """Whether the whole turn is an image brief: skip cut/sound planning.
+
+    The cut/sound pipeline has no image intents, so planning an image
+    brief can only misplan it into dispatch. Bare "shot(s)" stays out:
+    video briefs talk about shots too; only a count ("5 shots") makes
+    it an image brief.
+    """
+    lowered = (brief or "").lower()
+    if any(word in lowered for word in _LOOP_WORDS):
+        return True
+    return shot_count(brief or "") > 1
 
 
 def size_for(goal: str) -> str | None:
