@@ -653,7 +653,12 @@ def test_run_loop_places_riser_duck_and_tape_stop() -> None:
     assert riser["patch"]["clip"]["timelineRange"]["start"] == {"value": 90, "rate": 30.0}
     assert riser["patch"]["clip"]["timelineRange"]["duration"] == {"value": 60, "rate": 30.0}
     tape = next(op for op in ops if op["id"] == "sfx-tape-stop-1")
-    assert tape["patch"]["clip"]["timelineRange"]["start"] == {"value": 600, "rate": 30.0}
+    assert tape["patch"]["clip"]["timelineRange"]["start"] == {"value": 564, "rate": 30.0}
+    assert tape["patch"]["clip"]["timelineRange"]["duration"] == {"value": 36, "rate": 30.0}
+    for op in ops:
+        if op["op"] == "add_clip":
+            clip_range = op["patch"]["clip"]["timelineRange"]
+            assert clip_range["start"]["value"] + clip_range["duration"]["value"] <= context.total_frames
     duck = next(op for op in ops if op["op"] == "set_gain")
     keyframes = duck["patch"]["keyframes"]
     assert len(keyframes) == 8

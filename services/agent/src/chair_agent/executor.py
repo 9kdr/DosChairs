@@ -273,7 +273,7 @@ def sound_changeset_items(
         else:
             placed, skip = _place_sfx(
                 "tape_stop_outro", "tape-stop", total_seconds, sfx,
-                track_id=track_id, rate=rate, pre_hit=False,
+                track_id=track_id, rate=rate, pre_hit=True,
             )
             items.extend(placed)
             skipped.extend(skip)
@@ -313,10 +313,11 @@ def _place_sfx(
 ) -> tuple[list[ChangesetItem], list[SkippedIntent]]:
     """Place one SFX file so its transient lands on the moment.
 
-    Pre-hit kinds (risers) end on the moment: start = moment - duration.
-    Hit kinds (tape stops) start on it. A riser longer than the time
-    before the cut trims its head (the peak still lands on the cut).
-    Missing files and negative starts skip with a plain reason.
+    Pre-hit kinds (risers, outro tape stops) end on the moment:
+    start = moment - duration. Hit kinds start on it. A pre-hit sound
+    longer than the time before the moment trims its head (the peak or
+    tail still lands on the moment). Missing files and negative starts
+    skip with a plain reason.
     """
     entry = sfx.get(kind)
     if entry is None:
