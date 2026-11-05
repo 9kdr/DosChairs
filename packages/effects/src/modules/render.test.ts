@@ -128,35 +128,29 @@ describe("debugTarget", () => {
     vi.unstubAllGlobals();
   });
 
-  it("creates a page target when /json/list only returns non-page targets", async () => {
-    const urls: { url: string; method?: string | undefined }[] = [];
+  it("says the endpoint never answered when nothing listens", async () => {
     vi.stubGlobal(
       "fetch",
-      vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
-        const url = String(input);
-        urls.push({ url, method: init?.method });
-        if (url.endsWith("/json/list")) {
-          return new Response(
-            JSON.stringify([{ type: "browser", webSocketDebuggerUrl: "ws://127.0.0.1:9222/devtools/browser/1" }]),
-            { status: 200, headers: { "content-type": "application/json" } },
-          );
-        }
-        if (url.endsWith("/json/new?about:blank")) {
-          return new Response(
-            JSON.stringify({
-              type: "page",
-              webSocketDebuggerUrl: "ws://127.0.0.1:9222/devtools/page/new-target-id",
-            }),
-            { status: 200, headers: { "content-type": "application/json" } },
-          );
-        }
-        return new Response("not found", { status: 404 });
+      vi.fn(async () => {
+        throw new Error("fetch failed");
       }),
     );
 
-    const wsUrl = await debugTarget(9222);
-    expect(wsUrl).toBe("ws://127.0.0.1:9222/devtools/page/new-target-id");
-    expect(urls.some((u) => u.url.includes("/json/new?about:blank") && u.method === "PUT")).toBe(true);
-  });
+    await expect(debugTarget(9222)).rejects.toThrow("debugger endpoint never answered");
+  }, 60_000);
+
+  it("says the endpoint answered when it lists no page target", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        return new Response(
+          JSON.stringify([{ type: "browser", webSocketDebuggerUrl: "ws://127.0.0.1:9222/devtools/browser/1" }]),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      }),
+    );
+
+    await expect(debugTarget(9222)).rejects.toThrow("answered but never listed a page target");
+  }, 60_000);
 });
 
