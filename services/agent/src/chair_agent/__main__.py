@@ -559,7 +559,16 @@ def _pipeline() -> dict[str, Any]:
 
 
 def _health() -> dict[str, Any]:
-    from chair_agent import cuts, effects, modules, open_project, piece_bake, piece_plan, sounds
+    from chair_agent import (
+        cuts,
+        effects,
+        images,
+        modules,
+        open_project,
+        piece_bake,
+        piece_plan,
+        sounds,
+    )
     from chair_agent.client import auth_status_snapshot
     from chair_agent.pieces import macros
 
@@ -583,6 +592,7 @@ def _health() -> dict[str, Any]:
         "modules": modules.status_snapshot() | {"model": modules.module_model()},
         "piece_bake": piece_bake.status_snapshot(),
         "piece_plans": piece_plan.status_snapshot(),
+        "images": images.status_snapshot(),
         "pipeline": _pipeline(),
         "crew": _crew_status(),
     }

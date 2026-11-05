@@ -325,6 +325,76 @@ def sfx_clip_op(
     )
 
 
+def stills_track_op(
+    id: str,
+    rationale: str,
+    *,
+    track_id: str = "video-stills-1",
+    name: str = "Stills",
+    beat_id: str | None = None,
+) -> ChangesetItem:
+    """Add a NEW video track for generated stills. Nothing is overwritten."""
+    if not track_id:
+        raise ValueError("stills track needs a track id")
+    return _item(
+        id, "add_track", rationale,
+        {"track": {"id": track_id, "kind": "video", "name": name, "clips": []},
+         "trackId": track_id},
+        beat_id=beat_id,
+    )
+
+
+def still_clip_op(
+    id: str,
+    track_id: str,
+    clip_id: str,
+    rationale: str,
+    *,
+    media_ref: str,
+    name: str,
+    start_seconds: float,
+    duration_seconds: float,
+    rate: float = 30.0,
+    kind: str = "still",
+    source: str = "muse-image",
+    license: str = "generated",
+    beat_id: str | None = None,
+) -> ChangesetItem:
+    """Place one generated still on the stills track as a full clip snapshot.
+
+    Same shape as the SFX clip op: sourceRange/timelineRange so the
+    desktop applier can place it without guessing. A still holds for its
+    whole timeline range; match cuts time the starts on beats.
+    """
+    if not media_ref.strip():
+        raise ValueError("still clip needs a media_ref file path")
+    if start_seconds < 0 or duration_seconds <= 0 or rate <= 0:
+        raise ValueError("still clip needs start_seconds >= 0, duration > 0, rate > 0")
+    return _item(
+        id, "add_clip", rationale,
+        {
+            "clip": {
+                "id": clip_id,
+                "name": name,
+                "mediaRef": media_ref.strip(),
+                "sourceRange": {
+                    "start": {"value": 0, "rate": rate},
+                    "duration": {"value": round(duration_seconds * rate), "rate": rate},
+                },
+                "timelineRange": {
+                    "start": {"value": round(start_seconds * rate), "rate": rate},
+                    "duration": {"value": round(duration_seconds * rate), "rate": rate},
+                },
+            },
+            "clipId": clip_id,
+            "kind": kind,
+            "source": source,
+            "license": license,
+        },
+        target_id=track_id, beat_id=beat_id,
+    )
+
+
 def duck_keyframes(
     regions_seconds: list[tuple[float, float]],
     *,

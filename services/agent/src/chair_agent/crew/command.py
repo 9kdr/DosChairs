@@ -23,13 +23,18 @@ _FALLBACK_DESCRIPTIONS: dict[str, str] = {
     "motion": "Motion: momentum in, overshoot and settle; one idea per beat.",
     "effects": "Effects: one validated effect per beat, restrained and never flashy.",
     "color": "Color: name the grade preset; skin tones stay honest.",
-    "graphics": "Graphics: kinetic titles and cards timed to beats.",
+    "graphics": "Graphics: generated stills and key art, kinetic titles and cards timed to beats.",
 }
 
 try:
     from chair_agent.skills import describe_sections as _describe_sections
 except ImportError:
     _describe_sections = None  # type: ignore[assignment]
+
+try:
+    from chair_agent.skills import descriptions as _skill_descriptions
+except ImportError:
+    _skill_descriptions = None  # type: ignore[assignment]
 
 
 class InvalidTasks(ValueError):
@@ -146,15 +151,33 @@ def validate_tasks(raw: list[dict[str, Any]], beat_ids: set[str]) -> list[Task]:
     return tasks
 
 
+def _skill_lines() -> str:
+    """L1 skill one-liners for the command prompt; empty when unreadable."""
+    if _skill_descriptions is None:
+        return ""
+    try:
+        return _skill_descriptions()
+    except Exception:
+        return ""
+
+
 def _command_messages(brief: str, beats: list[dict[str, str]]) -> list[Message]:
     sections = "\n".join(f"- {name}: {desc}" for name, desc in section_descriptions().items())
     beat_lines = "\n".join(f"- {beat['id']}: {beat['label']}" for beat in beats)
+    skill_block = ""
+    lines = _skill_lines()
+    if lines:
+        skill_block = (
+            "\nSkills a subagent can pick up (name one in a task's "
+            f"constraints as 'skill: <id>' when the brief calls for it):\n{lines}\n"
+        )
     developer = (
         "You are the Chair crew command. Split the brief into one task per "
         "section the plan needs, keeping every task tied to one plan beat.\n"
         "Return a JSON array (or {\"tasks\": [...]}) of tasks with keys "
         "id, beatId, section, goal, refs, constraints, acceptance.\n"
         f"Sections (section must be one of these):\n{sections}\n"
+        f"{skill_block}"
         "Rules: every task cites exactly one beatId from the plan below; "
         "never invent a beat id. Cover cut, sound, motion, and effects when "
         "the brief needs them; add color and graphics only when asked. "

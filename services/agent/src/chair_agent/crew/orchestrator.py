@@ -127,6 +127,8 @@ def run_task(
     target_id: str = "timeline-1",
     media: Mapping[str, Any] | None = None,
     beat_times: Sequence[float] = (),
+    image_adapter: Any = None,
+    project_id: str | None = None,
 ) -> TaskResult:
     """Run one task: brief, subagent, section-verify, retry once."""
     started = time.perf_counter()
@@ -145,7 +147,13 @@ def run_task(
                 output = runner(current, client=client, target_id=target_id, media=media)  # type: ignore[call-arg]
             elif task.section == "sound":
                 output = runner(current, client=client, beat_times=beat_times)  # type: ignore[call-arg]
-            elif task.section in ("color", "graphics"):
+            elif task.section == "graphics":
+                output = runner(  # type: ignore[call-arg]
+                    current, client=client, target_id=target_id,
+                    image_adapter=image_adapter, project_id=project_id,
+                    beat_times=beat_times,
+                )
+            elif task.section == "color":
                 output = runner(current, target_id=target_id)  # type: ignore[call-arg]
             else:
                 output = runner(current, client=client, target_id=target_id)  # type: ignore[call-arg]
@@ -265,6 +273,8 @@ def run_crew(
     frames: Sequence[Any] = (),
     audio: Any | None = None,
     timeline: Mapping[str, Any] | None = None,
+    image_adapter: Any = None,
+    project_id: str | None = None,
 ) -> CrewRun:
     """Brief plus plan to one pending changeset with a verdict."""
     tasks = run_command(brief, plan, client, model=model)
@@ -276,7 +286,8 @@ def run_crew(
     beat_times = _beat_times(plan)
     results = [
         run_task(task, labels.get(task.beat_id, task.beat_id), client=client,
-                 target_id=target_id, beat_times=beat_times)
+                 target_id=target_id, beat_times=beat_times,
+                 image_adapter=image_adapter, project_id=project_id)
         for task in tasks
     ]
     changeset, verdict = merge_results(
@@ -316,6 +327,9 @@ def handle_direct(job: Any) -> Any:
         raise ValueError("job input needs a non-empty 'brief' string")
     if not isinstance(plan, Mapping):
         raise ValueError("job input needs a 'plan' object")
+    from chair_agent.crew.images import default_adapter
+
+    raw_project = job.input.get("project_id")
     run = run_crew(
         brief, plan,
         client=build_client(),
@@ -323,6 +337,8 @@ def handle_direct(job: Any) -> Any:
         base_revision=str(job.input.get("base_revision") or "rev-0"),
         target_id=str(job.input.get("target_id") or "timeline-1"),
         total_frames=int(job.input.get("total_frames") or 900),
+        image_adapter=default_adapter(),
+        project_id=raw_project if isinstance(raw_project, str) else None,
     )
     assert run.changeset is not None and run.verdict is not None
     verdict = "accepted" if run.verdict.accepted else "rejected"

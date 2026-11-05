@@ -64,7 +64,8 @@ def test_unexpected_image_shape() -> None:
 
 def test_image_adapter_can_be_swapped() -> None:
     class MemoryAdapter:
-        def generate(self, prompt: str) -> GeneratedImage:
+        def generate(self, prompt: str, *, size: str | None = None) -> GeneratedImage:
+            assert size is None
             return GeneratedImage(prompt=prompt, model="memory", url="mem://fox")
 
     def run(adapter: ImageAdapter, prompt: str) -> GeneratedImage:
@@ -80,6 +81,55 @@ def test_image_adapter_can_be_swapped() -> None:
     posted = run(_adapter(handler), "a fox")
     assert posted.model == "muse-image-1.0"
     assert posted.url == "https://example.test/fox.png"
+
+
+def test_http_adapter_sends_size_when_given() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert json.loads(request.content) == {
+            "model": "muse-image-1.0",
+            "prompt": "a fox",
+            "n": 1,
+            "size": "1792x1024",
+        }
+        return httpx.Response(200, json={"data": [{"b64_json": "abc"}]})
+
+    image = _adapter(handler).generate("a fox", size="1792x1024")
+    assert image.b64_json == "abc"
+
+
+def test_counters_track_generations_and_failures() -> None:
+    from chair_agent.images import note_generated, reset_status, status_snapshot
+
+    reset_status()
+    note_generated(latency_ms=12.5)
+    snapshot = status_snapshot()
+    assert snapshot["generated"] == 1
+    assert snapshot["failed"] == 0
+    assert snapshot["last_latency_ms"] == 12.5
+    assert snapshot["last_error"] is None
+    note_generated(latency_ms=3.0, error="RuntimeError: boom")
+    snapshot = status_snapshot()
+    assert snapshot["generated"] == 1
+    assert snapshot["failed"] == 1
+    assert snapshot["last_error"] == "RuntimeError: boom"
+    reset_status()
+    assert status_snapshot()["generated"] == 0
+
+
+def test_failed_calls_count_and_reraise() -> None:
+    from chair_agent.images import reset_status, status_snapshot
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"data": []})
+
+    reset_status()
+    with pytest.raises(UnexpectedImage):
+        _adapter(handler).generate("a fox")
+    snapshot = status_snapshot()
+    assert snapshot["failed"] == 1
+    assert snapshot["generated"] == 0
+    assert snapshot["last_error"] is not None
+    reset_status()
 
 
 def test_build_image_adapter_uses_the_model_api_env() -> None:

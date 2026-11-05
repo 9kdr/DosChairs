@@ -204,8 +204,37 @@ def run_color(task: Task, *, target_id: str = "timeline-1") -> SubagentOutput:
         )
 
 
-def run_graphics(task: Task, *, target_id: str = "timeline-1") -> SubagentOutput:
-    """Graphics via muse_image/motion_graphics pieces, else a beat marker."""
+def run_graphics(
+    task: Task,
+    *,
+    client: Any = None,
+    target_id: str = "timeline-1",
+    image_adapter: Any = None,
+    project_id: str | None = None,
+    beat_times: Sequence[float] = (),
+) -> SubagentOutput:
+    """Graphics via real image generation, else muse_image/motion_graphics pieces.
+
+    When the task needs pictures and an image adapter is plugged in, the
+    stills are generated for real; a failed generation falls back to a
+    beat marker so the crew reports it instead of a placeholder.
+    """
+    if image_adapter is not None:
+        from chair_agent.crew.images import needs_images, run_image_task
+
+        if needs_images(task.goal, task.constraints):
+            try:
+                return run_image_task(
+                    task, client=client, adapter=image_adapter,
+                    project_id=project_id, target_id=target_id,
+                    beat_times=beat_times,
+                )
+            except Exception as error:
+                return SubagentOutput(
+                    items=[_beat_marker(task, "Generated stills")],
+                    notes=f"beat marker (image generation failed: {error})",
+                    fallback=True,
+                )
     try:
         try:
             return _piece_effect(task, "motion_graphics", target_id)

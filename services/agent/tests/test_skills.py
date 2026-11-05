@@ -12,7 +12,7 @@ MIRRORED = ROOT / "services" / "agent" / "skills" / "library" / "index.json"
 
 def test_descriptions_list_every_skill() -> None:
     text = skills.descriptions()
-    for skill in ("effects", "motion", "cut", "sound", "color", "graphics", "command"):
+    for skill in ("effects", "motion", "cut", "sound", "color", "graphics", "command", "match-cut"):
         assert f"{skill}:" in text
 
 
