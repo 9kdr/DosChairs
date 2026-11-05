@@ -1,0 +1,50 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>Chair promo</title>
+<style>
+@font-face { font-family: "Inter Variable"; src: url(fonts/inter-latin-wght-normal.woff2) format("woff2"); font-weight: 100 900; }
+:root {
+  --bg: #0A0A0A; --sidebar: #0F0F0F; --card: #1B1B1B; --raised: #242424; --fill: #1A1A1A;
+  --fg: #f5f5f5; --muted: #a3a3a3; --subtle: #737373; --line: rgb(245 245 245 / 7%);
+  --edge: color-mix(in srgb, #f5f5f5 9%, transparent);
+  --rim: inset 0 1px 0 color-mix(in srgb, white 10%, transparent), inset 0 -1px 0 color-mix(in srgb, black 45%, transparent);
+  --blue: oklch(0.72 0.14 240); --purple: oklch(0.7 0.18 304); --green: oklch(0.78 0.17 152);
+  --pink: oklch(0.74 0.17 354); --orange: oklch(0.79 0.15 62); --red: oklch(0.68 0.2 25);
+  --success: #10b981; --mono: "Noto Sans Mono", "Adwaita Mono", monospace;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { width: 1920px; height: 1080px; overflow: hidden; background: var(--bg); color: var(--fg);
+  font-family: "Inter Variable", sans-serif; -webkit-font-smoothing: antialiased; font-size: 15px; }
+#bg { position: absolute; inset: 0; width: 1920px; height: 1080px; image-rendering: pixelated; }
+#stage { position: absolute; inset: 0; }
+.abs { position: absolute; }
+.card { background: var(--card); border-radius: 24px; box-shadow: var(--rim), 0 1px 2px rgb(0 0 0 / .35); }
+.pill { border-radius: 9999px; }
+.meta { font-size: 13px; color: var(--muted); }
+.win { position: absolute; left: 700px; top: 120px; width: 1120px; height: 840px; background: var(--sidebar);
+  border-radius: 16px; border: 1px solid var(--edge); overflow: hidden; box-shadow: 0 30px 80px rgb(0 0 0 / .5); }
+.bar { height: 48px; display: flex; align-items: center; gap: 12px; padding: 0 20px; border-bottom: 1px solid var(--line); }
+.chip { display: inline-flex; align-items: center; gap: 8px; height: 30px; padding: 0 14px; border-radius: 9999px;
+  background: var(--fill); box-shadow: var(--rim); font-size: 13px; color: var(--muted); white-space: nowrap; }
+.dot { width: 8px; height: 8px; border-radius: 9999px; display: inline-block; }
+.kicker { font-size: 15px; color: var(--muted); letter-spacing: .02em; display: flex; gap: 12px; align-items: center; }
+.h1 { font-size: 64px; line-height: 1.06; font-weight: 600; letter-spacing: -0.03em; white-space: pre-line; }
+.sub { font-size: 22px; line-height: 1.45; color: var(--muted); }
+.big { font-size: 92px; line-height: 1.05; font-weight: 600; letter-spacing: -0.035em; }
+.word { display: inline-block; }
+.kbd { display: inline-flex; align-items: center; justify-content: center; height: 54px; padding: 0 18px; border-radius: 14px;
+  background: var(--raised); box-shadow: var(--rim), 0 4px 0 #050505; font-size: 22px; font-weight: 600; }
+.check { color: var(--success); }
+.track { position: absolute; height: 44px; border-radius: 10px; }
+.mono { font-family: var(--mono); }
+</style>
+</head>
+<body>
+<canvas id="bg" width="480" height="270"></canvas>
+<div id="stage"></div>
+<script src="script.js"></script>
+<script src="stage.js"></script>
+</body>
+</html>

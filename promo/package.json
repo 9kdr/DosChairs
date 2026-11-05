@@ -1,0 +1,14 @@
+{
+  "name": "promo",
+  "version": "1.0.0",
+  "description": "Chair promo video",
+  "main": "index.js",
+  "scripts": {
+    "render": "node render.mjs"
+  },
+  "keywords": [],
+  "type": "module",
+  "dependencies": {
+    "playwright-core": "1.55"
+  }
+}
