@@ -175,29 +175,27 @@ function log(phase: string): void {
 }
 
 export async function debugTarget(port: number): Promise<string> {
-  let noPage = 0;
+  let answered = false;
   for (let i = 0; i < ENDPOINT_RETRIES; i++) {
     try {
       const res = await fetch(`http://127.0.0.1:${port}/json/list`, {
         signal: AbortSignal.timeout(2000),
       });
+      answered = true;
       const tabs = (await res.json()) as { type?: string; webSocketDebuggerUrl?: string }[];
       const page = tabs.find((t) => t.type === "page" && t.webSocketDebuggerUrl);
       if (page?.webSocketDebuggerUrl) return page.webSocketDebuggerUrl;
-      if (++noPage >= 5) {
-        const created = (await fetch(`http://127.0.0.1:${port}/json/new?about:blank`, {
-          method: "PUT",
-          signal: AbortSignal.timeout(2000),
-        }).then((r) => r.json())) as { webSocketDebuggerUrl?: string };
-        if (created?.webSocketDebuggerUrl) return created.webSocketDebuggerUrl;
-      }
       if (i % 20 === 0) log(`debug endpoint up, ${tabs.length} targets`);
     } catch {
       /* not up yet */
     }
     await new Promise((r) => setTimeout(r, 100));
   }
-  throw new Error("bake: chromium's debugger endpoint never listed a page target");
+  throw new Error(
+    answered
+      ? "bake: chromium's debugger endpoint answered but never listed a page target"
+      : "bake: chromium's debugger endpoint never answered",
+  );
 }
 
 /** True when chromium drives a real GPU (not SwiftShader software GL). */
@@ -336,15 +334,47 @@ export async function renderFrames(entry: string, opts: RenderOptions): Promise<
       });
     }
   };
-  const stopAll = (): void => {
-    for (const child of children) {
+  const stopAll = async (): Promise<void> => {
+    const dying = children.splice(0);
+    for (const child of dying) {
       try {
         child.kill("SIGKILL");
       } catch {
         /* already gone */
       }
     }
-    children.length = 0;
+    // Wait for the killed browsers to actually exit (short cap): a
+    // relaunch on the same port or profile dir while the old process
+    // still holds them aborts the new chromium (exit 21, SingletonLock),
+    // leaving nobody on the debug port.
+    await Promise.all(
+      dying.map(
+        (child) =>
+          new Promise<void>((resolve) => {
+            if (child.exitCode !== null || child.signalCode !== null) {
+              resolve();
+              return;
+            }
+            const timer = setTimeout(resolve, 5000);
+            child.once("exit", () => {
+              clearTimeout(timer);
+              resolve();
+            });
+          }),
+      ),
+    );
+  };
+  const cleanProfiles = async (dirs: string[]): Promise<void> => {
+    await Promise.all(
+      dirs.map(async (dir) => {
+        try {
+          await rm(dir, { recursive: true, force: true });
+        } catch {
+          await new Promise((r) => setTimeout(r, 1500));
+          await rm(dir, { recursive: true, force: true }).catch(() => {});
+        }
+      }),
+    );
   };
 
   const setupPage = async (cdp: Cdp): Promise<void> => {
@@ -435,8 +465,16 @@ export async function renderFrames(entry: string, opts: RenderOptions): Promise<
     if (!(await detect())) {
       log("no GPU adapter; relaunching on SwiftShader");
       for (const page of connected) page.close();
-      stopAll();
+      await stopAll();
       childErr = "";
+      // Fresh ports and profiles for the software launch: even waited-on,
+      // a dying chromium can still hold the old ones briefly.
+      const oldDirs = workers.map((worker) => worker.profileDir);
+      for (const worker of workers) {
+        worker.debugPort = await freePort();
+        worker.profileDir = await mkdtemp(join(tmpdir(), "chair-bake-profile-"));
+      }
+      await cleanProfiles(oldDirs);
       launch(true);
       connected = await connectAll();
       renderer = "swiftshader";
@@ -459,20 +497,11 @@ export async function renderFrames(entry: string, opts: RenderOptions): Promise<
     );
   } finally {
     for (const page of pages) page.close();
-    stopAll();
+    await stopAll();
     server.close();
     // Let the killed browsers exit before removing their profiles, else
     // rmdir races their last writes (ENOTEMPTY).
     await new Promise((r) => setTimeout(r, 1500));
-    await Promise.all(
-      workers.map(async (worker) => {
-        try {
-          await rm(worker.profileDir, { recursive: true, force: true });
-        } catch {
-          await new Promise((r) => setTimeout(r, 1500));
-          await rm(worker.profileDir, { recursive: true, force: true }).catch(() => {});
-        }
-      }),
-    );
+    await cleanProfiles(workers.map((worker) => worker.profileDir));
   }
 }
