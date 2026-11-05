@@ -15,6 +15,16 @@ already cached in `~/.cache/ms-playwright` (set `CHROMIUM=/path/to/chrome` to
 override) and `ffmpeg` on PATH. Takes a few minutes with 8–12 workers
 (`npm run render -- --workers 12`). Render a slice: `-- --from 100 --to 120`.
 
+## Watch without rendering
+
+```sh
+cd promo && npm run preview   # writes out/preview.html (one self-contained file)
+```
+
+Open `promo/out/preview.html` in any browser: it plays the whole video live.
+Click to pause, drag the bar to scrub. `npm run stills -- 26 119 161` saves
+PNGs of chosen seconds to `/tmp/chair-promo/stills/`.
+
 ## Edit the text
 
 All words and timings live in **`script.js`**:

@@ -182,26 +182,26 @@ function lanes(rows, x, y, w, extra = {}) {
 const baseRows = [["V2", [[0.1, 0.18, 5, "B-roll"]]], ["V1", [[0, 0.32, 0, "Interview A"], [0.33, 0.27, 2, "Wide"], [0.61, 0.38, 0, "Interview B"]]], ["A1", [[0, 0.6, "#2a2a2a", "Dialogue"], [0.61, 0.38, "#2a2a2a", "Dialogue"]]], ["A2", [[0, 0.99, "#232338", "Music"]]]];
 
 function sCopies(lt, f, n) {
-  let h = `<div class="abs card" style="left:40px;top:30px;width:1040px;height:250px;padding:20px 24px">
+  let h = `<div class="abs card" style="left:40px;top:24px;width:1040px;height:284px;padding:18px 24px">
     <div style="display:flex;gap:10px;align-items:center"><span style="font-weight:600">Summer Reel</span><span class="chip" style="height:26px">Your timeline</span>
     ${lt > 5.3 ? `<span class="chip" style="height:26px;color:var(--fg);${inn(lt, 5.3, 0.4, 6)}"><span class="dot" style="background:var(--success)"></span>Untouched</span>` : ""}</div>
     ${lanes(baseRows, 24, 64, 990)}</div>`;
   const ck = eo(prog(lt, 1.0, 0.8)), und = prog(lt, 5.1, 0.6);
   const v3k = eo(prog(lt, 1.9, 0.5));
-  h += `<div class="abs card" style="left:40px;top:${lerp(30, 300, ck)}px;width:1040px;height:300px;padding:20px 24px;opacity:${Math.min(ck, 1 - und * 0.7)};background:#1f1f1f">
+  h += `<div class="abs card" style="left:40px;top:${lerp(24, 322, ck)}px;width:1040px;height:330px;padding:20px 24px;opacity:${Math.min(ck, 1 - und * 0.7)};background:#1f1f1f">
     <div style="display:flex;gap:10px;align-items:center"><span style="font-weight:600">Summer Reel · Chair 1</span><span class="chip" style="height:26px;color:var(--fg)">New timeline (copy)</span>
     ${lt > 5.1 ? `<span class="chip" style="height:26px">Undone</span>` : ""}</div>
     ${lanes([["V3", [[0.02, 0.2, 1, "Title piece", v3k]]], ...baseRows], 24, 64, 990)}
     <div class="abs chip" style="left:290px;top:58px;height:26px;color:var(--fg);opacity:${v3k}">New track</div></div>`;
   // history
-  h += `<div class="abs card" style="left:40px;top:620px;width:640px;height:150px;padding:18px 24px">
-    <div style="font-weight:600;margin-bottom:10px">History</div>${f.history.map((r, i) => {
+  h += `<div class="abs card" style="left:40px;top:664px;width:640px;height:122px;padding:10px 24px">
+    <div style="font-weight:600;margin-bottom:2px">History</div>${f.history.map((r, i) => {
       const struck = i > 0 && lt > 5.1;
-      return `<div style="display:flex;gap:12px;align-items:center;height:30px;${inn(lt, 0.6 + i * 1.0, 0.4, 8)};opacity:${struck ? 0.4 : undefined}">
+      return `<div style="display:flex;gap:12px;align-items:center;height:28px;${inn(lt, 0.6 + i * 1.0, 0.4, 8)};opacity:${struck ? 0.4 : undefined}">
       <span class="mono meta" style="width:24px">${i + 1}</span><span style="${struck ? "text-decoration:line-through" : ""}">${esc(r)}</span></div>`;
     }).join("")}</div>`;
   const p = pressAt(lt, 4.9);
-  h += `<div class="abs" style="left:730px;top:660px;display:flex;gap:10px;align-items:center;${inn(lt, 4.2, 0.5)}">
+  h += `<div class="abs" style="left:730px;top:696px;display:flex;gap:10px;align-items:center;${inn(lt, 4.2, 0.5)}">
     <span class="kbd" style="transform:translateY(${p * 4}px)">Ctrl</span><span class="kbd" style="transform:translateY(${p * 4}px)">Z</span><span class="meta" style="margin-left:8px;font-size:15px">Undo</span></div>`;
   return feature(f, n, lt, h);
 }
@@ -407,7 +407,7 @@ function kinetic(text, lt, s, size = 92, accent = "", align = "center") {
   return `<div class="big" style="font-size:${size}px;text-align:${align}">${words.map((w, i) => {
     const k = eo(prog(lt, s + i * 0.09, 0.7));
     const isAcc = accent && i >= words.length - accWords;
-    const st = isAcc ? `background:url(${dither("oklch(0.7 0.18 304)", 3, 240, 136, 2)}) center/cover;-webkit-background-clip:text;background-clip:text;color:transparent;` : "";
+    const st = isAcc ? "color:oklch(0.7 0.18 304);" : "";
     return `<span class="word" style="opacity:${k};transform:translateY(${(1 - k) * 28}px);${st}">${esc(w)}</span>`;
   }).join(" ")}</div>`;
 }

@@ -4,7 +4,9 @@
   "description": "Chair promo video",
   "main": "index.js",
   "scripts": {
-    "render": "node render.mjs"
+    "render": "node render.mjs",
+    "preview": "node build-preview.mjs",
+    "stills": "node stills.mjs"
   },
   "keywords": [],
   "type": "module",
