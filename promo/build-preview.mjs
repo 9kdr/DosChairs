@@ -14,9 +14,9 @@ let css = read("index.html").match(/<style>([\s\S]*?)<\/style>/)[1]
 #ui { display:flex; gap:10px; align-items:center; margin-top:8px; font:12px/1 monospace; color:#a3a3a3; }
 #scrub { flex:1; accent-color:#f5f5f5; }`);
 const html = `<!doctype html><html><head><meta charset="utf-8"><style>${css}</style></head><body>
-<div id="view"><div id="frame"><canvas id="bg" width="480" height="270"></canvas><div id="stage"></div></div></div>
+<div id="view"><div id="frame"><canvas id="bg" width="960" height="540"></canvas><div id="stage"></div></div></div>
 <div id="ui"><span id="pp">pause</span><input id="scrub" type="range" min="0" max="1000" value="0"><span id="tc">0.0 s</span></div>
-<script>${read("script.js")}</script><script>${read("stage.js")}</script>
+<script>${read("script.js")}</script><script>${read("vendor/sleepy-scene.js")}</script><script>${read("stage.js")}</script>
 <script>
 const view = document.getElementById("view"), frame = document.getElementById("frame"), scrub = document.getElementById("scrub"), tc = document.getElementById("tc"), pp = document.getElementById("pp");
 const fit = () => { frame.style.transform = "scale(" + view.clientWidth / 1920 + ")"; };
