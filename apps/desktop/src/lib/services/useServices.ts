@@ -91,7 +91,7 @@ export function createHealthStore(
     for (const listener of listeners) listener();
   }
 
-  async function pushKeysIfChanged(): Promise<void> {
+  async function pushKeysIfChanged(agentHealth?: AgentHealth): Promise<void> {
     if (pushing) return;
     pushing = true;
     try {
@@ -103,7 +103,13 @@ export function createHealthStore(
       }
       if (!Object.values(keys).some((key) => key != null)) return;
       const json = JSON.stringify(keys);
-      if (json === lastKeysJson) return;
+      const configured =
+        agentHealth?.keys_configured ??
+        (agentHealth as { keys?: Record<string, boolean> } | undefined)?.keys;
+      const missingKey = Object.entries(keys).some(
+        ([provider, value]) => value != null && configured?.[provider] === false,
+      );
+      if (json === lastKeysJson && !missingKey) return;
       try {
         await client.setAgentKeys(keys);
       } catch {
@@ -139,7 +145,7 @@ export function createHealthStore(
       emit(next);
       // Fire and forget like before: the snapshot never waits on the push,
       // and a changed key mid-push retries on the next check.
-      if (agentResult.status === "fulfilled") void pushKeysIfChanged();
+      if (agentResult.status === "fulfilled") void pushKeysIfChanged(agentResult.value);
     } finally {
       inFlight = false;
     }

@@ -156,6 +156,47 @@ describe("shared health store", () => {
     expect(calls.pushed[1]).toEqual({ openai: "sk-two" });
   });
 
+  it("pushes keys again if agent health reports keys_configured.meta is false after restart", async () => {
+    let agentHealth: AgentHealth = {
+      ...AGENT_HEALTH,
+      keys_configured: { meta: true },
+    };
+    const { client, calls } = stubClient({
+      agentHealth: async () => {
+        calls.health += 1;
+        return agentHealth;
+      },
+    });
+    let tick: (() => void) | null = null;
+    const store = createHealthStore(client, {
+      schedule: (fn) => {
+        tick = fn;
+        return "timer";
+      },
+      loadKeys: async () => ({ meta: "meta-test-key" }),
+    });
+    const fire = () => tick?.();
+    store.subscribe(() => {});
+
+    await vi.waitFor(() => expect(calls.keys).toBe(1));
+    expect(calls.pushed[0]).toEqual({ meta: "meta-test-key" });
+
+    // Agent healthy and has keys; next check should not push
+    fire();
+    await vi.waitFor(() => expect(calls.health).toBe(4));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(calls.keys).toBe(1);
+
+    // Agent restarted; health reports keys_configured.meta: false
+    agentHealth = {
+      ...AGENT_HEALTH,
+      keys_configured: { meta: false },
+    };
+    fire();
+    await vi.waitFor(() => expect(calls.keys).toBe(2));
+    expect(calls.pushed[1]).toEqual({ meta: "meta-test-key" });
+  });
+
   it("never pushes when no key is set", async () => {
     const { client, calls } = stubClient();
     const { store } = harness(client, { keys: { openai: null } });
