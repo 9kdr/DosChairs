@@ -46,9 +46,9 @@ DEFAULT_ALLOWED_ORIGINS = (
 
 def _allowed_origins() -> set[str]:
     raw = os.getenv("CHAIR_ALLOWED_ORIGINS")
-    if raw is not None:
-        return {item.strip() for item in raw.split(",") if item.strip()}
-    return set(DEFAULT_ALLOWED_ORIGINS)
+    if raw is None or not raw.strip():
+        return set(DEFAULT_ALLOWED_ORIGINS)
+    return {item.strip() for item in raw.split(",") if item.strip()}
 
 
 def _is_allowed_origin(origin: str) -> bool:

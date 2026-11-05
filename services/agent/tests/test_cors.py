@@ -129,3 +129,18 @@ def test_env_var_override_allowed_origins(
     )
     assert status == 403
     assert "access-control-allow-origin" not in headers
+
+
+def test_env_var_empty_uses_default_allowed_origins(
+    agent_server: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("CHAIR_ALLOWED_ORIGINS", "")
+
+    status, headers, _ = _request(
+        f"{agent_server}/health",
+        headers={"Origin": "http://localhost:1420"},
+    )
+    assert status == 200
+    assert headers.get("access-control-allow-origin") == "http://localhost:1420"
+
