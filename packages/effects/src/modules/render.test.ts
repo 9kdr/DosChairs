@@ -7,7 +7,7 @@ import { mkdtempSync, writeFileSync, chmodSync, mkdirSync, readFileSync } from "
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi, afterEach } from "vitest";
-import { pngSize, renderFrames } from "./render.js";
+import { debugTarget, pngSize, renderFrames } from "./render.js";
 import { findChromium } from "./verify.js";
 
 const DISC_FRAG = `#version 300 es
@@ -122,3 +122,41 @@ describe("renderFrames", () => {
     expect(first!.equals(second!)).toBe(true);
   }, 180_000);
 });
+
+describe("debugTarget", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("creates a page target when /json/list only returns non-page targets", async () => {
+    const urls: { url: string; method?: string | undefined }[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+        const url = String(input);
+        urls.push({ url, method: init?.method });
+        if (url.endsWith("/json/list")) {
+          return new Response(
+            JSON.stringify([{ type: "browser", webSocketDebuggerUrl: "ws://127.0.0.1:9222/devtools/browser/1" }]),
+            { status: 200, headers: { "content-type": "application/json" } },
+          );
+        }
+        if (url.endsWith("/json/new?about:blank")) {
+          return new Response(
+            JSON.stringify({
+              type: "page",
+              webSocketDebuggerUrl: "ws://127.0.0.1:9222/devtools/page/new-target-id",
+            }),
+            { status: 200, headers: { "content-type": "application/json" } },
+          );
+        }
+        return new Response("not found", { status: 404 });
+      }),
+    );
+
+    const wsUrl = await debugTarget(9222);
+    expect(wsUrl).toBe("ws://127.0.0.1:9222/devtools/page/new-target-id");
+    expect(urls.some((u) => u.url.includes("/json/new?about:blank") && u.method === "PUT")).toBe(true);
+  });
+});
+
