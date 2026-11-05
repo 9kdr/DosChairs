@@ -957,11 +957,83 @@ def test_analyze_music_rejects_bad_words(server: str, tmp_path: Path) -> None:
 
 
 def test_health_is_readable_from_the_desktop_origin(server: str) -> None:
-    from urllib.request import urlopen
-
-    with urlopen(f"{server}/health") as response:
+    desktop_origin = "http://localhost:1420"
+    request = Request(f"{server}/health", headers={"Origin": desktop_origin})
+    with urlopen(request) as response:
         assert response.status == 200
-        assert response.headers["access-control-allow-origin"] == "*"
+        assert response.headers["access-control-allow-origin"] == desktop_origin
+        assert response.headers["vary"] == "Origin"
+
+
+def test_foreign_origin_gets_no_allow_origin_header(server: str) -> None:
+    request = Request(f"{server}/health", headers={"Origin": "https://evil.com"})
+    with urlopen(request) as response:
+        assert response.status == 200
+        assert "access-control-allow-origin" not in response.headers
+        assert response.headers["vary"] == "Origin"
+
+
+def test_foreign_origin_preflight_is_refused(server: str) -> None:
+    request = Request(
+        f"{server}/jobs/render_preview",
+        headers={"Origin": "https://evil.com"},
+        method="OPTIONS",
+    )
+    with pytest.raises(HTTPError) as exc_info:
+        urlopen(request)
+    assert exc_info.value.code == 403
+    assert "access-control-allow-origin" not in exc_info.value.headers
+
+
+def test_allowed_origin_preflight_is_accepted(server: str) -> None:
+    desktop_origin = "http://localhost:1420"
+    request = Request(
+        f"{server}/jobs/render_preview",
+        headers={"Origin": desktop_origin},
+        method="OPTIONS",
+    )
+    with urlopen(request) as response:
+        assert response.status == 204
+        assert response.headers["access-control-allow-origin"] == desktop_origin
+        assert response.headers["vary"] == "Origin"
+        assert "OPTIONS" in response.headers["access-control-allow-methods"]
+
+
+def test_request_with_no_origin_header_works(server: str) -> None:
+    request = Request(f"{server}/health")
+    with urlopen(request) as response:
+        assert response.status == 200
+        assert "access-control-allow-origin" not in response.headers
+        assert response.headers["vary"] == "Origin"
+
+
+def test_post_jobs_refuses_non_json_content_type(server: str) -> None:
+    request = Request(
+        f"{server}/jobs/render_preview",
+        data=b'{"source": "test.mp4"}',
+        headers={"Content-Type": "text/plain"},
+        method="POST",
+    )
+    with pytest.raises(HTTPError) as exc_info:
+        urlopen(request)
+    assert exc_info.value.code == 415
+    body = json.load(exc_info.value)
+    assert "application/json" in body["error"]
+
+
+def test_allowed_origins_env_override(
+    server: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    custom_origin = "http://custom.local:3000"
+    monkeypatch.setenv("CHAIR_ALLOWED_ORIGINS", f"{custom_origin},http://other.local")
+    request = Request(f"{server}/health", headers={"Origin": custom_origin})
+    with urlopen(request) as response:
+        assert response.status == 200
+        assert response.headers["access-control-allow-origin"] == custom_origin
+    foreign = Request(f"{server}/health", headers={"Origin": "http://localhost:1420"})
+    with urlopen(foreign) as response:
+        assert response.status == 200
+        assert "access-control-allow-origin" not in response.headers
 
 
 def test_synth_request_validates_kind_and_duration() -> None:

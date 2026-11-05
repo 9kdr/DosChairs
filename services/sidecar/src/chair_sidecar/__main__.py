@@ -22,6 +22,20 @@ from chair_sidecar.jobs import (
     sam_audio_runner,
 )
 
+DEFAULT_ALLOWED_ORIGINS: frozenset[str] = frozenset({
+    "http://localhost:1420",
+    "http://127.0.0.1:1420",
+    "tauri://localhost",
+    "http://tauri.localhost",
+})
+
+
+def allowed_origins() -> set[str]:
+    raw = os.environ.get("CHAIR_ALLOWED_ORIGINS")
+    if raw is None or not raw.strip():
+        return set(DEFAULT_ALLOWED_ORIGINS)
+    return {origin.strip() for origin in raw.split(",") if origin.strip()}
+
 
 class SidecarServer(ThreadingHTTPServer):
     def __init__(self, server_address: tuple[str, int], store: JobStore) -> None:
@@ -57,10 +71,26 @@ class Handler(BaseHTTPRequestHandler):
             return
         self.send_error(404)
 
+    def do_OPTIONS(self) -> None:
+        origin = self.headers.get("origin")
+        if not origin or origin not in allowed_origins():
+            self.send_error(403)
+            return
+        self.send_response(204)
+        self.send_header("access-control-allow-origin", origin)
+        self.send_header("vary", "Origin")
+        self.send_header("access-control-allow-methods", "GET, POST, OPTIONS")
+        self.send_header("access-control-allow-headers", "content-type")
+        self.end_headers()
+
     def do_POST(self) -> None:
         prefix = "/jobs/"
         if not self.path.startswith(prefix):
             self.send_error(404)
+            return
+        content_type = self.headers.get("content-type", "").split(";")[0].strip().lower()
+        if content_type != "application/json":
+            self._json(415, {"error": "content-type must be application/json"})
             return
         tool = self.path.removeprefix(prefix)
         if (
@@ -120,9 +150,10 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(status)
         self.send_header("content-type", "application/json")
         self.send_header("content-length", str(len(body)))
-        # The desktop window is another origin; without this the browser
-        # blocks the read and the sidecar always looks down.
-        self.send_header("access-control-allow-origin", "*")
+        origin = self.headers.get("origin")
+        if origin and origin in allowed_origins():
+            self.send_header("access-control-allow-origin", origin)
+        self.send_header("vary", "Origin")
         self.end_headers()
         self.wfile.write(body)
 
