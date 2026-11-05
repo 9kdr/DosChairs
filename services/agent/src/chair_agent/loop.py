@@ -285,6 +285,7 @@ def _handle_crew_brief(
     base_revision: str,
     target_id: str,
     total_frames: int,
+    project_id: str | None = None,
 ) -> HandlerResult:
     """Fall-through for briefs the cut/sound pipeline can't plan: one crew run.
 
@@ -293,6 +294,7 @@ def _handle_crew_brief(
     can't do raises a plain ValueError, never a stack trace.
     """
     from chair_agent.client import build_client, build_client_for_model
+    from chair_agent.crew.images import default_adapter
     from chair_agent.crew.orchestrator import run_crew
 
     use_client = client
@@ -313,6 +315,8 @@ def _handle_crew_brief(
             base_revision=base_revision,
             target_id=target_id,
             total_frames=total_frames,
+            image_adapter=default_adapter(),
+            project_id=project_id,
         )
     except Exception as error:
         raise ValueError(f"Chair can't do that yet: {error}") from error
@@ -433,6 +437,8 @@ def handle_edit(
     except ValueError:
         planned = None
     if planned is None or not _has_dispatchable_intent(planned):
+        raw_project = job.input.get("project_id")
+        crew_project = raw_project if isinstance(raw_project, str) else None
         return _handle_crew_brief(
             brief,
             client=client,
@@ -441,6 +447,7 @@ def handle_edit(
             base_revision=base_revision or "rev-0",
             target_id=target_id or "timeline-1",
             total_frames=total_frames or 900,
+            project_id=crew_project,
         )
     dispatch_notes: list[str] = []
     if "spans" in job.input:
