@@ -8,6 +8,7 @@ from chair_agent.dispatch import (
     UnexpectedDispatch,
     build_sidecar_tools,
     dispatch_spans,
+    dispatch_spans_with_notes,
 )
 from chair_agent.transcribe import Transcript, Word
 
@@ -184,6 +185,37 @@ def test_sidecar_tools_render_returns_a_file_url() -> None:
 
     with pytest.raises(UnexpectedDispatch, match="relative proxy path"):
         _tools(relative).render_preview("file:///proxy.mp4")
+
+
+class _FailingTranscriber:
+    def transcribe(self, audio_url: str, *, language: str | None = None) -> Transcript:
+        raise RuntimeError("404 Not Found")
+
+
+def test_dispatch_transcriber_failure_skips_filler_keeps_silence() -> None:
+    """A dead transcription endpoint is non-fatal: silence spans stay, plus a note."""
+    spans, notes = dispatch_spans_with_notes(
+        ["silence", "filler"],
+        "file:///proxy.mp4",
+        silence=_Silence([(4.0, 5.0)]),
+        transcriber=_FailingTranscriber(),
+        rate=30.0,
+    )
+    assert [(span.start_frames, span.frames, span.kind) for span in spans] == [
+        (120, 30, "silence")
+    ]
+    assert notes == ["Filler words skipped: transcription failed (404 Not Found)"]
+
+
+def test_dispatch_spans_wrapper_survives_transcriber_failure() -> None:
+    spans = dispatch_spans(
+        ["silence", "filler"],
+        "file:///proxy.mp4",
+        silence=_Silence([(4.0, 5.0)]),
+        transcriber=_FailingTranscriber(),
+        rate=30.0,
+    )
+    assert [(span.start_frames, span.kind) for span in spans] == [(120, "silence")]
 
 
 def test_build_sidecar_tools_reads_the_env() -> None:

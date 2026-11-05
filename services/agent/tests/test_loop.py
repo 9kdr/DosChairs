@@ -4,7 +4,7 @@ from pathlib import Path
 
 import httpx
 import pytest
-from chair_agent.client import HttpxTransport, ModelClient, RoleModels
+from chair_agent.client import Completion, HttpxTransport, ModelClient, RoleModels
 from chair_agent.executor import (
     SfxFile,
     Span,
@@ -443,7 +443,7 @@ def test_handle_edit_records_planner_and_undispatched_message() -> None:
     ]
 
 
-def test_handle_edit_undispatched_only_fails_loudly() -> None:
+def test_handle_edit_routes_undispatched_only_brief_to_crew() -> None:
     reply = json.dumps({
         "intents": ["grade"],
         "steps": [{"tool": "grade", "goal": "warm tone"}],
@@ -453,12 +453,14 @@ def test_handle_edit_undispatched_only_fails_loudly() -> None:
     job_input = {**data["context"], "brief": "Make the clip warmer with a grade"}
     silence, transcriber, preview = _LiveSilence(), _LiveTranscriber(), _LivePreview()
     job = _job(job_input)
-    # A job that dispatches nothing fails instead of reporting "completed".
-    with pytest.raises(PreviewRejected) as rejected:
+    # The cut/sound pipeline dispatches nothing, so the brief falls through
+    # to the crew. The fake client answers the crew command with the same
+    # plan JSON, which is not a task list, so the job fails with a plain
+    # message instead of a stack trace.
+    with pytest.raises(ValueError, match="can't do that yet"):
         handle_edit(
             job, client=client, silence=silence, transcriber=transcriber, preview=preview
         )
-    assert "Cannot dispatch intents yet: grade" in str(rejected.value)
 
 
 def test_handler_resolves_proxy_from_project_timeline(
@@ -765,3 +767,65 @@ def test_model_intent_variants_still_dispatch() -> None:
     assert [op["op"] for op in result.changeset["items"]] == [
         "add_track", "add_clip", "add_clip", "set_gain",
     ]
+
+
+class _CrewRouteClient:
+    """plan() fails like the live planner; execute() answers the crew command."""
+
+    def __init__(self, tasks_json: str) -> None:
+        self._tasks_json = tasks_json
+
+    def plan(self, messages):  # type: ignore[no-untyped-def]
+        raise RuntimeError("planner unavailable")
+
+    def execute(self, messages):  # type: ignore[no-untyped-def]
+        return Completion(model="muse-spark-1", text=self._tasks_json)
+
+    def complete_model(self, model, messages):  # type: ignore[no-untyped-def]
+        return self.execute(messages)
+
+
+def test_handle_edit_routes_unplannable_brief_to_crew() -> None:
+    """A brief the cut/sound pipeline can't plan runs the crew, not an error."""
+    tasks_json = (
+        '{"tasks": [{"id": "t1", "beatId": "b1", "section": "graphics", '
+        '"goal": "lower third with the name", "acceptance": "name reads on b1"}]}'
+    )
+    submitted = {
+        "brief": "add a lower third with my name",
+        "proxy_url": "file:///proxy.mp4",
+    }
+    job = _job(dict(submitted))
+    result = handle_edit(job, client=_CrewRouteClient(tasks_json))  # type: ignore[arg-type]
+    assert job.input == submitted
+    assert isinstance(result, HandlerResult)
+    assert result.planner == "crew"
+    assert result.artifacts == []
+    assert len(result.ops) == 1
+    op = result.ops[0]
+    assert op["op"] == "add_effect"
+    assert op["status"] == "pending"
+    assert op["beatId"] == "b1"
+    assert result.message is not None and result.message.startswith("crew ")
+
+
+class _FailingLiveTranscriber:
+    def transcribe(self, audio_url: str, *, language: str | None = None) -> Transcript:
+        raise RuntimeError("Client error '404 Not Found'")
+
+
+def test_handler_transcriber_failure_skips_filler_keeps_silence() -> None:
+    """A dead transcription endpoint skips the filler pass; silence still cuts."""
+    data = GOLDEN["input"]
+    job_input = {**data["context"], "brief": "cut the silence and the filler words"}
+    result = handle_edit(
+        _job(job_input),
+        silence=_LiveSilence(),
+        transcriber=_FailingLiveTranscriber(),
+        preview=_LivePreview(),
+    )
+    assert isinstance(result, HandlerResult)
+    assert [(op["patch"]["startFrames"], op["patch"]["frames"]) for op in result.ops] == [
+        (120, 48)
+    ]
+    assert result.message is not None and "Filler words skipped" in result.message
