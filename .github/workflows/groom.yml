@@ -3,7 +3,7 @@ name: Nightly groom
 # Zero-cost triage. Heuristic only: labels small slices grok-ready,
 # pings stale agent:claimed issues once. Never codes, never merges.
 # The Muse plan-comment seam inside scripts/groom.mjs runs only when
-# repository secrets MUSE_API_URL and MUSE_API_KEY exist.
+# repository secret MUSE_API_KEY exists (MUSE_API_URL is optional).
 
 on:
   schedule:
@@ -17,6 +17,7 @@ on:
         default: "true"
 
 permissions:
+  contents: read
   issues: write
   pull-requests: read
 

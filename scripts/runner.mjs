@@ -4,7 +4,7 @@
 // writes confined to the repo with secrets/weights/media off limits.
 //
 // Usage: node scripts/runner.mjs [--dry-run] [--issue N]
-// Env: GH_TOKEN (gh CLI), MUSE_API_URL + MUSE_API_KEY (required to code),
+// Env: GH_TOKEN (gh CLI), MUSE_API_KEY (required to code; MUSE_API_URL is optional),
 //   MUSE_MODEL (default "muse-spark").
 //
 // Pick rule: oldest open issue with grok-ready, no agent:claimed,
@@ -276,11 +276,11 @@ async function main() {
     return;
   }
 
-  const url = process.env.MUSE_API_URL;
+  const url = process.env.MUSE_API_URL || "https://api.meta.ai/v1/chat/completions";
   const key = process.env.MUSE_API_KEY;
   const model = process.env.MUSE_MODEL || "muse-spark";
-  if (!url || !key) {
-    console.error("MUSE_API_URL and MUSE_API_KEY are required to code; add them as repo secrets");
+  if (!key) {
+    console.error("MUSE_API_KEY is required to code; add it as a repo secret");
     process.exitCode = 2;
     return;
   }

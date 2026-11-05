@@ -1,8 +1,8 @@
 name: Cloud runner
 
 # Codes ONE grok-ready issue per run and opens a PR. Never merges.
-# Requires repo secrets MUSE_API_URL + MUSE_API_KEY (+ MUSE_MODEL).
-# Without them the script exits loudly so the gap is visible.
+# Requires repo secret MUSE_API_KEY (MUSE_API_URL is optional, + MUSE_MODEL).
+# Without it the script exits loudly so the gap is visible.
 
 on:
   schedule:
