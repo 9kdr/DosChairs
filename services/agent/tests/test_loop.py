@@ -1,6 +1,7 @@
 import json
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 import httpx
 import pytest
@@ -653,7 +654,13 @@ def test_run_loop_places_riser_duck_and_tape_stop() -> None:
     assert riser["patch"]["clip"]["timelineRange"]["start"] == {"value": 90, "rate": 30.0}
     assert riser["patch"]["clip"]["timelineRange"]["duration"] == {"value": 60, "rate": 30.0}
     tape = next(op for op in ops if op["id"] == "sfx-tape-stop-1")
-    assert tape["patch"]["clip"]["timelineRange"]["start"] == {"value": 600, "rate": 30.0}
+    assert tape["patch"]["clip"]["timelineRange"]["start"] == {"value": 564, "rate": 30.0}
+    assert tape["patch"]["clip"]["timelineRange"]["duration"] == {"value": 36, "rate": 30.0}
+    for op in ops:
+        if op["op"] == "add_clip":
+            clip_range = op["patch"]["clip"]["timelineRange"]
+            clip_end = clip_range["start"]["value"] + clip_range["duration"]["value"]
+            assert clip_end <= context.total_frames
     duck = next(op for op in ops if op["op"] == "set_gain")
     keyframes = duck["patch"]["keyframes"]
     assert len(keyframes) == 8
@@ -830,3 +837,70 @@ def test_handler_transcriber_failure_skips_filler_keeps_silence() -> None:
         (120, 48)
     ]
     assert result.message is not None and "Filler words skipped" in result.message
+
+
+def test_handle_edit_resolves_timeline_rate_for_live_dispatch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import chair_agent.loop
+
+    timeline_24fps = {
+        "id": "proj-24",
+        "rate": {"num": 24, "den": 1},
+        "tracks": [
+            {
+                "id": "v1",
+                "clips": [
+                    {
+                        "id": "c1",
+                        "mediaRef": "file:///proxies/interview-proxy.mp4",
+                        "timelineRange": {
+                            "start": {"value": 0, "rate": 24.0},
+                            "duration": {"value": 240, "rate": 24.0},
+                        },
+                    }
+                ],
+            }
+        ],
+    }
+    monkeypatch.setattr(
+        "chair_agent.review.read_project_timeline",
+        lambda ref: timeline_24fps,
+    )
+
+    dispatched_rates: list[float] = []
+    real_dispatch = chair_agent.loop.dispatch_spans_with_notes
+
+    def _tracking_dispatch(*args: Any, **kwargs: Any) -> Any:
+        dispatched_rates.append(kwargs["rate"])
+        return real_dispatch(*args, **kwargs)
+
+    monkeypatch.setattr("chair_agent.loop.dispatch_spans_with_notes", _tracking_dispatch)
+
+    # When job has no rate, live dispatch uses the timeline's rate (24 fps)
+    result = handle_edit(
+        _job({"brief": "cut the silence", "project_id": "proj-24"}),
+        silence=_LiveSilence(),
+        transcriber=_LiveTranscriber(),
+        preview=_LivePreview(),
+    )
+    assert dispatched_rates == [24.0]
+    assert [(op["patch"]["startFrames"], op["patch"]["frames"]) for op in result.ops] == [
+        (96, 38)
+    ]
+    for op in result.ops:
+        assert op["patch"]["startFrames"] + op["patch"]["frames"] <= 240
+
+    # Explicit rate in job input still wins
+    dispatched_rates.clear()
+    result_explicit = handle_edit(
+        _job({"brief": "cut the silence", "project_id": "proj-24", "rate": 25.0}),
+        silence=_LiveSilence(),
+        transcriber=_LiveTranscriber(),
+        preview=_LivePreview(),
+    )
+    assert dispatched_rates == [25.0]
+    assert [(op["patch"]["startFrames"], op["patch"]["frames"]) for op in result_explicit.ops] == [
+        (100, 40)
+    ]
+

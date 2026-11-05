@@ -36,6 +36,24 @@ HANDLERS: dict[str, TaskHandler] = {
     "transcribe": handle_transcribe, "edit": handle_edit, "direct": handle_direct,
 }
 
+DEFAULT_ALLOWED_ORIGINS = (
+    "http://localhost:1420",
+    "http://127.0.0.1:1420",
+    "tauri://localhost",
+    "http://tauri.localhost",
+)
+
+
+def _allowed_origins() -> set[str]:
+    raw = os.getenv("CHAIR_ALLOWED_ORIGINS")
+    if raw is None or not raw.strip():
+        return set(DEFAULT_ALLOWED_ORIGINS)
+    return {item.strip() for item in raw.split(",") if item.strip()}
+
+
+def _is_allowed_origin(origin: str) -> bool:
+    return origin in _allowed_origins()
+
 
 class Handler(BaseHTTPRequestHandler):
     controller: JobController
@@ -97,9 +115,19 @@ class Handler(BaseHTTPRequestHandler):
         except JobNotFound:
             self._send(404, _error("job_not_found", "unknown request id"))
 
+    def _apply_cors_headers(self) -> None:
+        self.send_header("vary", "Origin")
+        origin = self.headers.get("origin")
+        if origin and _is_allowed_origin(origin):
+            self.send_header("access-control-allow-origin", origin)
+
     def do_OPTIONS(self) -> None:
+        origin = self.headers.get("origin")
+        if origin and not _is_allowed_origin(origin):
+            self._send(403, _error("forbidden_origin", "origin not allowed"))
+            return
         self.send_response(204)
-        self.send_header("access-control-allow-origin", "*")
+        self._apply_cors_headers()
         self.send_header("access-control-allow-methods", "GET, POST, PUT, OPTIONS")
         self.send_header("access-control-allow-headers", "content-type, idempotency-key")
         self.end_headers()
@@ -437,10 +465,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(status)
         self.send_header("content-type", "application/json")
         self.send_header("content-length", str(len(raw)))
-        # The desktop window is a different origin; without this the
-        # browser blocks reads and the service always looks down.
-        # Responses here never carry secrets (see the health test).
-        self.send_header("access-control-allow-origin", "*")
+        self._apply_cors_headers()
         self.end_headers()
         self.wfile.write(raw)
 
@@ -448,7 +473,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(status)
         self.send_header("content-type", f"{content_type}; charset=utf-8")
         self.send_header("content-length", str(len(raw)))
-        self.send_header("access-control-allow-origin", "*")
+        self._apply_cors_headers()
         self.end_headers()
         self.wfile.write(raw)
 

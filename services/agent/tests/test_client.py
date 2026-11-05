@@ -2,7 +2,7 @@ import json
 import threading
 from collections.abc import Callable
 from http.server import ThreadingHTTPServer
-from urllib.request import urlopen
+from urllib.request import Request, urlopen
 
 import httpx
 import pytest
@@ -190,7 +190,8 @@ def test_health_reports_configured_model_names(monkeypatch: pytest.MonkeyPatch) 
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     try:
-        with urlopen(f"http://127.0.0.1:{port}/health") as response:
+        req = Request(f"http://127.0.0.1:{port}/health", headers={"Origin": "http://localhost:1420"})
+        with urlopen(req) as response:
             body = json.load(response)
             allow_origin = response.headers.get("Access-Control-Allow-Origin")
     finally:
@@ -198,7 +199,7 @@ def test_health_reports_configured_model_names(monkeypatch: pytest.MonkeyPatch) 
         thread.join(timeout=2)
         server.server_close()
 
-    assert allow_origin == "*"
+    assert allow_origin == "http://localhost:1420"
     assert body["service"] == "agent"
     assert body["ok"] is True
     assert body["models"] == {
