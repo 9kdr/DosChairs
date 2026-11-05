@@ -233,7 +233,7 @@ def _resolve_sfx_files(
     return files, errors
 
 
-def _resolve_timeline_media(timeline: Mapping[str, Any]) -> tuple[str, int, str]:
+def _resolve_timeline_media(timeline: Mapping[str, Any]) -> tuple[str, int, str, float]:
     proxy_url = ""
     for track in timeline.get("tracks", []):
         for clip in track.get("clips", []):
@@ -265,7 +265,7 @@ def _resolve_timeline_media(timeline: Mapping[str, Any]) -> tuple[str, int, str]
                 total_frames = clip_frames
 
     target_id = str(timeline.get("id") or "")
-    return proxy_url, total_frames, target_id
+    return proxy_url, total_frames, target_id, fps
 
 
 def _has_dispatchable_intent(planned: Plan) -> bool:
@@ -392,10 +392,13 @@ def handle_edit(
         if isinstance(total_frames_raw, (int, float)) and total_frames_raw > 0
         else 0
     )
-    rate_raw = job.input.get("rate", 30.0)
-    if not isinstance(rate_raw, (int, float)) or rate_raw <= 0:
-        raise ValueError("job input 'rate' must be a number above 0")
-    rate = float(rate_raw)
+    rate_raw = job.input.get("rate")
+    if rate_raw is not None:
+        if not isinstance(rate_raw, (int, float)) or rate_raw <= 0:
+            raise ValueError("job input 'rate' must be a number above 0")
+        rate = float(rate_raw)
+    else:
+        rate = None
 
     if not proxy_url:
         from chair_agent.review import read_project_timeline
@@ -412,7 +415,9 @@ def handle_edit(
         ]
         if not clips:
             raise ValueError("Put a clip on the timeline first.")
-        resolved_media, resolved_frames, resolved_target = _resolve_timeline_media(timeline)
+        resolved_media, resolved_frames, resolved_target, resolved_rate = (
+            _resolve_timeline_media(timeline)
+        )
         if not resolved_media:
             raise ValueError("Put a clip on the timeline first.")
         proxy_url = resolved_media
@@ -422,6 +427,11 @@ def handle_edit(
             base_revision = str(timeline.get("id") or "rev-0")
         if resolved_target:
             target_id = resolved_target
+        if rate is None:
+            rate = resolved_rate
+
+    if rate is None:
+        rate = 30.0
 
     context = LoopContext(
         proxy_url=proxy_url,
