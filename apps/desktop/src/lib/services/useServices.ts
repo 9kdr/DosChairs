@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { isWindowVisible, onWindowVisible, startPolling, type Poller } from "@/lib/poll";
 import { getDefaultSettingsStore } from "@/settings/settings-store";
 import { createServicesClient, ServiceError, type ServicesClient } from "./client";
 import type {
@@ -30,75 +31,193 @@ export type HealthSnapshot = {
   refresh: () => void;
 };
 
+export type HealthState = {
+  agent: ServiceState;
+  sidecar: ServiceState;
+  agentHealth?: AgentHealth;
+  sidecarHealth?: SidecarHealth;
+};
+
+export type HealthStoreOptions = {
+  intervalMs?: number;
+  /** Seams for tests; the window uses the real visibility and timers. */
+  visible?: () => boolean;
+  schedule?: (tick: () => void, ms: number) => unknown;
+  cancel?: (timer: unknown) => void;
+  loadKeys?: () => Promise<Record<string, string | null>>;
+};
+
+export type HealthStore = {
+  subscribe: (listener: () => void) => () => void;
+  getSnapshot: () => HealthState;
+  refresh: () => void;
+};
+
+const CHECKING: HealthState = {
+  agent: { phase: "checking" },
+  sidecar: { phase: "checking" },
+};
+
+/**
+ * One shared health check for every hook instance on the same services:
+ * one interval, one in-flight check, and one keys push per change. The
+ * interval skips ticks while the window is hidden and rechecks when it
+ * returns; subscribers only re-render when a check lands.
+ */
+export function createHealthStore(
+  client: ServicesClient,
+  options: HealthStoreOptions = {},
+): HealthStore {
+  const {
+    intervalMs = 15000,
+    visible = isWindowVisible,
+    schedule,
+    cancel,
+    loadKeys = () =>
+      getDefaultSettingsStore()
+        .load()
+        .then((stored) => stored.keys),
+  } = options;
+  let snapshot: HealthState = CHECKING;
+  const listeners = new Set<() => void>();
+  let poller: Poller | null = null;
+  let stopWatching: (() => void) | null = null;
+  let inFlight = false;
+  let pushing = false;
+  let lastKeysJson: string | null = null;
+
+  function emit(next: HealthState): void {
+    snapshot = next;
+    for (const listener of listeners) listener();
+  }
+
+  async function pushKeysIfChanged(agentHealth?: AgentHealth): Promise<void> {
+    if (pushing) return;
+    pushing = true;
+    try {
+      let keys: Record<string, string | null>;
+      try {
+        keys = await loadKeys();
+      } catch {
+        return;
+      }
+      if (!Object.values(keys).some((key) => key != null)) return;
+      const json = JSON.stringify(keys);
+      const configured =
+        agentHealth?.keys_configured ??
+        (agentHealth as { keys?: Record<string, boolean> } | undefined)?.keys;
+      const missingKey = Object.entries(keys).some(
+        ([provider, value]) => value != null && configured?.[provider] === false,
+      );
+      if (json === lastKeysJson && !missingKey) return;
+      try {
+        await client.setAgentKeys(keys);
+      } catch {
+        return;
+      }
+      lastKeysJson = json;
+    } finally {
+      pushing = false;
+    }
+  }
+
+  async function check(): Promise<void> {
+    if (inFlight) return;
+    inFlight = true;
+    try {
+      const [agentResult, sidecarResult] = await Promise.allSettled([
+        client.agentHealth(),
+        client.sidecarHealth(),
+      ]);
+      const checkedAt = Date.now();
+      const next: HealthState = {
+        agent:
+          agentResult.status === "fulfilled"
+            ? { phase: "up", checkedAt }
+            : { phase: "down", checkedAt, message: describe(agentResult.reason) },
+        sidecar:
+          sidecarResult.status === "fulfilled"
+            ? { phase: "up", checkedAt }
+            : { phase: "down", checkedAt, message: describe(sidecarResult.reason) },
+        agentHealth: agentResult.status === "fulfilled" ? agentResult.value : undefined,
+        sidecarHealth: sidecarResult.status === "fulfilled" ? sidecarResult.value : undefined,
+      };
+      emit(next);
+      // Fire and forget like before: the snapshot never waits on the push,
+      // and a changed key mid-push retries on the next check.
+      if (agentResult.status === "fulfilled") void pushKeysIfChanged(agentResult.value);
+    } finally {
+      inFlight = false;
+    }
+  }
+
+  function start(): void {
+    if (poller) return;
+    void check();
+    if (intervalMs > 0) {
+      poller = startPolling(() => void check(), { intervalMs, visible, schedule, cancel });
+      stopWatching = onWindowVisible(() => void check());
+    }
+  }
+
+  function stop(): void {
+    if (listeners.size > 0 || !poller) return;
+    poller.stop();
+    poller = null;
+    stopWatching?.();
+    stopWatching = null;
+  }
+
+  return {
+    subscribe(listener: () => void): () => void {
+      listeners.add(listener);
+      start();
+      return () => {
+        listeners.delete(listener);
+        stop();
+      };
+    },
+    getSnapshot: () => snapshot,
+    refresh: () => void check(),
+  };
+}
+
+const healthStores = new Map<string, HealthStore>();
+
+/** Test support: drop shared stores so each test starts unpolled. */
+export function resetHealthStores(): void {
+  healthStores.clear();
+}
+
+function getHealthStore(client: ServicesClient, key: string, intervalMs: number): HealthStore {
+  let store = healthStores.get(key);
+  if (!store) {
+    store = createHealthStore(client, { intervalMs });
+    healthStores.set(key, store);
+  }
+  return store;
+}
+
 /**
  * Live health for both services. Refreshes on mount, on demand, and on an
- * interval while mounted. States come only from real fetches.
+ * interval while mounted. Every mounted instance shares one poller per
+ * service pair, so the header dot and the composer check once together.
+ * States come only from real fetches.
  */
-export function useServiceHealth(options: ServicesOptions & { intervalMs?: number } = {}): HealthSnapshot {
+export function useServiceHealth(
+  options: ServicesOptions & { intervalMs?: number } = {},
+): HealthSnapshot {
   const { intervalMs = 15000, ...clientOptions } = options;
   const client = useServicesClient(clientOptions);
-  const [agent, setAgent] = useState<ServiceState>({ phase: "checking" });
-  const [sidecar, setSidecar] = useState<ServiceState>({ phase: "checking" });
-  const [agentHealth, setAgentHealth] = useState<AgentHealth | undefined>(undefined);
-  const [sidecarHealth, setSidecarHealth] = useState<SidecarHealth | undefined>(undefined);
-  const [nonce, setNonce] = useState(0);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    const { signal } = controller;
-    let live = true;
-
-    async function check() {
-      const [agentResult, sidecarResult] = await Promise.allSettled([
-        client.agentHealth({ signal }),
-        client.sidecarHealth({ signal }),
-      ]);
-      if (!live || signal.aborted) return;
-      if (agentResult.status === "fulfilled") {
-        setAgentHealth(agentResult.value);
-        setAgent({ phase: "up", checkedAt: Date.now() });
-        void getDefaultSettingsStore()
-          .load()
-          .then((stored) => {
-            if (Object.values(stored.keys).some((k) => k != null)) {
-              void client.setAgentKeys(stored.keys, { signal }).catch(() => {});
-            }
-          })
-          .catch(() => {});
-      } else {
-        setAgent({
-          phase: "down",
-          checkedAt: Date.now(),
-          message: describe(agentResult.reason),
-        });
-      }
-      if (sidecarResult.status === "fulfilled") {
-        setSidecarHealth(sidecarResult.value);
-        setSidecar({ phase: "up", checkedAt: Date.now() });
-      } else {
-        setSidecar({
-          phase: "down",
-          checkedAt: Date.now(),
-          message: describe(sidecarResult.reason),
-        });
-      }
-    }
-
-    void check();
-    const timer = intervalMs > 0 ? window.setInterval(() => void check(), intervalMs) : 0;
-    return () => {
-      live = false;
-      controller.abort();
-      if (timer) window.clearInterval(timer);
-    };
-  }, [client, intervalMs, nonce]);
-
-  const refresh = useCallback(() => setNonce((current) => current + 1), []);
-
-  return useMemo(
-    () => ({ agent, sidecar, agentHealth, sidecarHealth, refresh }),
-    [agent, sidecar, agentHealth, sidecarHealth, refresh],
+  const key = useMemo(
+    () => `${clientOptions.agentUrl ?? ""}│${clientOptions.sidecarUrl ?? ""}│${intervalMs}`,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [client, intervalMs],
   );
+  const store = useMemo(() => getHealthStore(client, key, intervalMs), [client, key, intervalMs]);
+  const state = useSyncExternalStore(store.subscribe, store.getSnapshot);
+  const refresh = useMemo(() => store.refresh, [store]);
+  return useMemo(() => ({ ...state, refresh }), [state, refresh]);
 }
 
 function describe(reason: unknown): string {

@@ -1,11 +1,12 @@
 import { RefreshCwIcon } from "lucide-react";
 import packageJson from "../../package.json";
 import { motion, useReducedMotion } from "motion/react";
-import { useEffect, useRef, useState } from "react";
+import { Suspense, lazy, useEffect, useRef, useState } from "react";
 import { DitherArt } from "@/components/dither-art";
 import { SmoothScrollTarget } from "@/components/smooth-scroll";
 import { Button } from "@/components/ui/button";
 import { Empty, EmptyArt } from "@/components/ui/empty";
+import { Spinner } from "@/components/ui/spinner";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { ChairMark } from "./ChairMark";
@@ -31,7 +32,22 @@ import { HomeDock, type HomeTab } from "./HomeDock";
 import { openProjectInEditor } from "./projects";
 import { ProjectCard } from "./ProjectCard";
 import { PiecesShelf } from "../effects/PiecesShelf";
-import { SettingsScreen } from "../settings/SettingsScreen";
+
+/**
+ * Split out of the first-screen chunk with the shell's twin: Settings
+ * loads on first open behind a quiet spinner.
+ */
+const SettingsScreen = lazy(() =>
+  import("../settings/SettingsScreen").then((module) => ({ default: module.SettingsScreen })),
+);
+
+function SettingsFallback() {
+  return (
+    <div className="flex min-h-64 items-center justify-center">
+      <Spinner className="size-5 text-neutral-500" />
+    </div>
+  );
+}
 import { useElementWidth } from "./use-element-width";
 import { useProjects } from "./useProjects";
 
@@ -67,7 +83,9 @@ export function HomeScreen({ onOpenProject }: HomeScreenProps) {
       >
         <div className="px-6 pt-6 pb-28">
           {settingsOpen ? (
-            <SettingsScreen onBack={() => setSettingsOpen(false)} />
+            <Suspense fallback={<SettingsFallback />}>
+              <SettingsScreen onBack={() => setSettingsOpen(false)} />
+            </Suspense>
           ) : (
             <>
               {tab === "projects" ? (

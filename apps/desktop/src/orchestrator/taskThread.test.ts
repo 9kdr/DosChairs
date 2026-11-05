@@ -32,6 +32,7 @@ import {
   maybeApplyFinishedSound,
   noteKey,
   notePollFailure,
+  noteSubmitAttempt,
   noteTurnText,
   openingBrief,
   openingKey,
@@ -45,11 +46,15 @@ import {
   retryLandedWrite,
   retryLiveTask,
   runTurn,
+  sameLiveRow,
+  sameLiveRows,
   selectionForNote,
   settledStatusFor,
   settledTaskRows,
+  shouldRetrySubmit,
   stopLiveTask,
   submitLiveTurn,
+  SUBMIT_RETRY_MS,
   taskForLiveJob,
   textForJob,
   undoLandedWrite,
@@ -1213,5 +1218,48 @@ describe("finished cut writes", () => {
       state: "landed",
       line: "Undo failed: Undo isn't available on this agent yet.",
     });
+  });
+});
+
+describe("live row equality", () => {
+  const row: RunningTask = {
+    id: "task-1",
+    name: "trim the silence",
+    status: "Waiting for the agent",
+    lane: "edit",
+    projectId: "demo",
+    startedAt: 1000,
+  };
+
+  it("matches identical rows, including rebuilt copies", () => {
+    expect(sameLiveRow(row, { ...row })).toBe(true);
+    expect(sameLiveRows([row], [{ ...row }])).toBe(true);
+    expect(sameLiveRows([], [])).toBe(true);
+  });
+
+  it("notices a changed status, job, or order", () => {
+    expect(sameLiveRow(row, { ...row, status: "Failed: unreachable" })).toBe(false);
+    expect(sameLiveRow(row, { ...row, jobId: "req_1", jobStatus: "queued" })).toBe(false);
+    const other: RunningTask = { ...row, id: "task-2" };
+    expect(sameLiveRows([row, other], [other, row])).toBe(false);
+    expect(sameLiveRows([row], [row, other])).toBe(false);
+  });
+});
+
+describe("submit retry cadence", () => {
+  beforeEach(() => resetLiveJobs());
+
+  it("submits once, then waits out the retry gap", () => {
+    expect(shouldRetrySubmit("task-1", 1000)).toBe(true);
+    noteSubmitAttempt("task-1", 1000);
+    expect(shouldRetrySubmit("task-1", 1000 + SUBMIT_RETRY_MS - 1)).toBe(false);
+    expect(shouldRetrySubmit("task-1", 1000 + SUBMIT_RETRY_MS)).toBe(true);
+  });
+
+  it("tracks tasks separately and clears on a hand retry", () => {
+    noteSubmitAttempt("task-1", 5000);
+    expect(shouldRetrySubmit("task-2", 5000)).toBe(true);
+    retryLiveTask("task-1");
+    expect(shouldRetrySubmit("task-1", 5000)).toBe(true);
   });
 });
