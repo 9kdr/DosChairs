@@ -107,10 +107,44 @@ def test_partial_cut_shrinks_head_or_tail() -> None:
         _item("cut-1", "remove_clip", {"startFrames": 0, "frames": 8}, "clip-a"),
     ])
     assert _clip_of(head, "clip-a")[1]["timelineRange"]["start"] == _time(8)
+    assert _clip_of(head, "clip-a")[1]["timelineRange"]["duration"] == _time(40)
     tail, _ = apply_cut_items(_timeline(), [
-        _item("cut-2", "remove_clip", {"startFrames": 8, "frames": 8}, "clip-b"),
+        _item("cut-2", "remove_clip", {"startFrames": 40, "frames": 8}, "clip-b"),
     ])
+    assert _clip_of(tail, "clip-b")[1]["timelineRange"]["start"] == _time(48)
     assert _clip_of(tail, "clip-b")[1]["timelineRange"]["duration"] == _time(40)
+
+
+def test_mid_clip_cut_splits_the_copy_and_never_touches_the_input() -> None:
+    timeline = _timeline()
+    copy, report = apply_cut_items(timeline, [
+        _item("cut-1", "remove_clip", {"startFrames": 8, "frames": 8}, "clip-a"),
+    ])
+
+    assert timeline == _timeline()  # the input is never mutated
+    assert report["skipped"] == []
+    _, head = _clip_of(copy, "clip-a")
+    assert head["timelineRange"] == {"start": _time(0), "duration": _time(8)}
+    assert head["sourceRange"] == {"start": _time(100), "duration": _time(8)}
+    track, _ = _clip_of(copy, "clip-a")
+    ids = [entry["id"] for entry in track["clips"]]
+    assert ids[:2] == ["clip-a", "clip-a-cut"]
+    _, tail = _clip_of(copy, "clip-a-cut")
+    assert tail["timelineRange"] == {"start": _time(16), "duration": _time(32)}
+    assert tail["sourceRange"] == {"start": _time(116), "duration": _time(32)}
+    assert tail["mediaRef"] == "/media/a.mov"
+    assert report["clips_changed"] == ["clip-a", "clip-a-cut"]
+
+
+def test_cut_outside_the_clip_skips_without_trimming() -> None:
+    copy, report = apply_cut_items(_timeline(), [
+        _item("cut-1", "remove_clip", {"startFrames": 48, "frames": 8}, "clip-a"),
+    ])
+
+    assert copy == _timeline()
+    assert report["clips_changed"] == []
+    assert [skip["id"] for skip in report["skipped"]] == ["cut-1"]
+    assert "falls outside the clip" in report["skipped"][0]["reason"]
 
 
 def test_ripple_moves_the_clip_and_everything_after_it() -> None:

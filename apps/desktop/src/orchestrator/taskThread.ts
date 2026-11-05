@@ -10,6 +10,7 @@
  * anyone to accept. Nothing here touches the timeline itself.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
+import { isWindowVisible, onWindowVisible, startPolling } from "../lib/poll";
 import { ServiceError, type FetchFn, type ServicesClient } from "../lib/services/client";
 import { agentBaseUrl } from "../lib/services/config";
 import { isAgentTerminal } from "../lib/services/types";
@@ -254,7 +255,7 @@ const settledTasks = new Set<string>();
 /**
  * Tasks whose opening turn failed to submit, task id to the plain error.
  * They stay visible as failed rows (never swallowed) and resubmit on the
- * next poll; clearing the entry by hand retries even sooner.
+ * submit cadence; clearing the entry by hand retries on the next tick.
  */
 const submitErrors = new Map<string, string>();
 
@@ -263,9 +264,29 @@ export function liveSubmitError(taskId: string): string | undefined {
   return submitErrors.get(taskId);
 }
 
+/**
+ * Failed submits retry on this cadence, not every poll: while the agent
+ * is down a failed task would otherwise re-post its opening turn every
+ * 2s forever. A hand retry still goes on the next tick.
+ */
+export const SUBMIT_RETRY_MS = 10000;
+const submitAttempts = new Map<string, number>();
+
+/** True when a task may (re)submit: never tried, or the retry wait passed. */
+export function shouldRetrySubmit(taskId: string, now: number = Date.now()): boolean {
+  const last = submitAttempts.get(taskId);
+  return last === undefined || now - last >= SUBMIT_RETRY_MS;
+}
+
+/** Remember a submit dispatch so the next failure waits out the retry gap. */
+export function noteSubmitAttempt(taskId: string, now: number = Date.now()): void {
+  submitAttempts.set(taskId, now);
+}
+
 /** Forget a submit failure so the next poll resubmits the turn now. */
 export function retryLiveTask(taskId: string): void {
   submitErrors.delete(taskId);
+  submitAttempts.delete(taskId);
 }
 
 /** Remember a submitted turn so the live list can poll it. */
@@ -388,6 +409,7 @@ export function resetLiveJobs(): void {
   settledRows.clear();
   seenCache.clear();
   submitErrors.clear();
+  submitAttempts.clear();
   pollFailures.clear();
   appliedJobs.clear();
   landedByTask.clear();
@@ -809,9 +831,9 @@ export function waitingRowsFor(tasks: readonly RunningTask[]): RunningTask[] {
  * New tasks submit their opening turn on arrival; the thread's identical
  * key and input resume that same job on open, never a duplicate. A task
  * stays visible from creation: waiting while the turn sends, failed with
- * the plain error when sending fails (retried on the next poll). Each
- * poll then refreshes every remembered job. Failed polls keep the last
- * rows, so a flaky agent never blanks the list.
+ * the plain error when sending fails (retried on the submit cadence).
+ * Each poll then refreshes every remembered job. Failed polls keep the
+ * last rows, so a flaky agent never blanks the list.
  */
 /**
  * Submit one task's opening turn for the live list. Failures land in the
@@ -836,6 +858,30 @@ export async function submitLiveTurn(client: ServicesClient, task: RunningTask):
   }
 }
 
+/** True when two rows would paint the same card. Plans and media ride by reference. */
+export function sameLiveRow(left: RunningTask, right: RunningTask): boolean {
+  return (
+    left.id === right.id &&
+    left.name === right.name &&
+    left.status === right.status &&
+    left.lane === right.lane &&
+    left.projectId === right.projectId &&
+    left.jobId === right.jobId &&
+    left.jobStatus === right.jobStatus &&
+    left.startedAt === right.startedAt &&
+    left.plan === right.plan &&
+    left.media === right.media
+  );
+}
+
+/** True when two live lists would paint the same board, row for row. */
+export function sameLiveRows(left: readonly RunningTask[], right: readonly RunningTask[]): boolean {
+  return (
+    left.length === right.length &&
+    left.every((row, index) => sameLiveRow(row, right[index] as RunningTask))
+  );
+}
+
 export function useLiveTasks(
   createdTasks: readonly RunningTask[],
   refreshKey?: unknown,
@@ -858,7 +904,10 @@ export function useLiveTasks(
         for (const task of tasks) {
           if (isLiveTaskSettled(task.id) || submitted.has(task.id)) continue;
           submitted.add(task.id);
-          // Failures land in the submit-error map; the next poll retries.
+          // Failures land in the submit-error map and retry on the submit
+          // cadence, not every poll, so an outage does not re-post forever.
+          if (!shouldRetrySubmit(task.id)) continue;
+          noteSubmitAttempt(task.id);
           void submitLiveTurn(client, task);
         }
         const entries: LiveJobEntry[] = [];
@@ -914,18 +963,26 @@ export function useLiveTasks(
           void maybeApplyFinishedSound(entry);
           void maybeApplyFinishedCut(entry);
         }
-        if (live) setRows([...waitingRowsFor(tasks), ...stale, ...merged.rows]);
+        // Unchanged rows keep their state, so an idle board does not
+        // re-render the whole project screen on every tick.
+        const next = [...waitingRowsFor(tasks), ...stale, ...merged.rows];
+        if (live && !sameLiveRows(rowsRef.current, next)) setRows(next);
       } finally {
         ticking = false;
       }
     }
 
     void tick(createdTasks);
-    const timer = window.setInterval(() => void tick(createdTasks), LIVE_POLL_MS);
+    const poller = startPolling(() => void tick(createdTasks), {
+      intervalMs: LIVE_POLL_MS,
+      visible: isWindowVisible,
+    });
+    const stopWatching = onWindowVisible(() => void tick(createdTasks));
     return () => {
       live = false;
       controller.abort();
-      window.clearInterval(timer);
+      poller.stop();
+      stopWatching();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [client, createdTasks, refreshKey]);
