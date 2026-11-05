@@ -7,37 +7,17 @@
  * of rendering fakes.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
+import { isWindowVisible, onWindowVisible, startPolling } from "@/lib/poll";
+import type { PollerOptions } from "@/lib/poll";
 import { ServiceError, type FetchFn } from "@/lib/services/client";
 import { agentBaseUrl } from "@/lib/services/config";
 
 /** How often the shelf re-reads the listing while the window is visible. */
 export const ASSETS_POLL_MS = 5000;
 
-export type PollerOptions = {
-  intervalMs?: number;
-  /** False while the page is hidden: ticks are skipped, never queued. */
-  visible?: () => boolean;
-  /** Seams for tests; the shelf uses real timers. */
-  schedule?: (tick: () => void, ms: number) => unknown;
-  cancel?: (timer: unknown) => void;
-};
-
-export type Poller = { stop: () => void };
-
-/**
- * Call onTick every intervalMs while visible stays true. Hidden ticks
- * are skipped, never bunched, so a background tab makes no requests.
- */
-export function startPolling(onTick: () => void, options: PollerOptions = {}): Poller {
-  const intervalMs = options.intervalMs ?? ASSETS_POLL_MS;
-  const visible = options.visible ?? (() => true);
-  const schedule = options.schedule ?? ((tick, ms) => setInterval(tick, ms));
-  const cancel = options.cancel ?? ((timer) => clearInterval(timer as number));
-  const timer = schedule(() => {
-    if (visible()) onTick();
-  }, intervalMs);
-  return { stop: () => cancel(timer) };
-}
+export { startPolling };
+export type { Poller } from "@/lib/poll";
+export type { PollerOptions };
 
 export type ShelfAssetKind = "video" | "image" | "audio";
 
@@ -338,15 +318,12 @@ export function useProjectAssets(
     if (pollMs <= 0) return;
     const poller = startPolling(() => refreshRef.current(), {
       intervalMs: pollMs,
-      visible: () => !document.hidden,
+      visible: isWindowVisible,
     });
-    const onVisible = () => {
-      if (!document.hidden) refreshRef.current();
-    };
-    document.addEventListener("visibilitychange", onVisible);
+    const stopWatching = onWindowVisible(() => refreshRef.current());
     return () => {
       poller.stop();
-      document.removeEventListener("visibilitychange", onVisible);
+      stopWatching();
     };
   }, [pollMs]);
 
