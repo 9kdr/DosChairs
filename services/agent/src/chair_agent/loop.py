@@ -330,16 +330,13 @@ def _handle_crew_brief(
             else "; ".join(run.verdict.reasons) or "no section finished"
         )
         raise ValueError(f"Chair can't do that yet: {detail}")
-    verdict = "accepted" if run.verdict.accepted else "rejected"
     listing = ", ".join(f"{task.section}:{task.id}" for task in run.tasks)
+    edits = f"{len(ops)} edit{'s' if len(ops) != 1 else ''} proposed"
     return HandlerResult(
         artifacts=[],
         ops=ops,
         planner="crew",
-        message=(
-            f"crew {verdict}: {len(run.tasks)} tasks [{listing}], "
-            f"{'; '.join(run.verdict.reasons) or 'all beats covered'}"
-        ),
+        message=f"crew: {len(run.tasks)} tasks [{listing}], {edits}",
     )
 
 

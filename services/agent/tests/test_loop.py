@@ -806,7 +806,8 @@ def test_handle_edit_routes_unplannable_brief_to_crew() -> None:
     assert op["op"] == "add_effect"
     assert op["status"] == "pending"
     assert op["beatId"] == "b1"
-    assert result.message is not None and result.message.startswith("crew ")
+    assert result.message is not None and result.message.startswith("crew:")
+    assert "1 edit proposed" in result.message
 
 
 class _FailingLiveTranscriber:
