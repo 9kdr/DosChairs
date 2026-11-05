@@ -2,11 +2,11 @@
 // Nightly groom: zero-cost issue triage. Heuristic only by default.
 // - Labels small slices `grok-ready` (the only bot pick lane).
 // - Pings stale `agent:claimed` issues once, never closes anything.
-// - Muse plan-comment seam runs only when MUSE_API_URL + MUSE_API_KEY
-//   secrets exist, at most 3 drafts per run. No hardcoded URLs or keys.
+// - Muse plan-comment seam runs only when MUSE_API_KEY secret exists
+//   (MUSE_API_URL is optional), at most 3 drafts per run. No hardcoded keys.
 //
 // Usage: node scripts/groom.mjs [--dry-run]
-// Env: GH_TOKEN (gh CLI), MUSE_API_URL, MUSE_API_KEY, MUSE_MODEL.
+// Env: GH_TOKEN (gh CLI), MUSE_API_KEY, MUSE_API_URL (optional), MUSE_MODEL.
 
 import { execFileSync } from "node:child_process";
 
@@ -86,9 +86,9 @@ function isStaleClaim(issue) {
 // Muse seam: OpenAI-compatible chat endpoint supplied via secrets.
 // Skips silently when secrets are missing; never throws the run off.
 async function draftWithMuse(issue) {
-  const url = process.env.MUSE_API_URL;
+  const url = process.env.MUSE_API_URL || "https://api.meta.ai/v1/chat/completions";
   const key = process.env.MUSE_API_KEY;
-  if (!url || !key) return null;
+  if (!key) return null;
   const model = process.env.MUSE_MODEL || "muse-spark";
   const prompt = `Write one short paragraph (max 80 words) proposing a plan for GitHub issue #${issue.number} titled "${issue.title}". Name the files to touch and what done looks like. Plain sentences, no headers.`;
   try {
