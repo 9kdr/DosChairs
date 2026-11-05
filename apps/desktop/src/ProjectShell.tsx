@@ -1,8 +1,9 @@
 import { ArrowLeft, HistoryIcon, HomeIcon } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { Suspense, lazy, useEffect, useRef, useState } from "react";
 import { ChatPrompt } from "@/components/chat-prompt";
 import { ServiceStatus } from "@/components/service-status";
 import { Button } from "@/components/ui/button";
+import { Spinner } from "@/components/ui/spinner";
 import { Tabs, TabsList, TabsTab } from "@/components/ui/tabs";
 import { ToastProvider, toastManager } from "@/components/ui/toast";
 import type { Timeline } from "@chair/timeline-ir";
@@ -11,7 +12,6 @@ import { formatCutDuration } from "@/lib/format";
 import type { EditorId } from "./home/data";
 import { EditorLogo } from "./home/EditorLogo";
 import { buildUndoChangeset } from "@chair/timeline-ir";
-import { EffectMaker } from "./effects/EffectMaker";
 import { parseAction } from "./orchestrator/actions";
 import { PlanDoc } from "./orchestrator/PlanDoc";
 import { RunningTasks, type RunningTask } from "./orchestrator/RunningTasks";
@@ -36,7 +36,26 @@ import {
 import { HistoryCard } from "./project/HistoryCard";
 import { historyKeyAction, historyKeyAllowed } from "./project/history-keys";
 import { historyForTask, useProject } from "./project/store";
-import { SettingsScreen } from "./settings/SettingsScreen";
+
+/**
+ * Rarely-opened full pages, split out of the first-screen chunk: the
+ * Effect Maker pulls the effects renderer, Settings its sections. Both
+ * load on first open behind a quiet spinner.
+ */
+const EffectMaker = lazy(() =>
+  import("./effects/EffectMaker").then((module) => ({ default: module.EffectMaker })),
+);
+const SettingsScreen = lazy(() =>
+  import("./settings/SettingsScreen").then((module) => ({ default: module.SettingsScreen })),
+);
+
+function PageFallback() {
+  return (
+    <div className="flex min-h-0 flex-1 items-center justify-center">
+      <Spinner className="size-5 text-neutral-500" />
+    </div>
+  );
+}
 
 type ProjectShellProps = {
   projectId: string;
@@ -176,7 +195,8 @@ export function ProjectShell({ projectId, projectName, editorId, onHome }: Proje
   };
 
   // u (and its shortcut twin) opens the History page from the board; the
-  // page itself keeps the undo behavior, unchanged.
+  // page itself keeps the undo behavior, unchanged. Subscribed once per
+  // screen state, not once per render.
   useEffect(() => {
     if (page !== "board" || taskChat || settingsOpen) return;
     const onKeyDown = (event: KeyboardEvent) => {
@@ -187,7 +207,8 @@ export function ProjectShell({ projectId, projectName, editorId, onHome }: Proje
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page, taskChat, settingsOpen]);
 
   /** Retry a failed card: resubmit the turn, or re-fire a failed write. */
   const retryTask = (task: RunningTask) => {
@@ -411,7 +432,9 @@ export function ProjectShell({ projectId, projectName, editorId, onHome }: Proje
                   Back
                 </Button>
               </div>
-              <SettingsScreen onBack={() => setSettingsOpen(false)} />
+              <Suspense fallback={<PageFallback />}>
+                <SettingsScreen onBack={() => setSettingsOpen(false)} />
+              </Suspense>
             </div>
           ) : taskChat ? (
             <TaskChat
@@ -487,16 +510,18 @@ export function ProjectShell({ projectId, projectName, editorId, onHome }: Proje
           ) : page === "maker" ? (
             <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-2 py-2 overscroll-contain">
               <div className="mx-auto min-h-0 w-full max-w-4xl flex-1">
-                <EffectMaker
-                  clips={effectClips}
-                  onApply={project.applyItem}
-                  onUndo={(itemId) => project.undoToHere(itemId)}
-                  onOpenHistory={openHistoryPage}
-                  refusal={project.refusal?.reason ?? null}
-                  landings={project.landings}
-                  onRecordLanding={project.recordLanding}
-                  onBack={() => setPage("board")}
-                />
+                <Suspense fallback={<PageFallback />}>
+                  <EffectMaker
+                    clips={effectClips}
+                    onApply={project.applyItem}
+                    onUndo={(itemId) => project.undoToHere(itemId)}
+                    onOpenHistory={openHistoryPage}
+                    refusal={project.refusal?.reason ?? null}
+                    landings={project.landings}
+                    onRecordLanding={project.recordLanding}
+                    onBack={() => setPage("board")}
+                  />
+                </Suspense>
               </div>
             </div>
           ) : (
