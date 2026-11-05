@@ -97,9 +97,10 @@ def test_http_assets_endpoint(
     monkeypatch.setenv("CHAIR_PROXY_DIR", str(proxies))
     server, thread, base = _serve(tmp_path)
     try:
-        with urlopen(f"{base}/projects/proj_1/assets") as response:
+        req = Request(f"{base}/projects/proj_1/assets", headers={"Origin": "http://localhost:1420"})
+        with urlopen(req) as response:
             assert response.status == 200
-            assert response.headers["access-control-allow-origin"] == "*"
+            assert response.headers["access-control-allow-origin"] == "http://localhost:1420"
             body = json.load(response)
         assert body["project_id"] == "proj_1"
         assert body["folders"][0]["id"] == "interview"
