@@ -17,7 +17,7 @@ from chair_agent.dispatch import (
     PreviewRenderer,
     SilenceMeasurer,
     build_sidecar_tools,
-    dispatch_spans,
+    dispatch_spans_with_notes,
 )
 from chair_agent.edit_ops import build_changeset
 from chair_agent.executor import (
@@ -268,6 +268,78 @@ def _resolve_timeline_media(timeline: Mapping[str, Any]) -> tuple[str, int, str]
     return proxy_url, total_frames, target_id
 
 
+def _has_dispatchable_intent(planned: Plan) -> bool:
+    """True when the cut/sound pipeline can dispatch at least one intent."""
+    return any(
+        intent in DISPATCHABLE_INTENTS
+        for intent in canonical_intents(planned.intents)
+    )
+
+
+def _handle_crew_brief(
+    brief: str,
+    *,
+    client: ModelClient | None,
+    model: str | None,
+    changeset_id: str,
+    base_revision: str,
+    target_id: str,
+    total_frames: int,
+) -> HandlerResult:
+    """Fall-through for briefs the cut/sound pipeline can't plan: one crew run.
+
+    The desktop still submitted task "edit", so the result keeps the shape
+    it expects: pending ops plus a planner tag. A brief the crew also
+    can't do raises a plain ValueError, never a stack trace.
+    """
+    from chair_agent.client import build_client, build_client_for_model
+    from chair_agent.crew.orchestrator import run_crew
+
+    use_client = client
+    if use_client is None:
+        try:
+            use_client = build_client_for_model(model)
+        except Exception:
+            use_client = None
+        if use_client is None:
+            use_client = build_client()
+    synth_plan = {"beats": [{"id": "b1", "intent": brief[:280]}]}
+    try:
+        run = run_crew(
+            brief,
+            synth_plan,
+            client=use_client,
+            changeset_id=changeset_id,
+            base_revision=base_revision,
+            target_id=target_id,
+            total_frames=total_frames,
+        )
+    except Exception as error:
+        raise ValueError(f"Chair can't do that yet: {error}") from error
+    assert run.changeset is not None and run.verdict is not None
+    ops = [item.model_dump(mode="json", by_alias=True) for item in run.changeset.items]
+    if not ops:
+        errors = [
+            result.error
+            for result in run.results
+            if result.verdict == "rejected" and result.error
+        ]
+        detail = (
+            errors[0]
+            if errors
+            else "; ".join(run.verdict.reasons) or "no section finished"
+        )
+        raise ValueError(f"Chair can't do that yet: {detail}")
+    listing = ", ".join(f"{task.section}:{task.id}" for task in run.tasks)
+    edits = f"{len(ops)} edit{'s' if len(ops) != 1 else ''} proposed"
+    return HandlerResult(
+        artifacts=[],
+        ops=ops,
+        planner="crew",
+        message=f"crew: {len(run.tasks)} tasks [{listing}], {edits}",
+    )
+
+
 def handle_edit(
     job: Job,
     *,
@@ -278,6 +350,8 @@ def handle_edit(
 ) -> HandlerResult:
     """Job handler for the "edit" task: brief in, gated proposal out.
 
+    A brief the cut/sound pipeline can't plan falls through to the crew
+    instead of failing; a brief the crew also can't do fails plainly.
     Canned spans and preview URLs in the job input run as before; when
     they are absent, live dispatch runs the finding tools and renders
     the preview instead. The beat sheet, style profile, and frame/audio
@@ -354,7 +428,21 @@ def handle_edit(
         rate=rate,
     )
     model_spec = job.input.get("model") if isinstance(job.input.get("model"), str) else None
-    planned = plan_brief(brief, client=client, model=model_spec)
+    try:
+        planned = plan_brief(brief, client=client, model=model_spec)
+    except ValueError:
+        planned = None
+    if planned is None or not _has_dispatchable_intent(planned):
+        return _handle_crew_brief(
+            brief,
+            client=client,
+            model=model_spec,
+            changeset_id=changeset_id,
+            base_revision=base_revision or "rev-0",
+            target_id=target_id or "timeline-1",
+            total_frames=total_frames or 900,
+        )
+    dispatch_notes: list[str] = []
     if "spans" in job.input:
         spans = [Span.model_validate(item) for item in job.input.get("spans", [])]
     else:
@@ -368,7 +456,7 @@ def handle_edit(
         used_transcriber = (
             transcriber if transcriber is not None else build_transcription_adapter()
         )
-        spans = dispatch_spans(
+        spans, dispatch_notes = dispatch_spans_with_notes(
             dispatch_intents,
             context.proxy_url,
             silence=used_silence,
@@ -415,6 +503,9 @@ def handle_edit(
     message = planned.message
     if skipped and not message:
         message = "; ".join(f"{skip['intent']}: {skip['reason']}" for skip in skipped)
+    if dispatch_notes:
+        note = "; ".join(dispatch_notes)
+        message = f"{message}; {note}" if message else note
     return HandlerResult(
         artifacts=[{"url": url} for url in artifact_urls],
         ops=result.changeset["items"],

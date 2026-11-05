@@ -158,25 +158,60 @@ def dispatch_spans(
     transcriber: TranscriptionAdapter,
     rate: float,
 ) -> list[Span]:
-    """Run the finding tools the intents name; return their spans in frames."""
+    """Run the finding tools the intents name; return their spans in frames.
+
+    A failing transcriber skips the filler pass instead of failing the
+    job; use dispatch_spans_with_notes when the note matters.
+    """
+    spans, _ = dispatch_spans_with_notes(
+        intents, media_url, silence=silence, transcriber=transcriber, rate=rate
+    )
+    return spans
+
+
+def dispatch_spans_with_notes(
+    intents: Sequence[str],
+    media_url: str,
+    *,
+    silence: SilenceMeasurer,
+    transcriber: TranscriptionAdapter,
+    rate: float,
+) -> tuple[list[Span], list[str]]:
+    """Run the finding tools; return spans in frames plus plain notes.
+
+    A failing transcriber is non-fatal: the filler spans are skipped,
+    the silence spans are kept, and a plain note says what happened.
+    """
     if not media_url.strip():
         raise ValueError("live dispatch needs a non-empty media URL")
     if not isinstance(rate, (int, float)) or rate <= 0:
         raise ValueError("live dispatch needs a rate above 0")
     spans: list[Span] = []
+    notes: list[str] = []
     if "silence" in intents:
         spans.extend(
             _seconds_span(start, end, float(rate), "silence")
             for start, end in silence.measure_silence(media_url)
         )
     if "filler" in intents:
-        transcript = transcriber.transcribe(media_url)
-        spans.extend(
-            _seconds_span(word.start, word.end, float(rate), "filler")
-            for word in transcript.words
-            if _clean(word.word) in FILLER_WORDS
-        )
-    return spans
+        try:
+            transcript = transcriber.transcribe(media_url)
+        except Exception as error:
+            notes.append(f"Filler words skipped: transcription failed ({_short(error)})")
+        else:
+            spans.extend(
+                _seconds_span(word.start, word.end, float(rate), "filler")
+                for word in transcript.words
+                if _clean(word.word) in FILLER_WORDS
+            )
+    return spans, notes
+
+
+def _short(error: Exception) -> str:
+    """First line of an error, capped: long HTTP status text stays readable."""
+    lines = str(error).strip().splitlines()
+    first = lines[0].strip()[:180] if lines and lines[0].strip() else type(error).__name__
+    return first
 
 
 def _clean(word: str) -> str:
