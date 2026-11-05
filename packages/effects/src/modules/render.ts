@@ -174,7 +174,8 @@ function log(phase: string): void {
   if (DEBUG) process.stderr.write(`[bake] ${phase}\n`);
 }
 
-async function debugTarget(port: number): Promise<string> {
+export async function debugTarget(port: number): Promise<string> {
+  let noPage = 0;
   for (let i = 0; i < ENDPOINT_RETRIES; i++) {
     try {
       const res = await fetch(`http://127.0.0.1:${port}/json/list`, {
@@ -183,6 +184,13 @@ async function debugTarget(port: number): Promise<string> {
       const tabs = (await res.json()) as { type?: string; webSocketDebuggerUrl?: string }[];
       const page = tabs.find((t) => t.type === "page" && t.webSocketDebuggerUrl);
       if (page?.webSocketDebuggerUrl) return page.webSocketDebuggerUrl;
+      if (++noPage >= 5) {
+        const created = (await fetch(`http://127.0.0.1:${port}/json/new?about:blank`, {
+          method: "PUT",
+          signal: AbortSignal.timeout(2000),
+        }).then((r) => r.json())) as { webSocketDebuggerUrl?: string };
+        if (created?.webSocketDebuggerUrl) return created.webSocketDebuggerUrl;
+      }
       if (i % 20 === 0) log(`debug endpoint up, ${tabs.length} targets`);
     } catch {
       /* not up yet */
