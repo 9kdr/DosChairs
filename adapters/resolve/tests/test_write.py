@@ -538,6 +538,32 @@ def test_plan_retimed_clip_records_fallback_and_bounds_duration() -> None:
     assert clip_end <= planned_clip["record_frame"] + 24
 
 
+def test_plan_slowed_clip_stays_inside_its_source_range() -> None:
+    clip = {
+        "id": "clip-slow",
+        "name": "clip-slow",
+        "mediaRef": "/media/slow.mov",
+        "sourceRange": _range(100, 48),
+        "timelineRange": _range(86400, 96),
+    }
+    plan = plan_from_timeline(
+        {
+            "id": "tl",
+            "name": "Slow Cut",
+            "rate": {"num": 24, "den": 1},
+            "tracks": [{"id": "v1", "kind": "video", "name": "V1", "clips": [clip]}],
+            "markers": [],
+        }
+    )
+    assert len(plan["skipped"]) == 1
+    assert plan["skipped"][0]["id"] == "clip-slow"
+    assert "placed at normal speed" in plan["skipped"][0]["reason"]
+    assert MANIFEST.fallbacks["speedChanges"] in plan["skipped"][0]["reason"]
+    assert len(plan["clips"]) == 1
+    planned_clip = plan["clips"][0]
+    assert planned_clip["end_frame"] - planned_clip["start_frame"] + 1 == 48
+
+
 def test_write_timeline_without_studio_errors_clearly(monkeypatch: pytest.MonkeyPatch) -> None:
     from chair_resolve.read import ResolveClosedError
 

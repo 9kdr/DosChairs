@@ -29,9 +29,10 @@ def apply_cut_items(
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     """Map cut changeset items onto a NEW timeline dict (the copy).
 
-    trim/move/ripple reshape clips, remove_clip removes them (whole, or a
-    head/tail cut when the patch carries {startFrames, frames} as cut_op
-    emits), add_clip inserts a picture snapshot, add/remove_track and
+    trim/move/ripple reshape clips, remove_clip removes them (whole, or
+    exactly the span when the patch carries {startFrames, frames} as cut_op
+    emits: a head/tail trim at the edges, a split mid-clip), add_clip
+    inserts a picture snapshot, add/remove_track and
     add/remove_marker edit the copy's structure. The input timeline is
     never mutated. Returns (copy, report) with per-op counts and skipped
     reasons.
@@ -227,6 +228,23 @@ def _clip_span_frames(clip: dict[str, Any]) -> float | None:
         return None
 
 
+def _fresh_clip_id(result: dict[str, Any], base: str) -> str:
+    """A clip id not yet on the copy, for the second half of a split."""
+    taken = {
+        clip.get("id")
+        for track in result.get("tracks", []) or []
+        if isinstance(track, dict)
+        for clip in track.get("clips", []) or []
+        if isinstance(clip, dict)
+    }
+    candidate = f"{base}-cut"
+    suffix = 2
+    while candidate in taken:
+        candidate = f"{base}-cut-{suffix}"
+        suffix += 1
+    return candidate
+
+
 def _apply_trim(
     result: dict[str, Any],
     by_id: dict[str, Any],
@@ -369,14 +387,34 @@ def _apply_remove_clip(
     if frames is not None and frames > 0:
         start_frames = _number(patch.get("startFrames")) or 0.0
         span = _clip_span_frames(clip)
-        if span is None or frames >= span:
+        if span is None:
+            skip(item_id, f"Cut {item_id!r} names a clip with no duration.")
+            return
+        cut_start = max(start_frames, 0.0)
+        cut_end = min(start_frames + frames, span)
+        if cut_start >= span or cut_end <= 0.0:
+            skip(item_id, f"Cut {item_id!r} falls outside the clip.")
+            return
+        if cut_start <= 0.0 and cut_end >= span:
             skip(item_id, f"Cut {item_id!r} cuts the whole clip away.")
             return
-        if start_frames > 0:
-            _trim_clip(clip, 0.0, frames)
-        else:
-            _trim_clip(clip, frames, 0.0)
+        if cut_start <= 0.0:
+            _trim_clip(clip, cut_end, 0.0)
+            report["clips_changed"].append(clip.get("id"))
+            return
+        if cut_end >= span:
+            _trim_clip(clip, 0.0, span - cut_start)
+            report["clips_changed"].append(clip.get("id"))
+            return
+        second = copy.deepcopy(clip)
+        _trim_clip(clip, 0.0, span - cut_start)
+        _trim_clip(second, cut_end, 0.0)
+        second["id"] = _fresh_clip_id(result, str(clip.get("id")))
+        clips = track.get("clips") or []
+        at = next(i for i, entry in enumerate(clips) if entry is clip)
+        clips.insert(at + 1, second)
         report["clips_changed"].append(clip.get("id"))
+        report["clips_changed"].append(second["id"])
         return
     track["clips"] = [c for c in track.get("clips", []) if c.get("id") != clip.get("id")]
     report["clips_removed"].append(clip.get("id"))

@@ -243,7 +243,7 @@ def _plan_clip(
             {
                 "kind": "clip",
                 "id": clip_id,
-                "reason": f"{label}: {fallback}",
+                "reason": f"{label} is placed at normal speed; {fallback}",
             }
         )
     for effect in clip.get("effects") or []:
@@ -253,7 +253,7 @@ def _plan_clip(
         "name": str(clip["name"]),
         "media_path": media.strip(),
         "start_frame": source_start,
-        "end_frame": source_start + span - 1,
+        "end_frame": source_start + min(span, source_span) - 1,
         "track_type": kind,
         "track_index": index,
         "record_frame": record,
