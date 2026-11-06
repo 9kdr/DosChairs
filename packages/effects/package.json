@@ -22,7 +22,7 @@
     "@types/react-dom": "^19.0.2",
     "@types/three": "^0.187.0",
     "ajv": "^8.17.1",
-    "esbuild": "^0.25.12",
+    "esbuild": "^0.28.2",
     "typescript": "^7.0.2",
     "vitest": "^5.0.5"
   },
@@ -33,12 +33,12 @@
     "flubber": "^0.4.2",
     "gl-transitions": "2.4.0",
     "matter-js": "^0.20.0",
-    "motion": "14.0.0",
+    "motion": "14.9.0",
     "ogl": "^1.0.11",
     "open-bot-avatar": "0.1.2",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "shaders": "4.0.6",
-    "three": "^0.180.0"
+    "three": "^0.187.0"
   }
 }
