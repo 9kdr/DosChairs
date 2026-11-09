@@ -26,7 +26,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: jdx/mise-action@v4
+      - uses: jdx/mise-action@v5
       - run: node scripts/groom.mjs ${{ github.event.inputs.dry_run == 'true' && '--dry-run' || '' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
